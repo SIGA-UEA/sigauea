@@ -1,6 +1,6 @@
-# SIGA UEA: API
+# SIGA UEA
 
-API do **SIGA UEA**, sistema de gestão de Trabalhos de Conclusão de Curso (TCC) do NUCOMP, na Universidade do Estado do Amazonas (UEA). Foi desenvolvida na disciplina de Engenharia de Software e centraliza o ciclo de vida do TCC: turma, cadastro, orientação, documentos, defesa, avaliação, correções, publicação e divulgação da agenda.
+O **SIGA UEA** é o sistema de gestão de Trabalhos de Conclusão de Curso (TCC) do NUCOMP, na Universidade do Estado do Amazonas (UEA). Foi desenvolvido na disciplina de Engenharia de Software e centraliza o ciclo de vida do TCC: turma, cadastro, orientação, documentos, defesa, avaliação, correções, publicação e divulgação da agenda.
 
 ## Visão geral
 
@@ -60,25 +60,152 @@ O sistema substitui o controle disperso (planilhas, e-mails e documentos soltos)
 | Indicadores | `/indicadores`, `/indicadores/relatorio` |
 | Agenda | `/agenda` |
 
-## Stack e execução
+## Stack
 
-- **Linguagem/framework:** Python com FastAPI (backend) e Next.js (frontend).
-- **Banco de dados:** a definir.
-- **Autenticação:** a definir.
-- **Armazenamento de arquivos:** a definir.
-- **E-mail:** a definir.
+- **Backend:** Python com FastAPI e SQLAlchemy, em `backend/`.
+- **Frontend:** Next.js 16 (App Router) com Tailwind CSS, na raiz do repositório.
+- **Banco de dados:** PostgreSQL em produção. Em desenvolvimento, sem configurar nada, a API usa um arquivo SQLite (`backend/siga_dev.db`). Troque pela variável `DATABASE_URL`.
+- **Autenticação:** sessão guardada no banco, com token em cookie `httpOnly` e expiração de 60 minutos de inatividade. Senhas com bcrypt.
+- **E-mail:** SMTP (variáveis `SMTP_*`). Sem SMTP configurado, o e-mail é impresso no terminal da API.
 
-Para iniciar o backend no Windows usando PowerShell:
+## Como rodar
+
+São dois terminais: um para a API e um para o site.
+
+**1. API** (PowerShell):
 
 ```powershell
 cd backend
 py -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+python -m app.seed
 uvicorn app.main:app --reload
 ```
 
-A API fica disponível em `http://127.0.0.1:8000`; a documentação interativa fica em `http://127.0.0.1:8000/docs`.
+O `python -m app.seed` aplica as migrações do banco (Alembic), depois cria os cursos, as áreas, os perfis e o primeiro coordenador (`coordenacao@uea.edu.br`). Ele imprime um **link de ativação**: abra esse link com o site no ar para definir a senha do coordenador. Para usar outro nome ou e-mail, defina `SEED_COORDENADOR_NOME` e `SEED_COORDENADOR_EMAIL` antes de rodar.
+
+A API fica em `http://127.0.0.1:8000` e a documentação interativa em `http://127.0.0.1:8000/docs`.
+
+**2. Site:**
+
+```powershell
+npm install
+npm run dev
+```
+
+Abra `http://localhost:3000`. O site repassa tudo que começa com `/api/v1` para a API (ver `next.config.ts`).
+
+Quando a coordenação cadastra alguém, o link de ativação dessa pessoa aparece no terminal da API (enquanto não houver SMTP configurado).
+
+**Contas de demonstração:** para testar ou apresentar com todos os perfis sem esperar link de ativação, rode `python -m app.seed --demo`. Ele cria uma conta já ativa por perfil, todas com a senha `Siga@2026`:
+
+| E-mail | Perfil |
+|---|---|
+| `coordenador@exemplo.com` | Coordenador |
+| `professor@exemplo.com` | Professor da disciplina |
+| `orientador@exemplo.com` | Orientador |
+| `banca@exemplo.com` | Membro da banca |
+| `aluno@exemplo.com` | Aluno |
+
+Não use `--demo` no servidor de produção.
+
+**Testes da API:**
+
+```powershell
+cd backend
+python -m pytest
+```
+
+Os testes têm o nome da história e do critério de aceite que conferem, por exemplo `test_hu0106_ca3_bloqueio_apos_3_falhas_mesmo_com_senha_correta`.
+
+Por padrão os testes usam um SQLite temporário. Para rodar a mesma suíte contra o PostgreSQL, aponte `TEST_DATABASE_URL` para um banco vazio (ele é apagado a cada teste):
+
+```powershell
+$env:TEST_DATABASE_URL = "postgresql+psycopg://usuario:senha@localhost:5432/siga_teste"
+python -m pytest
+```
+
+**Banco de dados (migrações):**
+
+O esquema do banco vem das migrações em `backend/migrations/versions/`, e não de `create_all`, para o PostgreSQL de produção e o SQLite de desenvolvimento terem as mesmas tabelas. Quem já tinha um `siga_dev.db` antigo não precisa apagar: o seed reconhece e atualiza.
+
+```powershell
+cd backend
+alembic upgrade head                                  # aplica o que falta
+alembic revision --autogenerate -m "o que mudou"      # depois de mudar app/models.py
+```
+
+O teste `test_migracoes_batem_com_os_modelos` falha se alguém mudar `models.py` sem criar a migração.
+
+### Com Docker (PostgreSQL + API + site)
+
+```powershell
+docker compose up --build -d
+docker compose run --rm api python -m app.seed
+docker compose logs -f api
+```
+
+O seed imprime o link de ativação do primeiro coordenador. Site em `http://localhost:3000`, API em `http://localhost:8000/docs`. Em produção, defina `POSTGRES_PASSWORD`, `FRONTEND_URL`, `COOKIE_SEGURO=1` e as variáveis de SMTP, e coloque HTTPS na frente do site (RNF02).
+
+### Variáveis de ambiente
+
+| Variável | Onde | Padrão | Para que serve |
+|---|---|---|---|
+| `DATABASE_URL` | API | SQLite local | Banco. Ex.: `postgresql+psycopg://usuario:senha@host:5432/siga` |
+| `FRONTEND_URL` | API | `http://localhost:3000` | Endereço usado nos links dos e-mails |
+| `COOKIE_SEGURO` | API | `0` | Use `1` em produção (HTTPS) |
+| `SMTP_HOST`, `SMTP_PORTA`, `SMTP_USUARIO`, `SMTP_SENHA`, `EMAIL_REMETENTE` | API | vazio | Envio real de e-mail |
+| `API_URL` | Site | `http://127.0.0.1:8000` | Endereço da API |
+
+## Onde fica cada coisa
+
+```
+backend/app/
+  main.py            monta a API e registra as rotas em /api/v1
+  config.py          configurações e regras numéricas (60 min, 48 h, 3 tentativas...)
+  models.py          tabelas
+  migracoes.py       aplica as migrações (usado pelo seed e pelos testes)
+  schemas/           formato de entrada e saída de cada rota
+  routes/            rotas: recebem a requisição e chamam um serviço
+  services/          regras de negócio (usuários, perfil, áreas, autenticação, tokens, e-mail, auditoria)
+  security.py        senha (bcrypt, regra de complexidade) e tokens
+  deps.py            quem está logado e qual perfil a rota exige
+  seed.py            carga inicial de desenvolvimento
+backend/migrations/  migrações do banco (Alembic): 0001 esquema inicial, 0002 foto
+backend/tests/       um teste por critério de aceite
+docs/                modelo de dados (diagrama ER), script SQL do PostgreSQL e contrato da API
+
+app/(publico)/       telas sem login: entrar, ativar, esqueci-senha, redefinir-senha (TEL01)
+app/(sistema)/       telas com login: inicio, usuarios e perfil (TEL02)
+components/          peças de interface reutilizadas (botão, campo, modal, casca...)
+lib/                 api.ts (chamadas à API), sessao (usuário logado), tipos, regra de senha
+proxy.ts             manda para o login quem abre tela interna sem cookie de sessão
+```
+
+## O que já está implementado
+
+Sprint S02, épico EP01 (usuários e acesso):
+
+| História | O que faz |
+|---|---|
+| HU01.01 | Cadastrar docentes e atribuir perfis |
+| HU01.03 | Cadastrar alunos manualmente |
+| HU01.04 | Regra de complexidade da senha, com lista de critérios na tela |
+| HU01.05 | Ativação da conta por link de 48 horas, com reenvio |
+| HU01.06 | Entrar e sair, bloqueio após 3 tentativas, sessão de 60 minutos |
+| HU01.07 | Recuperação de senha por link |
+| HU01.08 | Editar e inativar usuários, com auditoria |
+| RBN01.01 | Foto do docente (opcional), incluída pela coordenação |
+| RBN01.02 | Adicionar, renomear e excluir áreas de interesse (aba em Usuários e perfis) |
+| RBN01.09 | Aluno edita telefone e foto em Meu perfil |
+| RBN01.10 | Docente edita telefone, foto, curso e, se orienta ou dá a disciplina, as áreas de interesse |
+| RBN01.04 | Troca de senha pelo próprio usuário, com a mesma regra de complexidade |
+| RBN01.07 | Link de recuperação válido por 10 minutos |
+
+Banco: PostgreSQL com migrações Alembic; a suíte inteira de testes passa também no PostgreSQL 16. Modelo de dados e contrato da API em [`docs/modelo-de-dados.md`](docs/modelo-de-dados.md).
+
+Ficam para os módulos seguintes, porque dependem deles: revogação do acesso do aluno 7 dias após a aprovação em TCC2 (RBN01.11), conta limitada de membro externo da banca (RBN01.12) e de coorientador externo (RBN01.13).
 
 ## Documentação
 
@@ -89,41 +216,3 @@ Os requisitos completos (módulos, RAN, RBN, regras de negócio e RNF) ficam na 
 Davih Taumaturgo Soares · Igor Leite de Almeida · Igor Meireles de Lima Taveira · Matheus Maia Braga · Samuel Ogino Barbosa
 
 Disciplina de Engenharia de Software · Escola Superior de Tecnologia (EST) · UEA, Manaus/AM
-
-
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
-
-## Getting Started
-
-First, run the development server:
-
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.

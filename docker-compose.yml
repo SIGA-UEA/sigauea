@@ -1,0 +1,53 @@
+# Sobe o SIGA UEA inteiro: PostgreSQL + API + site.
+#
+#   docker compose up --build -d
+#   docker compose run --rm api python -m app.seed    (primeira vez: cursos, perfis e 1º coordenador)
+#   docker compose logs -f api                        (links de ativação, enquanto não houver SMTP)
+#
+# Site em http://localhost:3000 e documentação da API em http://localhost:8000/docs.
+# Em produção, troque a senha do banco, use HTTPS na frente do site e defina COOKIE_SEGURO=1.
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: siga
+      POSTGRES_USER: siga
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-siga-dev}
+    volumes:
+      - dados:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U siga -d siga"]
+      interval: 5s
+      retries: 10
+
+  api:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://siga:${POSTGRES_PASSWORD:-siga-dev}@db:5432/siga
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      COOKIE_SEGURO: ${COOKIE_SEGURO:-0}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORTA: ${SMTP_PORTA:-587}
+      SMTP_USUARIO: ${SMTP_USUARIO:-}
+      SMTP_SENHA: ${SMTP_SENHA:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+  web:
+    build:
+      context: .
+      args:
+        API_URL: http://api:8000
+    environment:
+      API_URL: http://api:8000
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
+
+volumes:
+  dados:

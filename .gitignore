@@ -42,3 +42,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# backend: banco local de desenvolvimento e cache de testes
+/backend/siga_dev.db
+/backend/.pytest_cache/

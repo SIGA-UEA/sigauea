@@ -1,26 +1,70 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* Tema do SIGA UEA: claro, com detalhes em azul.
+   Cada cor vira uma classe do Tailwind: bg-azul, text-suave, border-borda... */
+@theme {
+  --color-fundo: #f6f9fe;
+  --color-superficie: #ffffff;
+  --color-borda: #dde4ee;
+  --color-texto: #1b2432;
+  --color-suave: #5a6577;
+
+  --color-azul: #1a73e8;
+  --color-azul-forte: #1558b8;
+  --color-azul-escuro: #0d3c82;
+  --color-azul-claro: #e8f0fe;
+  --color-azul-borda: #c3d7fb;
+
+  --color-verde: #137333;
+  --color-verde-claro: #e6f4ea;
+  --color-ambar: #92500a;
+  --color-ambar-claro: #fdf1d3;
+  --color-vermelho: #b3261e;
+  --color-vermelho-claro: #fce8e6;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+body {
+  background: var(--color-fundo);
+  color: var(--color-texto);
+}
+
+/* Texto comum não é campo de digitação: nada de barra piscando ao clicar (ela aparece
+   quando o navegador está com a navegação por cursor ligada, tecla F7) nem cursor de texto.
+   Fica em @layer base para as classes do Tailwind (ex.: disabled:cursor-not-allowed) valerem. */
+@layer base {
+  body {
+    cursor: default;
+    caret-color: transparent;
+  }
+  input,
+  textarea,
+  [contenteditable="true"] {
+    caret-color: auto;
+  }
+  input:not([type="checkbox"], [type="radio"], [type="file"], [type="button"], [type="submit"]),
+  textarea {
+    cursor: text;
+  }
+  a,
+  button,
+  select,
+  summary,
+  label:has(input[type="checkbox"], input[type="radio"], input[type="file"]) {
+    cursor: pointer;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Contorno de foco visível para quem navega pelo teclado. */
+:focus-visible {
+  outline: 2px solid var(--color-azul);
+  outline-offset: 2px;
+}
+
+dialog::backdrop {
+  background: rgb(27 36 50 / 0.45);
 }
