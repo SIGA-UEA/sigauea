@@ -543,7 +543,7 @@ def markdown() -> str:
         "Gerado por [`modelo_logico.py`](modelo_logico.py); não edite à mão. O mesmo modelo gera o "
         "[`modelo-logico-siga-uea.drawio`](modelo-logico-siga-uea.drawio) (uma página por módulo) e o "
         "[`modelo-logico-siga-uea.sql`](modelo-logico-siga-uea.sql), que é executado num PostgreSQL para conferir "
-        "chaves e restrições. O DER (modelo conceitual, notação de Chen) que dá origem a este modelo está em "
+        "chaves e restrições. O DER (modelo conceitual, estilo brModelo) que dá origem a este modelo está em "
         "[`der-conceitual-siga-uea.drawio`](der-conceitual-siga-uea.drawio).",
         "",
         f"**{len(T)} tabelas**: {len(implementadas)} já criadas pelas migrações (MOD01) e "

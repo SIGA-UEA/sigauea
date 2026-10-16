@@ -8,7 +8,7 @@ Marco de integração 1: banco, módulo de usuários e contrato de API integrado
 | Migrações do banco (Alembic) | [`backend/migrations/versions/`](../backend/migrations/versions/) |
 | Script SQL do PostgreSQL | [`docs/esquema-postgresql.sql`](esquema-postgresql.sql) |
 | Contrato da API (OpenAPI 3) | [`docs/openapi.json`](openapi.json), ou `/docs` com a API no ar |
-| **DER (modelo conceitual) do sistema, notação de Chen** | [`docs/modelagem/der-conceitual-siga-uea.drawio`](modelagem/der-conceitual-siga-uea.drawio), uma página por módulo |
+| **DER (modelo conceitual) do sistema, estilo brModelo** | [`docs/modelagem/der-conceitual-siga-uea.drawio`](modelagem/der-conceitual-siga-uea.drawio), 7 páginas (por módulo) |
 | **Modelo lógico completo (45 tabelas, todos os módulos)** | [`docs/modelagem/`](modelagem/modelo-logico-siga-uea.md): draw.io por módulo, dicionário de dados e DDL |
 | Modelo lógico só do MOD01 (draw.io) | [`docs/modelo-logico-usuarios.drawio`](modelo-logico-usuarios.drawio) |
 
