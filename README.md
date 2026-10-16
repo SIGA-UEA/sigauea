@@ -203,7 +203,7 @@ Sprint S02, épico EP01 (usuários e acesso):
 | RBN01.04 | Troca de senha pelo próprio usuário, com a mesma regra de complexidade |
 | RBN01.07 | Link de recuperação válido por 10 minutos |
 
-Banco: PostgreSQL com migrações Alembic; a suíte inteira de testes passa também no PostgreSQL 16. Modelo de dados e contrato da API em [`docs/modelo-de-dados.md`](docs/modelo-de-dados.md). O DER completo do sistema (todos os módulos, 45 tabelas) está em [`docs/der/`](docs/der/der-siga-uea.md); as tabelas dos próximos módulos ganham migração quando cada módulo for implementado.
+Banco: PostgreSQL com migrações Alembic; a suíte inteira de testes passa também no PostgreSQL 16. Modelo de dados e contrato da API em [`docs/modelo-de-dados.md`](docs/modelo-de-dados.md). A modelagem do sistema inteiro está em [`docs/modelagem/`](docs/modelagem/): o DER (modelo conceitual, notação de Chen) e o modelo lógico com as 45 tabelas de todos os módulos; as tabelas dos próximos módulos ganham migração quando cada módulo for implementado.
 
 Ficam para os módulos seguintes, porque dependem deles: revogação do acesso do aluno 7 dias após a aprovação em TCC2 (RBN01.11), conta limitada de membro externo da banca (RBN01.12) e de coorientador externo (RBN01.13).
 

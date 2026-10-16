@@ -1,6 +1,6 @@
-# DER completo do SIGA UEA (HT02 · SCRUM-107)
+# Modelo lógico completo do SIGA UEA (HT02 · SCRUM-107)
 
-Gerado por [`modelo.py`](modelo.py); não edite à mão. O mesmo modelo gera o [`der-siga-uea.drawio`](der-siga-uea.drawio) (uma página por módulo) e o [`der-siga-uea.sql`](der-siga-uea.sql), que é executado num PostgreSQL para conferir chaves e restrições.
+Gerado por [`modelo_logico.py`](modelo_logico.py); não edite à mão. O mesmo modelo gera o [`modelo-logico-siga-uea.drawio`](modelo-logico-siga-uea.drawio) (uma página por módulo) e o [`modelo-logico-siga-uea.sql`](modelo-logico-siga-uea.sql), que é executado num PostgreSQL para conferir chaves e restrições. O DER (modelo conceitual, notação de Chen) que dá origem a este modelo está em [`der-conceitual-siga-uea.drawio`](der-conceitual-siga-uea.drawio).
 
 **45 tabelas**: 14 já criadas pelas migrações (MOD01) e 31 planejadas para os próximos marcos. Os nomes seguem as entidades dos diagramas de sequência FL01 a FL10 (`MatriculaTurma` → `matricula_turma`, `ResultadoDefesa` → `resultado_defesa`).
 

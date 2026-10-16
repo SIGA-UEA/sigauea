@@ -1,4 +1,4 @@
--- SIGA UEA: DER completo em DDL PostgreSQL (HT02). Gerado por docs/der/modelo.py; não edite à mão.
+-- SIGA UEA: modelo lógico completo em DDL PostgreSQL (HT02). Gerado por docs/modelagem/modelo_logico.py; não edite à mão.
 -- As tabelas do MOD01 já existem pelas migrações; as demais são o modelo dos próximos marcos.
 BEGIN;
 

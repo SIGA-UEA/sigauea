@@ -1,11 +1,14 @@
-"""DER completo do SIGA UEA (HT02 / SCRUM-107): fonte única do modelo lógico.
+"""Modelo lógico completo do SIGA UEA (HT02 / SCRUM-107): fonte única.
+
+O DER (modelo conceitual) fica em der_conceitual.py; este é o modelo lógico
+relacional que deriva dele: tabelas, colunas, tipos, chaves e restrições.
 
 Gera, a partir da especificação abaixo:
-  docs/der/der-siga-uea.drawio     uma página por módulo (draw.io)
-  docs/der/der-siga-uea.md         diagrama ER (Mermaid) e dicionário de dados
-  docs/der/der-siga-uea.sql        DDL PostgreSQL do modelo completo
+  docs/modelagem/modelo-logico-siga-uea.drawio   uma página por módulo (draw.io)
+  docs/modelagem/modelo-logico-siga-uea.md       diagrama (Mermaid) e dicionário de dados
+  docs/modelagem/modelo-logico-siga-uea.sql      DDL PostgreSQL do modelo completo
 
-    python docs/der/modelo.py
+    python docs/modelagem/modelo_logico.py
 
 Tabelas marcadas como implementadas já existem nas migrações (backend/migrations).
 As demais são o modelo aprovado para os próximos marcos; a migração de cada uma é
@@ -395,7 +398,7 @@ def sql() -> str:
             raise SystemExit(f"ciclo de FK entre {pendentes}")
     # acesso_limitado depende de tcc/defesa; já entra na ordem certa pela topologia.
     linhas = [
-        "-- SIGA UEA: DER completo em DDL PostgreSQL (HT02). Gerado por docs/der/modelo.py; não edite à mão.",
+        "-- SIGA UEA: modelo lógico completo em DDL PostgreSQL (HT02). Gerado por docs/modelagem/modelo_logico.py; não edite à mão.",
         "-- As tabelas do MOD01 já existem pelas migrações; as demais são o modelo dos próximos marcos.",
         "BEGIN;",
     ]
@@ -535,11 +538,13 @@ def mermaid() -> str:
 def markdown() -> str:
     implementadas = [t for t in T if t.implementada]
     partes = [
-        "# DER completo do SIGA UEA (HT02 · SCRUM-107)",
+        "# Modelo lógico completo do SIGA UEA (HT02 · SCRUM-107)",
         "",
-        "Gerado por [`modelo.py`](modelo.py); não edite à mão. O mesmo modelo gera o "
-        "[`der-siga-uea.drawio`](der-siga-uea.drawio) (uma página por módulo) e o "
-        "[`der-siga-uea.sql`](der-siga-uea.sql), que é executado num PostgreSQL para conferir chaves e restrições.",
+        "Gerado por [`modelo_logico.py`](modelo_logico.py); não edite à mão. O mesmo modelo gera o "
+        "[`modelo-logico-siga-uea.drawio`](modelo-logico-siga-uea.drawio) (uma página por módulo) e o "
+        "[`modelo-logico-siga-uea.sql`](modelo-logico-siga-uea.sql), que é executado num PostgreSQL para conferir "
+        "chaves e restrições. O DER (modelo conceitual, notação de Chen) que dá origem a este modelo está em "
+        "[`der-conceitual-siga-uea.drawio`](der-conceitual-siga-uea.drawio).",
         "",
         f"**{len(T)} tabelas**: {len(implementadas)} já criadas pelas migrações (MOD01) e "
         f"{len(T) - len(implementadas)} planejadas para os próximos marcos. Os nomes seguem as entidades dos "
@@ -592,7 +597,7 @@ def markdown() -> str:
 
 if __name__ == "__main__":
     validar()
-    (AQUI / "der-siga-uea.sql").write_text(sql(), encoding="utf8")
-    (AQUI / "der-siga-uea.drawio").write_text(drawio(), encoding="utf8")
-    (AQUI / "der-siga-uea.md").write_text(markdown(), encoding="utf8")
+    (AQUI / "modelo-logico-siga-uea.sql").write_text(sql(), encoding="utf8")
+    (AQUI / "modelo-logico-siga-uea.drawio").write_text(drawio(), encoding="utf8")
+    (AQUI / "modelo-logico-siga-uea.md").write_text(markdown(), encoding="utf8")
     print(f"{len(T)} tabelas, {sum(1 for t in T if t.implementada)} criadas; arquivos em {AQUI}")
