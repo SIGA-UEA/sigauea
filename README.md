@@ -98,6 +98,8 @@ Abra `http://localhost:3000`. O site repassa tudo que começa com `/api/v1` para
 
 Quando a coordenação cadastra alguém, o link de ativação dessa pessoa aparece no terminal da API (enquanto não houver SMTP configurado).
 
+**E-mail de verdade:** copie `backend/.env.exemplo` para `backend/.env` e preencha o SMTP (no Gmail, use uma senha de app). A API lê esse arquivo ao subir; ele fica fora do git porque tem a senha. Peça o `.env` do projeto a quem administra a conta de e-mail.
+
 **Contas de demonstração:** para testar ou apresentar com todos os perfis sem esperar link de ativação, rode `python -m app.seed --demo`. Ele cria uma conta já ativa por perfil, todas com a senha `Siga@2026`:
 
 | E-mail | Perfil |

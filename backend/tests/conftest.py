@@ -14,6 +14,7 @@ os.environ["DATABASE_URL"] = (
     os.environ.get("TEST_DATABASE_URL") or f"sqlite:///{tempfile.mkdtemp()}/teste.db"
 )
 os.environ["BCRYPT_CUSTO"] = "10"
+os.environ["SMTP_HOST"] = ""  # testes nunca enviam e-mail de verdade, mesmo com backend/.env
 
 import pytest
 from fastapi.testclient import TestClient

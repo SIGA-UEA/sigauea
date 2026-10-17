@@ -1,13 +1,30 @@
 """Configurações da API, lidas de variáveis de ambiente.
 
 Todos os valores têm um padrão que funciona em desenvolvimento, então a API
-sobe sem nenhum arquivo .env. Em produção, defina as variáveis no servidor.
+sobe sem nenhum arquivo .env. Para não digitar as variáveis a cada terminal,
+copie backend/.env.exemplo para backend/.env (fora do git) e preencha.
+Em produção, defina as variáveis no servidor.
 """
 
 import os
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+
+def _carregar_env(arquivo: Path) -> None:
+    """Lê CHAVE=valor do backend/.env. O que já estiver definido no ambiente vale mais."""
+    if not arquivo.exists():
+        return
+    for linha in arquivo.read_text(encoding="utf-8").splitlines():
+        linha = linha.strip()
+        if not linha or linha.startswith("#") or "=" not in linha:
+            continue
+        chave, valor = linha.split("=", 1)
+        os.environ.setdefault(chave.strip(), valor.strip().strip('"').strip("'"))
+
+
+_carregar_env(BASE_DIR / ".env")
 
 # Banco: SQLite em desenvolvimento; em produção use PostgreSQL, por exemplo
 # postgresql+psycopg://usuario:senha@host:5432/siga
