@@ -32,7 +32,12 @@ class Base(DeclarativeBase):
 
 
 def get_db() -> Iterator[Session]:
-    """Dependência do FastAPI: abre uma sessão por requisição e fecha no fim."""
+    """Dependência do FastAPI: abre uma sessão por requisição e fecha no fim.
+
+    As rotas usam Depends(get_db, scope="function"): a sessão fecha quando a função da
+    rota termina, antes das tarefas em segundo plano (e-mail), que abrem sessão própria.
+    Sem isso, sob carga cada requisição segura duas conexões e o pool se esgota (RNF01).
+    """
     db = SessionLocal()
     try:
         yield db

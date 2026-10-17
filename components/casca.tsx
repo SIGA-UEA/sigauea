@@ -18,6 +18,9 @@ type Item = { href: string; rotulo: string; icone: NomeIcone; perfis?: Perfil[] 
 // a API confere a permissão de novo em cada rota.
 const MENU: Item[] = [
   { href: "/inicio", rotulo: "Início", icone: "inicio" },
+  { href: "/tccs", rotulo: "TCCs", icone: "documento" },
+  { href: "/orientacoes", rotulo: "Orientações", icone: "certo", perfis: ["orientador", "professor_disciplina"] },
+  { href: "/turmas", rotulo: "Turmas", icone: "turma", perfis: ["coordenador"] },
   { href: "/usuarios", rotulo: "Usuários e perfis", icone: "pessoas", perfis: ["coordenador"] },
   { href: "/perfil", rotulo: "Meu perfil", icone: "perfil" },
 ];

@@ -76,7 +76,7 @@ export function DefinirSenha({ tipo }: { tipo: "ativacao" | "recuperacao" }) {
       router.replace(textos.destino);
     } catch (e) {
       const erro = e as ErroApi;
-      if (erro.motivo) setMotivo(erro.motivo);
+      if (erro.motivo === "invalido" || erro.motivo === "expirado" || erro.motivo === "usado") setMotivo(erro.motivo);
       else if (erro.criterios) {
         // O backend valida de novo e diz o que falta.
         setErros({ senha: "Falta: " + erro.criterios.map((c) => c.descricao).join("; ") + "." });

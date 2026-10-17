@@ -18,10 +18,23 @@ from app.models import NotificacaoEmail, Usuario
 
 
 def enfileirar(
-    db: Session, tarefas: BackgroundTasks, usuario: Usuario, tipo: str, assunto: str, corpo: str
+    db: Session,
+    tarefas: BackgroundTasks,
+    usuario: Usuario,
+    tipo: str,
+    assunto: str,
+    corpo: str,
+    entidade: str | None = None,
+    entidade_id: int | None = None,
 ) -> None:
     """Registra a pendência e agenda o envio para depois da resposta."""
-    notificacao = NotificacaoEmail(usuario_id=usuario.id, tipo=tipo, destinatario=usuario.email)
+    notificacao = NotificacaoEmail(
+        usuario_id=usuario.id,
+        tipo=tipo,
+        destinatario=usuario.email,
+        entidade=entidade,
+        entidade_id=entidade_id,
+    )
     db.add(notificacao)
     db.flush()  # gera o id sem encerrar a transação do cadastro
     tarefas.add_task(processar, notificacao.id, assunto, corpo)

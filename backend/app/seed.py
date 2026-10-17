@@ -34,12 +34,16 @@ from app.models import (
     PERFIL_PROFESSOR,
     PERFIS,
     TOKEN_ATIVACAO,
+    MATRICULADO,
     Aluno,
     AreaInteresse,
     Curso,
     Docente,
+    MatriculaTurma,
     Nucleo,
     Perfil,
+    PeriodoLetivo,
+    Turma,
     Usuario,
     UsuarioPerfil,
 )
@@ -126,7 +130,35 @@ def criar_contas_demo(db, nucleo: Nucleo) -> None:
                 perfil = db.scalar(select(Perfil).where(Perfil.codigo == codigo))
                 db.add(UsuarioPerfil(usuario_id=usuario.id, perfil_id=perfil.id))
         print(f"  {email:<26} {', '.join(PERFIS[p] for p in perfis)}")
+    db.flush()
+    criar_turma_demo(db, curso)
     print()
+
+
+def criar_turma_demo(db, curso: Curso) -> None:
+    """Período 2026/2, turma TCC1 do professor de demonstração e a aluna matriculada,
+    para o cadastro de TCC (Sprint S03) já poder ser testado."""
+    from datetime import date
+
+    periodo = db.scalar(select(PeriodoLetivo).where(PeriodoLetivo.codigo == "2026/2"))
+    if periodo is None:
+        periodo = PeriodoLetivo(codigo="2026/2", inicio=date(2026, 8, 1), fim=date(2026, 12, 20),
+                                prazo_versao_final=date(2026, 12, 11))
+        db.add(periodo)
+        db.flush()
+    professor = buscar_por_email(db, "professor@exemplo.com")
+    aluno = buscar_por_email(db, "aluno@exemplo.com")
+    codigo = f"TCC1-{curso.sigla}-{periodo.codigo}-1"
+    turma = db.scalar(select(Turma).where(Turma.codigo == codigo))
+    if turma is None:
+        turma = Turma(codigo=codigo, disciplina="TCC1", curso_id=curso.id, periodo_id=periodo.id,
+                      professor_id=professor.id)
+        db.add(turma)
+        db.flush()
+    if not db.scalar(select(MatriculaTurma).where(MatriculaTurma.turma_id == turma.id,
+                                                  MatriculaTurma.aluno_id == aluno.id)):
+        db.add(MatriculaTurma(turma_id=turma.id, aluno_id=aluno.id, situacao=MATRICULADO, incluido_por=professor.id))
+    print(f"  Turma {codigo} (período {periodo.codigo}) com aluno@exemplo.com matriculada.")
 
 
 def main() -> None:

@@ -2,7 +2,7 @@
 
 Gerado por [`modelo_logico.py`](modelo_logico.py); não edite à mão. O mesmo modelo gera o [`modelo-logico-siga-uea.drawio`](modelo-logico-siga-uea.drawio) (uma página por módulo) e o [`modelo-logico-siga-uea.sql`](modelo-logico-siga-uea.sql), que é executado num PostgreSQL para conferir chaves e restrições. O DER (modelo conceitual, estilo brModelo) que dá origem a este modelo está em [`der-conceitual-siga-uea.drawio`](der-conceitual-siga-uea.drawio).
 
-**45 tabelas**: 14 já criadas pelas migrações (MOD01) e 31 planejadas para os próximos marcos. Os nomes seguem as entidades dos diagramas de sequência FL01 a FL10 (`MatriculaTurma` → `matricula_turma`, `ResultadoDefesa` → `resultado_defesa`).
+**45 tabelas**: 23 já criadas pelas migrações (MOD01 e o cadastro de TCC da S03) e 22 planejadas para os próximos marcos. Os nomes seguem as entidades dos diagramas de sequência FL01 a FL10 (`MatriculaTurma` → `matricula_turma`, `ResultadoDefesa` → `resultado_defesa`).
 
 ## Histórico preservado (CA-02 da HT02)
 
@@ -714,7 +714,7 @@ Restrições: `CHECK length(trim(texto)) > 0`
 
 ### MOD03 · Gestão e acompanhamento dos TCCs
 
-**`periodo_letivo`** (planejada) · Período letivo AAAA/N e prazo da versão final (PeriodoLetivo). Requisitos: RBN08.01, RBN11.01
+**`periodo_letivo`** (criada) · Período letivo AAAA/N e prazo da versão final (PeriodoLetivo). Requisitos: RBN08.01, RBN11.01
 
 | Coluna | Tipo | Chave | Nulo | Observação |
 |---|---|---|---|---|
@@ -726,7 +726,7 @@ Restrições: `CHECK length(trim(texto)) > 0`
 
 Restrições: `CHECK fim > inicio`
 
-**`turma`** (planejada) · Turma de TCC1 (disciplina) ou TCC2 (orientador). Requisitos: RBN08.01, RBN08.05, RN24, RN26
+**`turma`** (criada) · Turma de TCC1 (disciplina) ou TCC2 (orientador). Requisitos: RBN08.01, RBN08.05, RN24, RN26
 
 | Coluna | Tipo | Chave | Nulo | Observação |
 |---|---|---|---|---|
@@ -741,7 +741,7 @@ Restrições: `CHECK fim > inicio`
 
 Restrições: `único (curso_id, disciplina, periodo_id, professor_id)`
 
-**`matricula_turma`** (planejada) · Aluno na turma e sua situação (MatriculaTurma). Requisitos: RBN08.02, RBN08.03, RN05
+**`matricula_turma`** (criada) · Aluno na turma e sua situação (MatriculaTurma). Requisitos: RBN08.02, RBN08.03, RN05
 
 | Coluna | Tipo | Chave | Nulo | Observação |
 |---|---|---|---|---|
@@ -756,7 +756,7 @@ Restrições: `único (curso_id, disciplina, periodo_id, professor_id)`
 
 Restrições: `único (turma_id, aluno_id)` · `CHECK nota_final IS NULL OR nota_final BETWEEN 0 AND 10`
 
-**`tcc`** (planejada) · O trabalho: cadastro, protocolo e situação acadêmica (TCC). Requisitos: RBN03.01 a RBN03.05, RBN08.04, RN04, RN10
+**`tcc`** (criada) · O trabalho: cadastro, protocolo e situação acadêmica (TCC). Requisitos: RBN03.01 a RBN03.05, RBN08.04, RN04, RN10
 
 | Coluna | Tipo | Chave | Nulo | Observação |
 |---|---|---|---|---|
@@ -781,7 +781,7 @@ Restrições: `único (turma_id, aluno_id)` · `CHECK nota_final IS NULL OR nota
 
 Restrições: `único (aluno_id, periodo_id)`
 
-**`tcc_palavra_chave`** (planejada) · Palavras-chave do TCC (no máximo 10). Requisitos: RBN03.01
+**`tcc_palavra_chave`** (criada) · Palavras-chave do TCC (no máximo 10). Requisitos: RBN03.01
 
 | Coluna | Tipo | Chave | Nulo | Observação |
 |---|---|---|---|---|
@@ -791,7 +791,7 @@ Restrições: `único (aluno_id, periodo_id)`
 
 Restrições: `CHECK ordem BETWEEN 1 AND 10`
 
-**`historico_situacao`** (planejada) · Cada mudança de situação do TCC (HistoricoSituacao). Requisitos: RBN05.04, RN10
+**`historico_situacao`** (criada) · Cada mudança de situação do TCC (HistoricoSituacao). Requisitos: RBN05.04, RN10
 
 | Coluna | Tipo | Chave | Nulo | Observação |
 |---|---|---|---|---|
@@ -816,7 +816,7 @@ Restrições: `CHECK ordem BETWEEN 1 AND 10`
 
 Restrições: `CHECK resultado = 'APROVADO' OR length(trim(parecer)) > 0`
 
-**`orientacao`** (planejada) · Vínculos de orientação e coorientação, com histórico (Orientacao). Requisitos: RBN06.01 a RBN06.03, RN16
+**`orientacao`** (criada) · Vínculos de orientação e coorientação, com histórico (Orientacao). Requisitos: RBN06.01 a RBN06.03, RN16
 
 | Coluna | Tipo | Chave | Nulo | Observação |
 |---|---|---|---|---|
@@ -1061,7 +1061,7 @@ Restrições: `único (defesa_id, versao)`
 
 ### MOD05 · Publicação
 
-**`publicacao_artigo`** (planejada) · Submissão do artigo a um veículo (PublicacaoArtigo). Requisitos: RBN03.02, RBN12.01, RN03, RN21
+**`publicacao_artigo`** (criada) · Submissão do artigo a um veículo (PublicacaoArtigo). Requisitos: RBN03.02, RBN12.01, RN03, RN21
 
 | Coluna | Tipo | Chave | Nulo | Observação |
 |---|---|---|---|---|
@@ -1076,7 +1076,7 @@ Restrições: `único (defesa_id, versao)`
 
 Restrições: `CHECK situacao_atual <> 'PUBLICADO' OR doi IS NOT NULL`
 
-**`historico_publicacao`** (planejada) · Sequência de situações editoriais (HistoricoPublicacao). Requisitos: RBN05.02, RBN12.01, RBN12.02
+**`historico_publicacao`** (criada) · Sequência de situações editoriais (HistoricoPublicacao). Requisitos: RBN05.02, RBN12.01, RBN12.02
 
 | Coluna | Tipo | Chave | Nulo | Observação |
 |---|---|---|---|---|

@@ -11,7 +11,9 @@ export class ErroApi extends Error {
   campo?: string; // 409: qual campo está duplicado
   campos?: Record<string, string>; // 400: mensagem por campo
   criterios?: CriterioSenha[]; // 422: critérios de senha que faltam
-  motivo?: "invalido" | "expirado" | "usado"; // link que não vale mais
+  // link que não vale mais; ou o motivo de uma recusa do cadastro de TCC (sem matrícula, duplicado...)
+  motivo?: "invalido" | "expirado" | "usado" | "sem_matricula" | "duplicado" | "nao_editavel" | string;
+  campos_pendentes?: string[]; // 422 na submissão do TCC: o que ainda falta
 
   constructor(status: number, corpo: Record<string, unknown>) {
     super(

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, FastAPI
 
 from app.erros import registrar_tratadores
-from app.routes import areas, auth, catalogo, health, perfil, usuarios
+from app.routes import areas, auth, catalogo, health, perfil, tccs, turmas, usuarios
 
 app = FastAPI(
     title="SIGA UEA API",
@@ -19,4 +19,6 @@ v1.include_router(perfil.router)  # antes de usuarios: /usuarios/me não é /usu
 v1.include_router(usuarios.router)
 v1.include_router(areas.router)  # antes de catalogo: /areas/gestao não é a lista simples
 v1.include_router(catalogo.router)
+v1.include_router(turmas.router)
+v1.include_router(tccs.router)  # /tccs/formulario antes de /tccs/{id} (ordem no arquivo)
 app.include_router(v1)

@@ -13,15 +13,15 @@ router = APIRouter(tags=["catálogo"], dependencies=[Depends(usuario_atual)])
 
 
 @router.get("/perfis", response_model=list[PerfilOut])
-def listar_perfis(db: Session = Depends(get_db)):
+def listar_perfis(db: Session = Depends(get_db, scope="function")):
     return db.scalars(select(Perfil).order_by(Perfil.id)).all()
 
 
 @router.get("/cursos", response_model=list[CursoOut])
-def listar_cursos(db: Session = Depends(get_db)):
+def listar_cursos(db: Session = Depends(get_db, scope="function")):
     return db.scalars(select(Curso).order_by(Curso.nome)).all()
 
 
 @router.get("/areas", response_model=list[AreaOut])
-def listar_areas(db: Session = Depends(get_db)):
+def listar_areas(db: Session = Depends(get_db, scope="function")):
     return db.scalars(select(AreaInteresse).order_by(AreaInteresse.nome)).all()

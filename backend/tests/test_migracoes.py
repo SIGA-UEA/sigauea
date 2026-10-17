@@ -48,9 +48,15 @@ def test_banco_recusa_email_repetido_com_outras_maiusculas():
 def test_banco_antigo_sem_alembic_e_reconhecido_e_atualizado():
     """O siga_dev.db de quem rodou o seed antes das migrações continua servindo."""
     url = _url()
+    # Um banco da época do create_all tem o esquema da 0001 e não tem alembic_version.
+    from alembic import command
+
+    from app.migracoes import _config
+
+    command.upgrade(_config(url), "0001")
     engine = create_engine(url)
-    tabelas_0001 = [t for t in Base.metadata.sorted_tables if t.name != "foto_usuario"]
-    Base.metadata.create_all(engine, tables=tabelas_0001)
+    with engine.begin() as conexao:
+        conexao.execute(text("DROP TABLE alembic_version"))
     engine.dispose()
 
     atualizar_banco(url)

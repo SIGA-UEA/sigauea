@@ -31,7 +31,7 @@ def meu_perfil(eu: Usuario = Depends(usuario_atual)) -> UsuarioOut:
 
 @router.put("/me", response_model=UsuarioOut)
 def atualizar_meu_perfil(
-    dados: MeuPerfilAtualizar, db: Session = Depends(get_db), eu: Usuario = Depends(usuario_atual)
+    dados: MeuPerfilAtualizar, db: Session = Depends(get_db, scope="function"), eu: Usuario = Depends(usuario_atual)
 ) -> UsuarioOut:
     return para_saida(perfil.atualizar(db, eu, dados))
 
@@ -40,7 +40,7 @@ def atualizar_meu_perfil(
 def trocar_senha(
     dados: TrocarSenhaEntrada,
     request: Request,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope="function"),
     eu: Usuario = Depends(usuario_atual),
 ) -> Mensagem:
     perfil.trocar_senha(db, eu, dados, token_da_requisicao(request))
@@ -49,20 +49,20 @@ def trocar_senha(
 
 @router.put("/me/foto", response_model=UsuarioOut)
 async def trocar_minha_foto(
-    foto: UploadFile, db: Session = Depends(get_db), eu: Usuario = Depends(usuario_atual)
+    foto: UploadFile, db: Session = Depends(get_db, scope="function"), eu: Usuario = Depends(usuario_atual)
 ) -> UsuarioOut:
     return para_saida(perfil.salvar_foto(db, eu, await ler_imagem(foto), eu))
 
 
 @router.delete("/me/foto", response_model=UsuarioOut)
 def remover_minha_foto(
-    db: Session = Depends(get_db), eu: Usuario = Depends(usuario_atual)
+    db: Session = Depends(get_db, scope="function"), eu: Usuario = Depends(usuario_atual)
 ) -> UsuarioOut:
     return para_saida(perfil.remover_foto(db, eu, eu))
 
 
 @router.get("/{usuario_id}/foto", dependencies=[Depends(usuario_atual)])
-def ver_foto(usuario_id: int, db: Session = Depends(get_db)) -> Response:
+def ver_foto(usuario_id: int, db: Session = Depends(get_db, scope="function")) -> Response:
     foto = perfil.obter_foto(db, usuario_id)
     # A tela pede com ?v=<versão>; quando a foto muda, a versão muda, então pode guardar em cache.
     return Response(

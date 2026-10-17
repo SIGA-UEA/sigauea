@@ -167,3 +167,20 @@ Todas as rotas ficam sob `/api/v1`. Erros sempre têm `detail` (mensagem para a 
 | `GET /cursos`, `GET /areas`, `GET /perfis` | logado | RN01, RN07 |
 
 Códigos de resposta usados: `400` validação, `401` sem sessão ou credenciais inválidas, `403` perfil sem permissão, `404` não encontrado, `409` duplicado, `413` arquivo grande, `415` formato não aceito, `422` senha fora da regra, `423` conta bloqueada.
+
+## Contrato da API: cadastro de TCC (Sprint S03, Marco de integração 2)
+
+Tabelas criadas pela migração `0004_cadastro_de_tcc`: `periodo_letivo`, `turma`, `matricula_turma`, `tcc`, `tcc_palavra_chave`, `historico_situacao`, `orientacao`, `publicacao_artigo` e `historico_publicacao`; `notificacao_email` ganhou `entidade` e `entidade_id`. Dicionário de dados em [`docs/modelagem/modelo-logico-siga-uea.md`](modelagem/modelo-logico-siga-uea.md).
+
+| Método e rota | Quem pode | Diagrama / requisito |
+|---|---|---|
+| `GET /periodos`, `POST /periodos` | logado / coordenador | RBN08.01 |
+| `GET /turmas`, `POST /turmas`, `GET /turmas/{id}` | coordenador | RBN08.01 |
+| `POST /turmas/{id}/alunos`, `PATCH /turmas/{id}/alunos/{matricula_id}` | coordenador | RBN08.02, RBN08.03 |
+| `GET /tccs/formulario` | aluno | DS-FL01-A (403 sem matrícula, RN05) |
+| `POST /tccs`, `PUT /tccs/{id}` | aluno | DS-FL01-B, RBN03.01, RBN03.02 (409 duplicado RN04, 409 não editável) |
+| `POST /tccs/{id}/submissao` | aluno | DS-FL01, RBN03.03 a RBN03.05 (422 com `campos_pendentes`) |
+| `GET /tccs`, `GET /tccs/{id}` | logado (cada perfil vê os seus, RN07) | RBN05.01 |
+| `POST /tccs/{id}/orientacoes` | aluno | DS-FL03-B, RBN03.06 |
+| `GET /orientacoes`, `GET /orientacoes/{id}` | orientador, professor | DS-FL03 |
+| `POST /orientacoes/{id}/resposta` | orientador, professor | DS-FL03-A, RBN06.01 a RBN06.03 (409 se já respondida) |

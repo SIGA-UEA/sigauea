@@ -108,6 +108,8 @@ Quando a coordenação cadastra alguém, o link de ativação dessa pessoa apare
 | `banca@exemplo.com` | Membro da banca |
 | `aluno@exemplo.com` | Aluno |
 
+O `--demo` também cria o período 2026/2 e a turma `TCC1-EC-2026/2-1` (professor `professor@exemplo.com`) com `aluno@exemplo.com` matriculada, para o cadastro de TCC já poder ser testado: entre como aluno, cadastre o TCC indicando `Olga Orientadora`, entre como `orientador@exemplo.com` para aceitar em **Orientações** e volte como aluno para enviar e receber o protocolo.
+
 Não use `--demo` no servidor de produção.
 
 **Testes da API:**
@@ -168,16 +170,18 @@ backend/app/
   migracoes.py       aplica as migrações (usado pelo seed e pelos testes)
   schemas/           formato de entrada e saída de cada rota
   routes/            rotas: recebem a requisição e chamam um serviço
-  services/          regras de negócio (usuários, perfil, áreas, autenticação, tokens, e-mail, auditoria)
+  services/          regras de negócio (usuários, perfil, áreas, autenticação, tokens, e-mail, auditoria,
+                     turmas e cadastro de TCC)
   security.py        senha (bcrypt, regra de complexidade) e tokens
   deps.py            quem está logado e qual perfil a rota exige
   seed.py            carga inicial de desenvolvimento
-backend/migrations/  migrações do banco (Alembic): 0001 esquema inicial, 0002 foto
+backend/migrations/  migrações do banco (Alembic): 0001 esquema inicial, 0002 foto, 0003 auditoria imutável, 0004 cadastro de TCC
 backend/tests/       um teste por critério de aceite
 docs/                modelo de dados (diagrama ER), script SQL do PostgreSQL e contrato da API
 
 app/(publico)/       telas sem login: entrar, ativar, esqueci-senha, redefinir-senha (TEL01)
-app/(sistema)/       telas com login: inicio, usuarios e perfil (TEL02)
+app/(sistema)/       telas com login: inicio, usuarios e perfil (TEL02), tccs (TEL04, TEL05 cadastro,
+                     TEL06 acompanhamento), orientacoes (TEL08) e turmas
 components/          peças de interface reutilizadas (botão, campo, modal, casca...)
 lib/                 api.ts (chamadas à API), sessao (usuário logado), tipos, regra de senha
 proxy.ts             manda para o login quem abre tela interna sem cookie de sessão
@@ -202,6 +206,23 @@ Sprint S02, épico EP01 (usuários e acesso):
 | RBN01.10 | Docente edita telefone, foto, curso e, se orienta ou dá a disciplina, as áreas de interesse |
 | RBN01.04 | Troca de senha pelo próprio usuário, com a mesma regra de complexidade |
 | RBN01.07 | Link de recuperação válido por 10 minutos |
+
+Sprint S03, cadastro de TCC de ponta a ponta (tela, API, banco, protocolo único, bloqueio de duplicidade e auditoria), seguindo os diagramas de sequência DS-FL01, DS-FL01-A, DS-FL01-B, DS-FL03, DS-FL03-A e DS-FL03-B:
+
+| Requisito | O que faz |
+|---|---|
+| RBN08.01 a RBN08.03 | Coordenação cria o período letivo e as turmas de TCC1/TCC2, inclui alunos e muda a situação da matrícula (tela Turmas) |
+| RN05 | Só o aluno MATRICULADO numa turma do período abre o cadastro; os demais recebem 403 com o motivo |
+| RBN03.01 | Cadastro em 3 passos (trabalho, orientação, revisar e enviar), salvo como rascunho a cada passo; resumo até 500 palavras e até 10 palavras-chave |
+| RBN03.02 | Modalidade artigo com veículo, situação editorial e DOI (obrigatório se publicado) |
+| RBN03.03, RBN06.01 a RBN06.03 | Indicação de orientador e coorientador elegíveis; o orientador aceita ou recusa com motivo, e o aluno é avisado por e-mail. O envio só é liberado depois do aceite |
+| RBN03.04, RNF06 | Protocolo único `TCC-AAAA-NNNNN` gerado no envio, com trava na linha (reenviar devolve o mesmo protocolo) |
+| RBN03.05 | Cadastro em análise não pode ser editado; devolvido volta a ser editável e mantém o protocolo |
+| RN04 | Um TCC por aluno por período (restrição única no banco e 409 na API) |
+| RNF03 | Histórico de situações com usuário e data, e auditoria de criar, editar, enviar e responder |
+| RNF01 | 30 envios simultâneos no PostgreSQL: p95 de 0,76 s (meta: 3 s), 30 protocolos distintos |
+
+O PDF do trabalho não é pedido no cadastro: ele entra depois, em Documentos e versões (RAN07).
 
 Banco: PostgreSQL com migrações Alembic; a suíte inteira de testes passa também no PostgreSQL 16. Modelo de dados e contrato da API em [`docs/modelo-de-dados.md`](docs/modelo-de-dados.md). A modelagem do sistema inteiro está em [`docs/modelagem/`](docs/modelagem/): o DER (modelo conceitual, no estilo brModelo) e o modelo lógico com as 45 tabelas de todos os módulos; as tabelas dos próximos módulos ganham migração quando cada módulo for implementado.
 

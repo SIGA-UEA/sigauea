@@ -22,7 +22,7 @@ def token_da_requisicao(request: Request) -> str | None:
     return request.cookies.get(config.COOKIE_SESSAO)
 
 
-def usuario_atual(request: Request, db: Session = Depends(get_db)) -> Usuario:
+def usuario_atual(request: Request, db: Session = Depends(get_db, scope="function")) -> Usuario:
     """Exige sessão válida. Cada uso renova os 60 minutos (expiração deslizante)."""
     token = token_da_requisicao(request)
     sessao = (

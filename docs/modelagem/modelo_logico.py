@@ -157,20 +157,20 @@ T: list[Tabela] = [
     Tabela("periodo_letivo", "MOD03", "Período letivo AAAA/N e prazo da versão final (PeriodoLetivo).", [
         id_(), c("codigo", "VARCHAR(6)", uk=True, nota="ex.: 2026/2"), c("inicio", "DATE"), c("fim", "DATE"),
         c("prazo_versao_final", "DATE", nulo=True)],
-        checks=["fim > inicio"], requisitos="RBN08.01, RBN11.01"),
+        checks=["fim > inicio"], implementada=True, requisitos="RBN08.01, RBN11.01"),
     Tabela("turma", "MOD03", "Turma de TCC1 (disciplina) ou TCC2 (orientador).", [
         id_(), c("codigo", "VARCHAR(30)", uk=True), c("disciplina", "VARCHAR(4)", valores=("TCC1", "TCC2")),
         c("curso_id", "INTEGER", fk="curso"), c("periodo_id", "INTEGER", fk="periodo_letivo"),
         c("professor_id", "INTEGER", fk="docente", nota="responsável (RN24, RN26)"),
         c("encerrada_em", "TIMESTAMP", nulo=True), criado()],
-        unicos=[("curso_id", "disciplina", "periodo_id", "professor_id")], requisitos="RBN08.01, RBN08.05, RN24, RN26"),
+        unicos=[("curso_id", "disciplina", "periodo_id", "professor_id")], implementada=True, requisitos="RBN08.01, RBN08.05, RN24, RN26"),
     Tabela("matricula_turma", "MOD03", "Aluno na turma e sua situação (MatriculaTurma).", [
         id_(), c("turma_id", "INTEGER", fk="turma"), c("aluno_id", "INTEGER", fk="aluno"),
         c("situacao", "VARCHAR(12)", valores=("MATRICULADO", "DESISTENTE", "APROVADO", "REPROVADO")),
         c("nota_final", "NUMERIC(3,1)", nulo=True), c("incluido_por", "INTEGER", fk="usuario"),
         c("incluido_em", "TIMESTAMP"), c("situacao_alterada_em", "TIMESTAMP", nulo=True)],
         unicos=[("turma_id", "aluno_id")], checks=["nota_final IS NULL OR nota_final BETWEEN 0 AND 10"],
-        requisitos="RBN08.02, RBN08.03, RN05"),
+        implementada=True, requisitos="RBN08.02, RBN08.03, RN05"),
     Tabela("tcc", "MOD03", "O trabalho: cadastro, protocolo e situação acadêmica (TCC).", [
         id_(), c("aluno_id", "INTEGER", fk="aluno"), c("turma_id", "INTEGER", fk="turma"),
         c("periodo_id", "INTEGER", fk="periodo_letivo"),
@@ -184,15 +184,15 @@ T: list[Tabela] = [
         c("desistencia_motivo", "TEXT", nulo=True),
         c("tcc_origem_id", "INTEGER", fk="tcc", nulo=True, nota="TCC1 que originou o TCC2"),
         criado(), c("atualizado_em", "TIMESTAMP")],
-        unicos=[("aluno_id", "periodo_id")], requisitos="RBN03.01 a RBN03.05, RBN08.04, RN04, RN10"),
+        unicos=[("aluno_id", "periodo_id")], implementada=True, requisitos="RBN03.01 a RBN03.05, RBN08.04, RN04, RN10"),
     Tabela("tcc_palavra_chave", "MOD03", "Palavras-chave do TCC (no máximo 10).", [
         c("tcc_id", "INTEGER", pk=True, fk="tcc"), c("ordem", "SMALLINT", pk=True), c("palavra", "VARCHAR(60)")],
-        checks=["ordem BETWEEN 1 AND 10"], requisitos="RBN03.01"),
+        checks=["ordem BETWEEN 1 AND 10"], implementada=True, requisitos="RBN03.01"),
     Tabela("historico_situacao", "MOD03", "Cada mudança de situação do TCC (HistoricoSituacao).", [
         id_(), c("tcc_id", "INTEGER", fk="tcc"), c("situacao_anterior", "VARCHAR(12)", nulo=True),
         c("situacao_nova", "VARCHAR(12)"), c("usuario_id", "INTEGER", fk="usuario"),
         c("observacao", "TEXT", nulo=True), c("registrado_em", "TIMESTAMP")],
-        requisitos="RBN05.04, RN10"),
+        implementada=True, requisitos="RBN05.04, RN10"),
     Tabela("analise_cadastro", "MOD03", "Decisões da coordenação sobre o cadastro (AnaliseCadastro).", [
         id_(), c("tcc_id", "INTEGER", fk="tcc"), c("coordenador_id", "INTEGER", fk="docente"),
         c("resultado", "VARCHAR(10)", valores=("APROVADO", "DEVOLVIDO", "REPROVADO")),
@@ -205,7 +205,7 @@ T: list[Tabela] = [
         c("solicitado_em", "TIMESTAMP"), c("respondido_em", "TIMESTAMP", nulo=True),
         c("motivo_recusa", "TEXT", nulo=True), c("encerrado_em", "TIMESTAMP", nulo=True),
         c("justificativa_encerramento", "TEXT", nulo=True)],
-        requisitos="RBN06.01 a RBN06.03, RN16"),
+        implementada=True, requisitos="RBN06.01 a RBN06.03, RN16"),
     Tabela("documento_tcc", "MOD03", "Versões do PDF do TCC (DocumentoTCC).", [
         id_(), c("tcc_id", "INTEGER", fk="tcc"), c("versao", "INTEGER"),
         c("finalidade", "VARCHAR(12)", valores=("PRELIMINAR", "BANCA", "FINAL")),
@@ -322,13 +322,13 @@ T: list[Tabela] = [
         c("situacao_atual", "VARCHAR(12)", valores=("SUBMETIDO", "EM_REVISAO", "ACEITO", "RECUSADO", "PUBLICADO")),
         criado()],
         checks=["situacao_atual <> 'PUBLICADO' OR doi IS NOT NULL"],
-        requisitos="RBN03.02, RBN12.01, RN03, RN21"),
+        implementada=True, requisitos="RBN03.02, RBN12.01, RN03, RN21"),
     Tabela("historico_publicacao", "MOD05", "Sequência de situações editoriais (HistoricoPublicacao).", [
         id_(), c("publicacao_id", "INTEGER", fk="publicacao_artigo"),
         c("situacao", "VARCHAR(12)", valores=("SUBMETIDO", "EM_REVISAO", "ACEITO", "RECUSADO", "PUBLICADO")),
         c("data", "DATE"), c("usuario_id", "INTEGER", fk="usuario", nulo=True, nota="nulo = sistema (DOI)"),
         c("registrado_em", "TIMESTAMP")],
-        requisitos="RBN05.02, RBN12.01, RBN12.02"),
+        implementada=True, requisitos="RBN05.02, RBN12.01, RBN12.02"),
 ]
 
 POR_NOME = {t.nome: t for t in T}
@@ -546,7 +546,7 @@ def markdown() -> str:
         "chaves e restrições. O DER (modelo conceitual, estilo brModelo) que dá origem a este modelo está em "
         "[`der-conceitual-siga-uea.drawio`](der-conceitual-siga-uea.drawio).",
         "",
-        f"**{len(T)} tabelas**: {len(implementadas)} já criadas pelas migrações (MOD01) e "
+        f"**{len(T)} tabelas**: {len(implementadas)} já criadas pelas migrações (MOD01 e o cadastro de TCC da S03) e "
         f"{len(T) - len(implementadas)} planejadas para os próximos marcos. Os nomes seguem as entidades dos "
         "diagramas de sequência FL01 a FL10 (`MatriculaTurma` → `matricula_turma`, `ResultadoDefesa` → `resultado_defesa`).",
         "",

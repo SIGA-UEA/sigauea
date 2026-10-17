@@ -17,14 +17,14 @@ router = APIRouter(prefix="/areas", tags=["áreas de interesse"])
 
 @router.get("/gestao", response_model=list[AreaUsoOut])
 def listar_para_gestao(
-    db: Session = Depends(get_db), _: Usuario = Depends(coordenador)
+    db: Session = Depends(get_db, scope="function"), _: Usuario = Depends(coordenador)
 ) -> list[AreaUsoOut]:
     return areas.listar_com_uso(db)
 
 
 @router.post("", response_model=AreaUsoOut, status_code=201)
 def criar_area(
-    dados: AreaEntrada, db: Session = Depends(get_db), ator: Usuario = Depends(coordenador)
+    dados: AreaEntrada, db: Session = Depends(get_db, scope="function"), ator: Usuario = Depends(coordenador)
 ) -> AreaUsoOut:
     return areas.criar(db, dados.nome, ator)
 
@@ -33,7 +33,7 @@ def criar_area(
 def renomear_area(
     area_id: int,
     dados: AreaEntrada,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope="function"),
     ator: Usuario = Depends(coordenador),
 ) -> AreaUsoOut:
     return areas.renomear(db, area_id, dados.nome, ator)
@@ -41,7 +41,7 @@ def renomear_area(
 
 @router.delete("/{area_id}", status_code=204)
 def excluir_area(
-    area_id: int, db: Session = Depends(get_db), ator: Usuario = Depends(coordenador)
+    area_id: int, db: Session = Depends(get_db, scope="function"), ator: Usuario = Depends(coordenador)
 ) -> Response:
     areas.excluir(db, area_id, ator)
     return Response(status_code=204)

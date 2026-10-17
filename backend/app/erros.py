@@ -34,10 +34,17 @@ def registrar_tratadores(app: FastAPI) -> None:
     @app.exception_handler(RequestValidationError)
     def _validacao(_: Request, erro: RequestValidationError) -> JSONResponse:
         # O FastAPI responde 422 por padrão; as fichas pedem 400 para validação.
-        campos = {
-            str(e["loc"][-1]): _MENSAGENS.get(e["type"], "Valor inválido.")
-            for e in erro.errors()
-        }
+        def mensagem(e) -> str:
+            # Validadores próprios (ex.: "O resumo passa de 500 palavras.") têm texto pronto.
+            if e["type"] == "value_error":
+                return str(e["msg"]).removeprefix("Value error, ")
+            return _MENSAGENS.get(e["type"], "Valor inválido.")
+
+        campos = {}
+        for e in erro.errors():
+            # Em listas o último item do caminho é o índice; o campo é o nome antes dele.
+            nomes = [str(p) for p in e["loc"] if not isinstance(p, int)]
+            campos.setdefault(nomes[-1] if nomes else "corpo", mensagem(e))
         return JSONResponse(
             {"detail": "Confira os campos destacados.", "campos": campos}, status_code=400
         )
