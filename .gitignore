@@ -49,3 +49,6 @@ next-env.d.ts
 
 # cache do Python em qualquer pasta
 __pycache__/
+
+# build do Next gerado por engano dentro do backend
+backend/.next/
