@@ -76,6 +76,46 @@ def test_rbn0801_so_a_coordenacao_cria_turma(cenario):
     assert r.status_code == 403
 
 
+# ---------------------------------------------------------------- Minhas turmas (professor e aluno)
+
+
+def test_minhas_turmas_do_professor_com_contagem_de_alunos_e_tccs(cenario, caixa):
+    paulo = ativar(caixa, PROFESSOR["email"])
+    [cartao] = paulo.get("/api/v1/turmas/minhas").json()
+    assert cartao["codigo"] == "TCC1-EC-2026/2-1" and cartao["periodo"] == "2026/2"
+    assert (cartao["alunos"], cartao["com_tcc"], cartao["pendentes"]) == (1, 0, 0)
+    assert cartao["minha_matricula"] is None and cartao["meu_tcc"] is None
+
+    tcc = _rascunho(cenario).json()
+    assert paulo.get("/api/v1/turmas/minhas").json()[0]["com_tcc"] == 1
+    turma = paulo.get(f"/api/v1/turmas/{cartao['id']}").json()
+    [aluna] = turma["alunos"]
+    assert aluna["tcc"]["id"] == tcc["id"] and aluna["tcc"]["situacao"] == "RASCUNHO"
+    assert aluna["tcc"]["orientador"]["nome"] == "Olga Orientadora"
+    assert aluna["tcc"]["orientacao"] == "PENDENTE"
+
+
+def test_minhas_turmas_so_mostra_ao_docente_as_turmas_que_ele_conduz(cenario):
+    _rascunho(cenario)
+    # a Olga não conduz a turma, então não a vê em Minhas turmas
+    assert cenario["olga"].get("/api/v1/turmas/minhas").json() == []
+
+
+def test_minhas_turmas_do_aluno_mostra_matricula_e_o_proprio_tcc(cenario):
+    [cartao] = cenario["aluno"].get("/api/v1/turmas/minhas").json()
+    assert cartao["minha_matricula"] == "MATRICULADO" and cartao["meu_tcc"] is None
+    assert cartao["professor"]["nome"] == "Paulo Professor"
+    tcc = _rascunho(cenario).json()
+    cartao = cenario["aluno"].get("/api/v1/turmas/minhas").json()[0]
+    assert cartao["meu_tcc"]["id"] == tcc["id"]
+
+
+def test_rn07_aluno_e_outro_docente_nao_abrem_a_turma(cenario):
+    turma_id = cenario["turma"]["id"]
+    assert cenario["aluno"].get(f"/api/v1/turmas/{turma_id}").status_code == 404  # não vê colegas
+    assert cenario["olga"].get(f"/api/v1/turmas/{turma_id}").status_code == 404
+
+
 # ---------------------------------------------------------------- DS-FL01-A · abrir o formulário
 
 

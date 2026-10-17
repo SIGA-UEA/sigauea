@@ -1445,12 +1445,39 @@
         }
       }
     },
+    "/api/v1/turmas/minhas": {
+      "get": {
+        "tags": [
+          "turmas"
+        ],
+        "summary": "Minhas Turmas",
+        "description": "Professor: as turmas que conduz. Aluno: as turmas em que está matriculado.",
+        "operationId": "minhas_turmas_api_v1_turmas_minhas_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TurmaCartao"
+                  },
+                  "type": "array",
+                  "title": "Response Minhas Turmas Api V1 Turmas Minhas Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/turmas/{turma_id}": {
       "get": {
         "tags": [
           "turmas"
         ],
         "summary": "Obter Turma",
+        "description": "Coordenação ou o professor responsável pela turma (404 para os demais).",
         "operationId": "obter_turma_api_v1_turmas__turma_id__get",
         "parameters": [
           {
@@ -2637,6 +2664,16 @@
             "type": "string",
             "format": "date-time",
             "title": "Incluido Em"
+          },
+          "tcc": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TccDaTurma"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -2954,6 +2991,65 @@
         "title": "SubmissaoOut",
         "description": "Resposta do DS-FL01: protocolo, situação e se o aviso ao orientador ficou pendente."
       },
+      "TccDaTurma": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "titulo": {
+            "type": "string",
+            "title": "Titulo"
+          },
+          "situacao": {
+            "type": "string",
+            "title": "Situacao"
+          },
+          "protocolo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protocolo"
+          },
+          "orientador": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PessoaOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "orientacao": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Orientacao"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "titulo",
+          "situacao",
+          "protocolo",
+          "orientador",
+          "orientacao"
+        ],
+        "title": "TccDaTurma",
+        "description": "O TCC de um aluno, como aparece na turma (sem resumo nem histórico)."
+      },
       "TccOut": {
         "properties": {
           "id": {
@@ -3238,6 +3334,94 @@
           "nova_senha"
         ],
         "title": "TrocarSenhaEntrada"
+      },
+      "TurmaCartao": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "codigo": {
+            "type": "string",
+            "title": "Codigo"
+          },
+          "disciplina": {
+            "type": "string",
+            "enum": [
+              "TCC1",
+              "TCC2"
+            ],
+            "title": "Disciplina"
+          },
+          "curso": {
+            "$ref": "#/components/schemas/CursoOut"
+          },
+          "periodo": {
+            "type": "string",
+            "title": "Periodo"
+          },
+          "professor": {
+            "$ref": "#/components/schemas/PessoaOut"
+          },
+          "encerrada": {
+            "type": "boolean",
+            "title": "Encerrada"
+          },
+          "alunos": {
+            "type": "integer",
+            "title": "Alunos"
+          },
+          "com_tcc": {
+            "type": "integer",
+            "title": "Com Tcc"
+          },
+          "pendentes": {
+            "type": "integer",
+            "title": "Pendentes"
+          },
+          "minha_matricula": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "MATRICULADO",
+                  "DESISTENTE",
+                  "APROVADO",
+                  "REPROVADO"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minha Matricula"
+          },
+          "meu_tcc": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TccDaTurma"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "codigo",
+          "disciplina",
+          "curso",
+          "periodo",
+          "professor",
+          "encerrada",
+          "alunos",
+          "com_tcc",
+          "pendentes"
+        ],
+        "title": "TurmaCartao",
+        "description": "Cartão de Minhas turmas: o professor vê as que conduz; o aluno, a sua."
       },
       "TurmaCriar": {
         "properties": {

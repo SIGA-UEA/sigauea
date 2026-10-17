@@ -212,6 +212,7 @@ Sprint S03, cadastro de TCC de ponta a ponta (tela, API, banco, protocolo único
 | Requisito | O que faz |
 |---|---|
 | RBN08.01 a RBN08.03 | Coordenação cria o período letivo e as turmas de TCC1/TCC2, inclui alunos e muda a situação da matrícula (tela Turmas) |
+| RAN08, RN24 | Minhas turmas: o professor vê as turmas que conduz e abre cada uma com o TCC de cada aluno; o aluno vê a sua turma, a matrícula e o próprio TCC |
 | RN05 | Só o aluno MATRICULADO numa turma do período abre o cadastro; os demais recebem 403 com o motivo |
 | RBN03.01 | Cadastro em 3 passos (trabalho, orientação, revisar e enviar), salvo como rascunho a cada passo; resumo até 500 palavras e até 10 palavras-chave |
 | RBN03.02 | Modalidade artigo com veículo, situação editorial e DOI (obrigatório se publicado) |

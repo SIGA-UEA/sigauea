@@ -12,15 +12,24 @@ import { Avatar } from "./avatar";
 import { Icone, type NomeIcone } from "./icone";
 import { Marca } from "./marca";
 
-type Item = { href: string; rotulo: string; icone: NomeIcone; perfis?: Perfil[] };
+type Item = { href: string; rotulo: string; icone: NomeIcone; perfis?: Perfil[]; exceto?: Perfil[] };
 
-// Cada tela nova entra aqui. "perfis" limita quem vê o item no menu;
-// a API confere a permissão de novo em cada rota.
+// Cada tela nova entra aqui. "perfis" limita quem vê o item no menu e "exceto"
+// esconde de quem já tem outro item para a mesma tela. A API confere a permissão
+// de novo em cada rota.
 const MENU: Item[] = [
   { href: "/inicio", rotulo: "Início", icone: "inicio" },
   { href: "/tccs", rotulo: "TCCs", icone: "documento" },
   { href: "/orientacoes", rotulo: "Orientações", icone: "certo", perfis: ["orientador", "professor_disciplina"] },
   { href: "/turmas", rotulo: "Turmas", icone: "turma", perfis: ["coordenador"] },
+  {
+    href: "/turmas",
+    rotulo: "Minhas turmas",
+    icone: "turma",
+    perfis: ["professor_disciplina", "orientador"],
+    exceto: ["coordenador"],
+  },
+  { href: "/turmas", rotulo: "Minha turma", icone: "turma", perfis: ["aluno"] },
   { href: "/usuarios", rotulo: "Usuários e perfis", icone: "pessoas", perfis: ["coordenador"] },
   { href: "/perfil", rotulo: "Meu perfil", icone: "perfil" },
 ];
@@ -29,7 +38,11 @@ export function Casca({ children }: { children: React.ReactNode }) {
   const { usuario, sair } = useSessao();
   const caminho = usePathname();
   const [menuAberto, setMenuAberto] = useState(false);
-  const itens = MENU.filter((i) => !i.perfis || i.perfis.some((p) => usuario.perfis.includes(p)));
+  const itens = MENU.filter(
+    (i) =>
+      (!i.perfis || i.perfis.some((p) => usuario.perfis.includes(p))) &&
+      !i.exceto?.some((p) => usuario.perfis.includes(p)),
+  );
 
   return (
     <div className="min-h-dvh">

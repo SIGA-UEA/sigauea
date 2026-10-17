@@ -88,6 +88,14 @@ export type StatusOrientacao = "PENDENTE" | "ACEITA" | "RECUSADA" | "SUBSTITUIDA
 
 export type Periodo = { id: number; codigo: string; inicio: string; fim: string; prazo_versao_final: string | null };
 export type TurmaResumo = { id: number; codigo: string; disciplina: Disciplina; periodo: string; professor: Pessoa };
+export type TccDaTurma = {
+  id: number;
+  titulo: string;
+  situacao: SituacaoTcc;
+  protocolo: string | null;
+  orientador: Pessoa | null;
+  orientacao: StatusOrientacao | null;
+};
 export type Matricula = {
   id: number;
   aluno: Pessoa;
@@ -95,6 +103,28 @@ export type Matricula = {
   curso: Curso;
   situacao: SituacaoMatricula;
   incluido_em: string;
+  tcc: TccDaTurma | null;
+};
+// Minhas turmas: o professor vê as que conduz; o aluno, a sua (com a matrícula e o próprio TCC).
+export type TurmaCartao = {
+  id: number;
+  codigo: string;
+  disciplina: Disciplina;
+  curso: Curso;
+  periodo: string;
+  professor: Pessoa;
+  encerrada: boolean;
+  alunos: number;
+  com_tcc: number;
+  pendentes: number;
+  minha_matricula: SituacaoMatricula | null;
+  meu_tcc: TccDaTurma | null;
+};
+export const NOME_SITUACAO_MATRICULA: Record<SituacaoMatricula, string> = {
+  MATRICULADO: "Matriculado",
+  DESISTENTE: "Desistente",
+  APROVADO: "Aprovado",
+  REPROVADO: "Reprovado",
 };
 export type Turma = {
   id: number;

@@ -21,6 +21,14 @@
   --color-ambar-claro: #fdf1d3;
   --color-vermelho: #b3261e;
   --color-vermelho-claro: #fce8e6;
+
+  /* Faixa de cada curso nos cartões de turma (as mesmas do protótipo). */
+  --color-curso-ec: #dcede7;
+  --color-curso-ec-tinta: #2c6154;
+  --color-curso-si: #e0e8f5;
+  --color-curso-si-tinta: #34527f;
+  --color-curso-lc: #f4ead6;
+  --color-curso-lc-tinta: #6d5016;
 }
 
 @theme inline {

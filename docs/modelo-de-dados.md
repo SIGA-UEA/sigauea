@@ -175,7 +175,9 @@ Tabelas criadas pela migração `0004_cadastro_de_tcc`: `periodo_letivo`, `turma
 | Método e rota | Quem pode | Diagrama / requisito |
 |---|---|---|
 | `GET /periodos`, `POST /periodos` | logado / coordenador | RBN08.01 |
-| `GET /turmas`, `POST /turmas`, `GET /turmas/{id}` | coordenador | RBN08.01 |
+| `GET /turmas`, `POST /turmas` | coordenador | RBN08.01 |
+| `GET /turmas/{id}` | coordenador ou professor da turma (404 para os demais) | RAN08, RN24 |
+| `GET /turmas/minhas` | logado: o docente vê as turmas que conduz; o aluno, a sua | RAN08, RN07 |
 | `POST /turmas/{id}/alunos`, `PATCH /turmas/{id}/alunos/{matricula_id}` | coordenador | RBN08.02, RBN08.03 |
 | `GET /tccs/formulario` | aluno | DS-FL01-A (403 sem matrícula, RN05) |
 | `POST /tccs`, `PUT /tccs/{id}` | aluno | DS-FL01-B, RBN03.01, RBN03.02 (409 duplicado RN04, 409 não editável) |

@@ -53,6 +53,17 @@ class TurmaCriar(BaseModel):
     professor_id: int
 
 
+class TccDaTurma(BaseModel):
+    """O TCC de um aluno, como aparece na turma (sem resumo nem histórico)."""
+
+    id: int
+    titulo: str
+    situacao: str
+    protocolo: str | None
+    orientador: PessoaOut | None
+    orientacao: str | None  # status do vínculo com o orientador (PENDENTE, ACEITA...)
+
+
 class MatriculaOut(BaseModel):
     id: int
     aluno: PessoaOut
@@ -60,6 +71,24 @@ class MatriculaOut(BaseModel):
     curso: CursoOut  # o curso do aluno, mesmo se diferente do da turma (RBN08.02)
     situacao: SituacaoMatricula
     incluido_em: DataHora
+    tcc: TccDaTurma | None = None
+
+
+class TurmaCartao(BaseModel):
+    """Cartão de Minhas turmas: o professor vê as que conduz; o aluno, a sua."""
+
+    id: int
+    codigo: str
+    disciplina: Disciplina
+    curso: CursoOut
+    periodo: str
+    professor: PessoaOut
+    encerrada: bool
+    alunos: int
+    com_tcc: int
+    pendentes: int  # pedidos de orientação desta turma esperando a resposta de quem vê
+    minha_matricula: SituacaoMatricula | None = None  # só para o aluno
+    meu_tcc: TccDaTurma | None = None  # só para o aluno
 
 
 class TurmaOut(BaseModel):

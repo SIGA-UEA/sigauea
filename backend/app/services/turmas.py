@@ -3,7 +3,7 @@
 A matrícula na turma com situação MATRICULADO é o que libera o cadastro de TCC (RN05).
 """
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -11,12 +11,16 @@ from app.database import agora
 from app.erros import ErroAPI
 from app.models import (
     MATRICULADO,
+    PAPEL_ORIENTADOR,
+    PENDENTE,
+    PERFIL_COORDENADOR,
     PERFIL_ORIENTADOR,
     PERFIL_PROFESSOR,
     Aluno,
     Docente,
     MatriculaTurma,
     PeriodoLetivo,
+    Tcc,
     Turma,
     Usuario,
 )
@@ -25,6 +29,8 @@ from app.schemas.tcc import (
     PeriodoCriar,
     PeriodoOut,
     PessoaOut,
+    TccDaTurma,
+    TurmaCartao,
     TurmaCriar,
     TurmaOut,
     TurmaResumo,
@@ -48,7 +54,26 @@ def turma_resumo(t: Turma) -> TurmaResumo:
     )
 
 
+def _tcc_da_turma(tcc: Tcc | None) -> TccDaTurma | None:
+    if tcc is None:
+        return None
+    # O vínculo vigente com o orientador: o mais recente ainda não encerrado.
+    vinculo = next(
+        (o for o in reversed(tcc.orientacoes) if o.papel == PAPEL_ORIENTADOR and o.encerrado_em is None),
+        None,
+    )
+    return TccDaTurma(
+        id=tcc.id,
+        titulo=tcc.titulo,
+        situacao=tcc.situacao,
+        protocolo=tcc.protocolo,
+        orientador=pessoa(vinculo.professor) if vinculo else None,
+        orientacao=vinculo.status if vinculo else None,
+    )
+
+
 def para_saida(t: Turma) -> TurmaOut:
+    tcc_do_aluno = {tcc.aluno_id: tcc for tcc in t.tccs}
     return TurmaOut(
         id=t.id,
         codigo=t.codigo,
@@ -65,6 +90,7 @@ def para_saida(t: Turma) -> TurmaOut:
                 curso=CursoOut.model_validate(m.aluno.curso),
                 situacao=m.situacao,
                 incluido_em=m.incluido_em,
+                tcc=_tcc_da_turma(tcc_do_aluno.get(m.aluno_id)),
             )
             for m in t.matriculas
         ],
@@ -111,8 +137,52 @@ def _obter(db: Session, turma_id: int) -> Turma:
     return turma
 
 
-def obter(db: Session, turma_id: int) -> Turma:
-    return _obter(db, turma_id)
+def obter_para(db: Session, usuario: Usuario, turma_id: int) -> Turma:
+    """A coordenação abre qualquer turma; o professor, só as que conduz (RN07, RN24).
+    Para os demais a turma "não existe" (404), sem revelar quem está nela."""
+    turma = db.get(Turma, turma_id)
+    if turma is None or (PERFIL_COORDENADOR not in usuario.perfis and turma.professor_id != usuario.id):
+        raise ErroAPI(404, "Turma não encontrada.")
+    return turma
+
+
+def minhas(db: Session, usuario: Usuario) -> list[Turma]:
+    """Minhas turmas: as que o docente conduz e aquelas em que o aluno está matriculado."""
+    # Subconsulta em vez de DISTINCT: no PostgreSQL, DISTINCT não aceita ordenar
+    # por coluna de outra tabela (periodo_letivo.inicio).
+    matriculado = select(MatriculaTurma.turma_id).where(MatriculaTurma.aluno_id == usuario.id)
+    consulta = (
+        select(Turma)
+        .join(PeriodoLetivo, PeriodoLetivo.id == Turma.periodo_id)
+        .where(or_(Turma.professor_id == usuario.id, Turma.id.in_(matriculado)))
+        .order_by(PeriodoLetivo.inicio.desc(), Turma.codigo)
+    )
+    return list(db.scalars(consulta))
+
+
+def cartao(t: Turma, usuario: Usuario) -> TurmaCartao:
+    minha = next((m for m in t.matriculas if m.aluno_id == usuario.id), None)
+    meu_tcc = next((tcc for tcc in t.tccs if tcc.aluno_id == usuario.id), None)
+    pendentes = sum(
+        1
+        for tcc in t.tccs
+        for o in tcc.orientacoes
+        if o.professor_id == usuario.id and o.status == PENDENTE and o.encerrado_em is None
+    )
+    return TurmaCartao(
+        id=t.id,
+        codigo=t.codigo,
+        disciplina=t.disciplina,
+        curso=CursoOut.model_validate(t.curso),
+        periodo=t.periodo.codigo,
+        professor=pessoa(t.professor.usuario),
+        encerrada=t.encerrada_em is not None,
+        alunos=len(t.matriculas),
+        com_tcc=len(t.tccs),
+        pendentes=pendentes,
+        minha_matricula=minha.situacao if minha else None,
+        meu_tcc=_tcc_da_turma(meu_tcc) if minha else None,
+    )
 
 
 def criar_turma(db: Session, dados: TurmaCriar, ator: Usuario) -> Turma:

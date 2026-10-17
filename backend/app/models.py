@@ -318,6 +318,8 @@ class Turma(Base):
     matriculas: Mapped[list["MatriculaTurma"]] = relationship(
         back_populates="turma", order_by="MatriculaTurma.id"
     )
+    # Só leitura: os TCCs cadastrados pelos alunos desta turma (Minhas turmas).
+    tccs: Mapped[list["Tcc"]] = relationship(viewonly=True)
 
 
 class MatriculaTurma(Base):

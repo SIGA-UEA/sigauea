@@ -30,6 +30,7 @@ const DESENHOS = {
   turma: "M3 7l9-4 9 4-9 4zM7 9v5c0 1.7 2.2 3 5 3s5-1.3 5-3V9M21 7v6",
   enviar: "M22 2 11 13M22 2l-7 20-4-9-9-4z",
   voltar: "M15 18l-6-6 6-6",
+  relogio: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18M12 7v5l3 2",
 } as const;
 
 export type NomeIcone = keyof typeof DESENHOS;

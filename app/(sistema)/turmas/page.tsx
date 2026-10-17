@@ -3,26 +3,79 @@
 // Turmas de TCC (RBN08.01 a RBN08.03): a coordenação abre o período letivo, cria as
 // turmas de TCC1/TCC2 com o professor da disciplina e inclui os alunos. Sem matrícula
 // (MATRICULADO) numa turma do período, o aluno não consegue cadastrar o TCC (RN05).
+// Professor e aluno veem aqui "Minhas turmas", em cartões como no protótipo.
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Aviso, Selo, type TipoAviso } from "@/components/aviso";
 import { Botao } from "@/components/botao";
 import { Campo, Entrada, Selecao } from "@/components/campo";
 import { Icone } from "@/components/icone";
 import { Modal } from "@/components/modal";
+import { CartaoTurma } from "@/components/turma";
 import { api, ErroApi } from "@/lib/api";
-import type { Curso, Periodo, SituacaoMatricula, Turma, Usuario } from "@/lib/tipos";
-
-const NOME_MATRICULA: Record<SituacaoMatricula, string> = {
-  MATRICULADO: "Matriculado",
-  DESISTENTE: "Desistente",
-  APROVADO: "Aprovado",
-  REPROVADO: "Reprovado",
-};
+import { useSessao } from "@/lib/sessao";
+import {
+  NOME_SITUACAO_MATRICULA as NOME_MATRICULA,
+  type Curso,
+  type Periodo,
+  type Turma,
+  type TurmaCartao,
+  type Usuario,
+} from "@/lib/tipos";
 
 type Erros = Record<string, string>;
 
 export default function PaginaTurmas() {
+  const { tem } = useSessao();
+  return tem("coordenador") ? <GestaoTurmas /> : <MinhasTurmas aluno={tem("aluno")} />;
+}
+
+function MinhasTurmas({ aluno }: { aluno: boolean }) {
+  const [lista, setLista] = useState<TurmaCartao[] | null>(null);
+  const [erro, setErro] = useState("");
+
+  useEffect(() => {
+    api<TurmaCartao[]>("/turmas/minhas").then(setLista).catch((e: ErroApi) => setErro(e.message));
+  }, []);
+
+  return (
+    <div className="flex flex-col gap-5">
+      <header>
+        <p className="text-xs font-semibold tracking-widest text-suave uppercase">{aluno ? "Aluno" : "Docente"}</p>
+        <h1 className="text-2xl font-semibold">{aluno ? "Minha turma" : "Minhas turmas"}</h1>
+        <p className="mt-1 text-sm text-suave">
+          {aluno
+            ? "A turma em que você está matriculado, com o professor responsável e o seu TCC."
+            : "Cada turma reúne os seus alunos e os TCCs deles."}
+        </p>
+      </header>
+      {erro && <Aviso tipo="erro">{erro}</Aviso>}
+      {!lista ? (
+        <p role="status" className="text-sm text-suave">
+          Carregando…
+        </p>
+      ) : lista.length === 0 ? (
+        <div className="rounded-xl border border-borda bg-superficie p-6 text-sm">
+          <p className="font-medium">{aluno ? "Você ainda não está em uma turma" : "Você ainda não tem turma"}</p>
+          <p className="mt-1 text-suave">
+            {aluno
+              ? "Quando a coordenação incluir você numa turma de TCC, ela aparece aqui e o cadastro do TCC é liberado."
+              : "Quando a coordenação criar uma turma e indicar você como responsável, ela aparece aqui."}
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,300px),1fr))] gap-4">
+          {lista.map((t) => (
+            <CartaoTurma key={t.id} turma={t} aluno={aluno} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GestaoTurmas() {
   const [periodos, setPeriodos] = useState<Periodo[]>([]);
   const [periodoId, setPeriodoId] = useState("");
   const [turmas, setTurmas] = useState<Turma[] | null>(null);
@@ -198,6 +251,9 @@ function AlunosDaTurma({
 
   return (
     <div className="flex flex-col gap-3 border-t border-borda px-4 py-4">
+      <Link href={`/turmas/${turma.id}`} className="self-start text-sm font-medium text-azul-forte hover:underline">
+        Abrir turma e ver os TCCs dos alunos
+      </Link>
       {turma.alunos.length === 0 ? (
         <p className="text-sm text-suave">Nenhum aluno nesta turma ainda.</p>
       ) : (
