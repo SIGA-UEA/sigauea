@@ -202,11 +202,12 @@ export default function PaginaCadastroTcc() {
     if (await salvar()) setPasso(passo + 1);
   }
 
-  async function salvarESair() {
+  // RBN03.01: salvar o rascunho mantém o aluno em TEL05 ("Rascunho salvo às HH:MM").
+  async function salvarRascunho() {
     const e = validar(1);
     setErros(e);
     if (Object.keys(e).length) return setPasso(1);
-    if (await salvar()) router.push("/tccs");
+    await salvar();
   }
 
   // DS-FL01: submissão
@@ -569,8 +570,8 @@ export default function PaginaCadastroTcc() {
               Voltar
             </Botao>
           )}
-          <Botao variante="contorno" carregando={ocupado} onClick={salvarESair}>
-            Salvar e sair
+          <Botao variante="contorno" carregando={ocupado} onClick={salvarRascunho}>
+            Salvar rascunho
           </Botao>
           {passo < 3 ? (
             <Botao carregando={ocupado} onClick={avancar}>

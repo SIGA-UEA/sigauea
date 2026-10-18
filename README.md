@@ -130,6 +130,8 @@ $env:TEST_DATABASE_URL = "postgresql+psycopg://usuario:senha@localhost:5432/siga
 python -m pytest
 ```
 
+**Teste de carga (RNF01, CT-03.04-05):** `backend/scripts/carga_rnf01.py` faz 30 submissões simultâneas do cadastro de TCC e confere o p95 (meta: 3 s) e se os 30 protocolos são distintos. Rode num banco de teste; as instruções estão no começo do arquivo.
+
 **Banco de dados (migrações):**
 
 O esquema do banco vem das migrações em `backend/migrations/versions/`, e não de `create_all`, para o PostgreSQL de produção e o SQLite de desenvolvimento terem as mesmas tabelas. Quem já tinha um `siga_dev.db` antigo não precisa apagar: o seed reconhece e atualiza.
