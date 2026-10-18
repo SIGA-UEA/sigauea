@@ -34,18 +34,21 @@ def _usuario(db, endereco=COORD) -> Usuario:
         ("Aa1!aaaa", set()),  # CT-01.04-04: 8 caracteres
     ],
 )
-def test_hu0104_criterios(senha, faltando):
+def test_ct_01_04_02_a_01_04_04_criterios_da_senha(senha, faltando):
+    """CT-01.04-02, CT-01.04-03, CT-01.04-04."""
     assert {c["codigo"] for c in validate_password(senha)} == faltando
 
 
-def test_hu0104_ca1_ativacao_recusa_senha_fraca_e_lista_criterios(coord, caixa):
+def test_ct_01_04_05_ativacao_recusa_senha_fraca_e_lista_criterios(coord, caixa):
+    """CT-01.04-05."""
     coord.post("/api/v1/alunos", json=ALUNO)
     r = coord.post("/api/v1/auth/ativar", json={"token": caixa[-1]["token"], "senha": "abc12345"})
     assert r.status_code == 422
     assert {c["codigo"] for c in r.json()["criterios"]} == {"maiuscula", "especial"}
 
 
-def test_hu0104_ca3_senha_gravada_com_bcrypt_e_nunca_devolvida(coord, caixa, db):
+def test_ct_01_04_01_e_01_04_06_senha_gravada_com_bcrypt_e_nunca_devolvida(coord, caixa, db):
+    """CT-01.04-01, CT-01.04-06."""
     coord.post("/api/v1/alunos", json=ALUNO)
     aluno = ativar(caixa, ALUNO["email"])
     senha_hash = _usuario(db, ALUNO["email"]).senha_hash
@@ -57,7 +60,8 @@ def test_hu0104_ca3_senha_gravada_com_bcrypt_e_nunca_devolvida(coord, caixa, db)
 # ---------- HU01.05 ----------
 
 
-def test_hu0105_ca2_link_ativa_a_conta_e_vale_uma_vez(coord, caixa, anonimo, db):
+def test_ct_01_05_02_e_01_05_04_link_ativa_a_conta_e_vale_uma_vez(coord, caixa, anonimo, db):
+    """CT-01.05-02, CT-01.05-04."""
     coord.post("/api/v1/alunos", json=ALUNO)
     token = caixa[-1]["token"]
     # O banco guarda só o hash do token.
@@ -76,7 +80,8 @@ def test_hu0105_ca2_link_ativa_a_conta_e_vale_uma_vez(coord, caixa, anonimo, db)
     assert anonimo.post("/api/v1/auth/validar-token", json=validar).json()["motivo"] == "usado"
 
 
-def test_hu0105_ca3_link_expirado(coord, caixa, anonimo, db):
+def test_ct_01_05_03_link_expirado(coord, caixa, anonimo, db):
+    """CT-01.05-03."""
     coord.post("/api/v1/alunos", json=ALUNO)
     registro = db.scalar(select(TokenUsuario))
     assert timedelta(hours=47) < registro.expira_em - agora() <= timedelta(hours=48)
@@ -87,7 +92,8 @@ def test_hu0105_ca3_link_expirado(coord, caixa, anonimo, db):
     assert (r.status_code, r.json()["motivo"]) == (400, "expirado")
 
 
-def test_hu0105_ca4_falha_de_email_nao_desfaz_cadastro_e_permite_reenvio(coord, monkeypatch, db, caixa):
+def test_ct_01_05_06_falha_de_email_nao_desfaz_cadastro_e_permite_reenvio(coord, monkeypatch, db, caixa):
+    """CT-01.05-06."""
     def falhar(*_):
         raise ConnectionError("servidor de e-mail fora do ar")
 
@@ -117,7 +123,8 @@ def test_hu0105_reenvio_so_para_quem_aguarda_ativacao(coord):
 # ---------- HU01.06 ----------
 
 
-def test_hu0106_ca1_login_devolve_usuario_e_cookie_httponly(anonimo):
+def test_ct_01_06_01_login_devolve_usuario_e_cookie_httponly(anonimo):
+    """CT-01.06-01."""
     r = anonimo.post(LOGIN, json={"email": COORD.upper(), "senha": SENHA})
     assert r.status_code == 200
     assert "coordenador" in r.json()["usuario"]["perfis"]
@@ -125,14 +132,16 @@ def test_hu0106_ca1_login_devolve_usuario_e_cookie_httponly(anonimo):
     assert anonimo.get("/api/v1/auth/me").json()["email"] == COORD
 
 
-def test_hu0106_ca2_mesma_mensagem_para_email_ou_senha_errados(anonimo):
+def test_ct_01_06_02_e_01_06_03_mesma_mensagem_para_email_ou_senha_errados(anonimo):
+    """CT-01.06-02, CT-01.06-03."""
     senha_errada = anonimo.post(LOGIN, json={"email": COORD, "senha": "Errada@123"})
     email_errado = anonimo.post(LOGIN, json={"email": "ninguem@uea.edu.br", "senha": SENHA})
     assert senha_errada.status_code == email_errado.status_code == 401
     assert senha_errada.json() == email_errado.json()
 
 
-def test_hu0106_ca3_bloqueio_apos_3_falhas_mesmo_com_senha_correta(anonimo, db):
+def test_ct_01_06_04_e_01_06_05_bloqueio_apos_3_falhas_mesmo_com_senha_correta(anonimo, db):
+    """CT-01.06-04, CT-01.06-05."""
     for _ in range(2):
         assert anonimo.post(LOGIN, json={"email": COORD, "senha": "Errada@123"}).status_code == 401
     assert anonimo.post(LOGIN, json={"email": COORD, "senha": "Errada@123"}).status_code == 423
@@ -153,7 +162,8 @@ def test_hu0106_sucesso_zera_as_tentativas(anonimo, db):
     assert _usuario(db).tentativas_falhas == 0
 
 
-def test_hu0106_ca4_sessao_expira_por_inatividade_e_renova_com_uso(coord, db):
+def test_ct_01_06_07_sessao_expira_por_inatividade_e_renova_com_uso(coord, db):
+    """CT-01.06-07."""
     sessao = db.scalar(select(Sessao))
     sessao.expira_em = agora() + timedelta(minutes=5)
     db.commit()
@@ -185,7 +195,8 @@ def test_hu0106_ca5_toda_tentativa_e_registrada(anonimo, db):
     assert acoes == ["login_falha", "login_falha", "login_sucesso"]
 
 
-def test_hu0106_ca6_conta_nao_ativada_recebe_a_mesma_mensagem(coord, caixa, anonimo):
+def test_ct_01_05_05_conta_nao_ativada_recebe_a_mesma_mensagem(coord, caixa, anonimo):
+    """CT-01.05-05."""
     coord.post("/api/v1/alunos", json=ALUNO)
     r = anonimo.post(LOGIN, json={"email": ALUNO["email"], "senha": SENHA})
     assert r.status_code == 401 and r.json()["detail"] == "E-mail ou senha inválidos."
@@ -194,7 +205,8 @@ def test_hu0106_ca6_conta_nao_ativada_recebe_a_mesma_mensagem(coord, caixa, anon
 # ---------- HU01.07 ----------
 
 
-def test_hu0107_ca1_ca2_resposta_igual_e_email_so_para_cadastrado(anonimo, caixa):
+def test_ct_01_07_01_e_01_07_02_resposta_igual_e_email_so_para_cadastrado(anonimo, caixa):
+    """CT-01.07-01, CT-01.07-02."""
     existe = anonimo.post("/api/v1/auth/esqueci-senha", json={"email": COORD})
     nao_existe = anonimo.post("/api/v1/auth/esqueci-senha", json={"email": "ninguem@uea.edu.br"})
     assert existe.status_code == nao_existe.status_code == 202
@@ -202,7 +214,8 @@ def test_hu0107_ca1_ca2_resposta_igual_e_email_so_para_cadastrado(anonimo, caixa
     assert [m["para"] for m in caixa] == [COORD]
 
 
-def test_hu0107_ca3_ca4_troca_a_senha_desbloqueia_e_link_nao_se_repete(anonimo, caixa, db):
+def test_ct_01_07_03_e_01_07_04_e_01_07_06_troca_a_senha_desbloqueia_e_link_nao_se_repete(anonimo, caixa, db):
+    """CT-01.07-03, CT-01.07-04, CT-01.07-06."""
     for _ in range(3):
         anonimo.post(LOGIN, json={"email": COORD, "senha": "Errada@123"})
     assert _usuario(db).bloqueado_ate is not None
@@ -235,7 +248,8 @@ def test_hu0107_token_de_ativacao_nao_serve_para_redefinir(coord, caixa, anonimo
     assert (r.status_code, r.json()["motivo"]) == (400, "invalido")
 
 
-def test_rbn0107_link_de_recuperacao_vencido_e_recusado(anonimo, caixa, db):
+def test_ct_01_07_05_link_de_recuperacao_vencido_e_recusado(anonimo, caixa, db):
+    """CT-01.07-05."""
     anonimo.post("/api/v1/auth/esqueci-senha", json={"email": COORD})
     registro = db.scalar(select(TokenUsuario))
     registro.expira_em = agora() - timedelta(seconds=1)  # passaram os 10 minutos

@@ -24,7 +24,8 @@ def _aluno(coord, caixa):
 # ---------- RBN01.02: áreas de interesse ----------
 
 
-def test_rbn0102_coordenador_cria_renomeia_e_exclui_area(coord, db):
+def test_ct_01_02_01_e_01_02_07_coordenador_cria_renomeia_e_exclui_area(coord, db):
+    """CT-01.02-01, CT-01.02-07."""
     r = coord.post("/api/v1/areas", json={"nome": "Computação Gráfica"})
     assert r.status_code == 201
     area = r.json()
@@ -43,12 +44,14 @@ def test_rbn0102_coordenador_cria_renomeia_e_exclui_area(coord, db):
     assert {"criar_area", "editar_area", "excluir_area"} <= set(acoes)
 
 
-def test_rbn0102_nome_repetido_ignora_maiusculas(coord):
+def test_ct_01_02_02_nome_repetido_ignora_maiusculas(coord):
+    """CT-01.02-02."""
     r = coord.post("/api/v1/areas", json={"nome": "engenharia de software"})
     assert r.status_code == 409 and r.json()["campo"] == "nome"
 
 
-def test_rbn0102_excluir_area_em_uso_desvincula_docentes(coord, caixa, db):
+def test_ct_01_02_05_excluir_area_em_uso_desvincula_docentes(coord, caixa, db):
+    """CT-01.02-05."""
     area_id = coord.get("/api/v1/areas").json()[0]["id"]
     docente = coord.post("/api/v1/docentes", json={**DOCENTE, "areas": [area_id]}).json()
     uso = {a["id"]: a["docentes"] for a in coord.get("/api/v1/areas/gestao").json()}
@@ -60,7 +63,8 @@ def test_rbn0102_excluir_area_em_uso_desvincula_docentes(coord, caixa, db):
     assert db.scalar(select(DocenteArea).where(DocenteArea.area_id == area_id)) is None
 
 
-def test_rbn0102_so_coordenador_gerencia_areas(coord, caixa):
+def test_ct_01_02_06_so_coordenador_gerencia_areas(coord, caixa):
+    """CT-01.02-06."""
     orientador = _orientador(coord, caixa)
     assert orientador.post("/api/v1/areas", json={"nome": "Robótica"}).status_code == 403
     assert orientador.get("/api/v1/areas/gestao").status_code == 403
@@ -70,7 +74,8 @@ def test_rbn0102_so_coordenador_gerencia_areas(coord, caixa):
 # ---------- RBN01.10: docente edita os próprios dados ----------
 
 
-def test_rbn0110_docente_edita_telefone_curso_e_areas(coord, caixa, db):
+def test_ct_01_10_01_e_01_10_02_docente_edita_telefone_curso_e_areas(coord, caixa, db):
+    """CT-01.10-01, CT-01.10-02."""
     orientador = _orientador(coord, caixa)
     areas = [a["id"] for a in coord.get("/api/v1/areas").json()[:2]]
     r = orientador.put(
@@ -88,7 +93,8 @@ def test_rbn0110_docente_edita_telefone_curso_e_areas(coord, caixa, db):
     assert set(campos) == {"telefone", "curso", "areas"}
 
 
-def test_rbn0110_nome_e_email_so_a_coordenacao_altera(coord, caixa):
+def test_ct_01_10_04_nome_e_email_so_a_coordenacao_altera(coord, caixa):
+    """CT-01.10-04."""
     orientador = _orientador(coord, caixa)
     r = orientador.put("/api/v1/usuarios/me", json={"nome": "Outro Nome"})
     assert r.status_code == 400
@@ -97,7 +103,8 @@ def test_rbn0110_nome_e_email_so_a_coordenacao_altera(coord, caixa):
     assert orientador.get("/api/v1/usuarios/me").json()["nome"] == DOCENTE["nome"]
 
 
-def test_rbn0110_membro_da_banca_nao_escolhe_areas(coord, caixa):
+def test_ct_01_10_03_membro_da_banca_nao_escolhe_areas(coord, caixa):
+    """CT-01.10-03."""
     banca = _orientador(coord, caixa, perfis=["membro_banca"])
     r = banca.put("/api/v1/usuarios/me", json={"areas": [1]})
     assert r.status_code == 403
@@ -106,7 +113,8 @@ def test_rbn0110_membro_da_banca_nao_escolhe_areas(coord, caixa):
 # ---------- RBN01.09: aluno edita telefone e foto ----------
 
 
-def test_rbn0109_aluno_edita_telefone_mas_nao_o_curso(coord, caixa):
+def test_ct_01_09_01_e_01_09_02_aluno_edita_telefone_mas_nao_o_curso(coord, caixa):
+    """CT-01.09-01, CT-01.09-02."""
     aluno = _aluno(coord, caixa)
     assert aluno.put("/api/v1/usuarios/me", json={"telefone": "92999990000"}).status_code == 200
     assert aluno.put("/api/v1/usuarios/me", json={"curso_id": 2}).status_code == 403
@@ -117,7 +125,8 @@ def test_rbn0109_aluno_edita_telefone_mas_nao_o_curso(coord, caixa):
 # ---------- foto ----------
 
 
-def test_foto_aceita_jpg_png_webp_e_pode_ser_removida(coord, caixa):
+def test_ct_01_09_01_foto_aceita_jpg_png_webp_e_pode_ser_removida(coord, caixa):
+    """CT-01.09-01."""
     aluno = _aluno(coord, caixa)
     for conteudo in (JPG, PNG, WEBP):
         r = aluno.put("/api/v1/usuarios/me/foto", files={"foto": ("x.img", conteudo)})
@@ -134,7 +143,8 @@ def test_foto_aceita_jpg_png_webp_e_pode_ser_removida(coord, caixa):
     assert coord.get(f"/api/v1/usuarios/{eu['id']}/foto").status_code == 404
 
 
-def test_foto_recusa_arquivo_que_nao_e_imagem_mesmo_com_extensao_certa(coord, caixa):
+def test_ct_01_09_03_foto_recusa_arquivo_que_nao_e_imagem_mesmo_com_extensao_certa(coord, caixa):
+    """CT-01.09-03."""
     aluno = _aluno(coord, caixa)
     falso = aluno.put("/api/v1/usuarios/me/foto", files={"foto": ("foto.png", b"MZ\x90\x00")})
     assert falso.status_code == 415

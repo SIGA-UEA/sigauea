@@ -60,7 +60,8 @@ def test_rbn0801_turma_criada_com_codigo_do_curso_e_periodo(cenario):
     assert [a["matricula"] for a in cenario["turma"]["alunos"]] == []  # a resposta da criação veio antes
 
 
-def test_rbn0802_aluno_de_outro_curso_entra_e_mantem_o_curso(coord, cenario, caixa):
+def test_ct_01_03_04_aluno_de_outro_curso_entra_e_mantem_o_curso(coord, cenario, caixa):
+    """CT-01.03-04."""
     outro = coord.post("/api/v1/alunos", json={"nome": "Saulo SI", "email": "saulo@exemplo.com",
                                                "matricula": "24150099", "curso_id": 3}).json()
     turma = coord.post(f"/api/v1/turmas/{cenario['turma']['id']}/alunos", json={"aluno_id": outro["id"]}).json()
@@ -119,7 +120,8 @@ def test_rn07_aluno_e_outro_docente_nao_abrem_a_turma(cenario):
 # ---------------------------------------------------------------- DS-FL01-A · abrir o formulário
 
 
-def test_ds_fl01a_formulario_traz_turma_orientadores_e_areas(cenario):
+def test_ct_03_01_01_formulario_traz_turma_orientadores_e_areas(cenario):
+    """CT-03.01-01."""
     f = cenario["aluno"].get("/api/v1/tccs/formulario").json()
     assert f["turma"]["disciplina"] == "TCC1" and f["situacao_matricula"] == "MATRICULADO"
     assert f["tcc"] is None
@@ -140,7 +142,8 @@ def test_rn05_aluno_sem_matricula_nao_abre_nem_salva(coord, caixa, cenario):
 # ---------------------------------------------------------------- DS-FL01-B · rascunho
 
 
-def test_rbn0301_rascunho_sem_protocolo_e_vinculo_pendente(cenario, caixa, db):
+def test_ct_03_01_04_e_03_04_02_e_06_01_01_rascunho_sem_protocolo_e_vinculo_pendente(cenario, caixa, db):
+    """CT-03.01-04, CT-03.01-05, CT-03.04-02, CT-06.01-01."""
     r = _rascunho(cenario)
     assert r.status_code == 201
     tcc = r.json()
@@ -154,13 +157,15 @@ def test_rbn0301_rascunho_sem_protocolo_e_vinculo_pendente(cenario, caixa, db):
     assert (aviso.entidade, aviso.entidade_id) == ("tcc", tcc["id"])
 
 
-def test_rn04_um_cadastro_por_periodo(cenario):
+def test_ct_03_04_04_um_cadastro_por_periodo(cenario):
+    """CT-03.04-04."""
     assert _rascunho(cenario).status_code == 201
     r = _rascunho(cenario, titulo="Outro trabalho")
     assert r.status_code == 409 and r.json()["motivo"] == "duplicado"
 
 
-def test_rbn0301_resumo_ate_500_palavras_e_ate_10_palavras_chave(cenario):
+def test_ct_03_01_02_e_03_01_03_resumo_ate_500_palavras_e_ate_10_palavras_chave(cenario):
+    """CT-03.01-02, CT-03.01-03."""
     r = _rascunho(cenario, resumo="palavra " * 501)
     assert r.status_code == 400 and "500 palavras" in r.json()["campos"]["resumo"]
     r = _rascunho(cenario, palavras_chave=[f"p{i}" for i in range(11)])
@@ -175,7 +180,8 @@ def test_ds_fl01b_e2_orientador_nao_elegivel(cenario, coord):
     assert r.status_code == 422 and "coorientador_id" in r.json()["campos"]
 
 
-def test_rbn0302_artigo_publicado_exige_doi(cenario):
+def test_ct_03_02_03_e_03_02_04_artigo_publicado_exige_doi(cenario):
+    """CT-03.02-03, CT-03.02-04."""
     artigo = {"tipo_veiculo": "PERIODICO", "veiculo": "Revista Brasileira de Computação", "situacao": "PUBLICADO"}
     r = _rascunho(cenario, modalidade="ARTIGO", artigo=artigo)
     assert r.status_code == 400 and "doi" in r.json()["campos"]
@@ -184,7 +190,8 @@ def test_rbn0302_artigo_publicado_exige_doi(cenario):
     assert r.json()["artigo"]["doi"] == "10.1000/xyz123"
 
 
-def test_ds_fl01b_editar_rascunho_audita_cada_campo(cenario, db):
+def test_ct_03_01_08_editar_rascunho_audita_cada_campo(cenario, db):
+    """CT-03.01-08."""
     tcc = _rascunho(cenario).json()
     corpo = {"titulo": "Novo título do trabalho", "resumo": "Resumo novo.", "palavras_chave": ["IA"],
              "area_id": cenario["area"]["id"], "modalidade": "MONOGRAFIA",
@@ -260,7 +267,8 @@ def test_rbn0303_nao_submete_sem_aceite_do_orientador(cenario):
     assert "Aguarde o orientador aceitar a orientação." in r.json()["campos_pendentes"]
 
 
-def test_ds_fl01_e1_campos_obrigatorios(cenario):
+def test_ct_03_03_02_campos_obrigatorios(cenario):
+    """CT-03.03-02."""
     tcc = _rascunho(cenario, resumo="", palavras_chave=[]).json()
     _aceitar(cenario)
     r = cenario["aluno"].post(f"/api/v1/tccs/{tcc['id']}/submissao")
@@ -268,7 +276,8 @@ def test_ds_fl01_e1_campos_obrigatorios(cenario):
     assert set(r.json()["campos_pendentes"]) == {"Escreva o resumo.", "Informe ao menos uma palavra-chave."}
 
 
-def test_rbn0304_submissao_gera_protocolo_unico_e_repetir_nao_duplica(cenario, caixa, db):
+def test_ct_03_03_01_e_03_03_06_e_03_04_01_submissao_gera_protocolo_unico_e_repetir_nao_duplica(cenario, caixa, db):
+    """CT-03.03-01, CT-03.03-05, CT-03.03-06, CT-03.03-08, CT-03.04-01, CT-03.04-03, CT-03.04-06."""
     tcc = _rascunho(cenario).json()
     _aceitar(cenario)
     r = cenario["aluno"].post(f"/api/v1/tccs/{tcc['id']}/submissao")
@@ -311,7 +320,8 @@ def test_rbn0305_devolvido_e_corrigido_mantem_o_protocolo(cenario, db):
     assert r["protocolo"] == protocolo and r["situacao"] == "EM_ANALISE"
 
 
-def test_rn05_desistente_nao_submete(cenario, coord, db):
+def test_ct_03_03_03_desistente_nao_submete(cenario, coord, db):
+    """CT-03.03-03."""
     tcc = _rascunho(cenario).json()
     _aceitar(cenario)
     m = db.scalar(select(MatriculaTurma))

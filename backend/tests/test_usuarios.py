@@ -8,7 +8,8 @@ from tests.conftest import ALUNO, COORD, DOCENTE, SENHA, ativar
 # ---------- HU01.01 ----------
 
 
-def test_hu0101_ca1_docente_nasce_inativo_e_sem_senha(coord, caixa, db):
+def test_ct_01_01_01_docente_nasce_inativo_e_sem_senha(coord, caixa, db):
+    """CT-01.01-01."""
     r = coord.post("/api/v1/docentes", json=DOCENTE)
     assert r.status_code == 201
     corpo = r.json()
@@ -21,14 +22,16 @@ def test_hu0101_ca1_docente_nasce_inativo_e_sem_senha(coord, caixa, db):
     assert usuario.vinculos_perfil[0].atribuido_por is not None
 
 
-def test_hu0101_ca2_email_duplicado_ignora_maiusculas(coord, caixa):
+def test_ct_01_01_03_email_duplicado_ignora_maiusculas(coord, caixa):
+    """CT-01.01-03."""
     coord.post("/api/v1/docentes", json=DOCENTE)
     r = coord.post("/api/v1/docentes", json={**DOCENTE, "email": "RICARDO@uea.edu.br"})
     assert r.status_code == 409
     assert r.json()["campo"] == "email"
 
 
-def test_hu0101_ca3_coordenador_nao_exige_curso(coord, caixa):
+def test_ct_01_01_05_coordenador_nao_exige_curso(coord, caixa):
+    """CT-01.01-05."""
     dados = {**DOCENTE, "curso_id": None, "cargo": "coordenador", "perfis": ["coordenador"]}
     assert coord.post("/api/v1/docentes", json=dados).status_code == 201
 
@@ -38,7 +41,8 @@ def test_hu0101_ca3_coordenador_nao_exige_curso(coord, caixa):
     assert "curso_id" in r.json()["campos"]
 
 
-def test_hu0101_ca4_quem_nao_e_coordenador_recebe_403(coord, caixa, anonimo, db):
+def test_ct_01_01_06_quem_nao_e_coordenador_recebe_403(coord, caixa, anonimo, db):
+    """CT-01.01-06."""
     coord.post("/api/v1/docentes", json=DOCENTE)
     orientador = ativar(caixa, DOCENTE["email"])
     novo = {**DOCENTE, "email": "novo@uea.edu.br"}
@@ -49,7 +53,8 @@ def test_hu0101_ca4_quem_nao_e_coordenador_recebe_403(coord, caixa, anonimo, db)
     assert db.scalar(select(Usuario).where(Usuario.email == "novo@uea.edu.br")) is None
 
 
-def test_hu0101_ca5_criacao_fica_no_log(coord, caixa, db):
+def test_ct_01_01_07_criacao_fica_no_log(coord, caixa, db):
+    """CT-01.01-07."""
     criado = coord.post("/api/v1/docentes", json=DOCENTE).json()
     linhas = db.scalars(
         select(LogAuditoria).where(
@@ -75,7 +80,8 @@ def test_hu0101_ca6_ninguem_altera_os_proprios_perfis(coord, caixa):
     assert r.status_code == 403
 
 
-def test_hu0101_campo_obrigatorio_vazio_responde_400(coord):
+def test_ct_01_01_02_campo_obrigatorio_vazio_responde_400(coord):
+    """CT-01.01-02."""
     r = coord.post("/api/v1/docentes", json={"nome": "", "cargo": "professor", "perfis": []})
     assert r.status_code == 400
     assert {"nome", "email", "perfis"} <= set(r.json()["campos"])
@@ -84,7 +90,8 @@ def test_hu0101_campo_obrigatorio_vazio_responde_400(coord):
 # ---------- HU01.03 ----------
 
 
-def test_hu0103_ca1_aluno_nasce_sem_senha_com_perfil_aluno(coord, caixa):
+def test_ct_01_03_01_aluno_nasce_sem_senha_com_perfil_aluno(coord, caixa):
+    """CT-01.03-01."""
     r = coord.post("/api/v1/alunos", json=ALUNO)
     assert r.status_code == 201
     corpo = r.json()
@@ -93,7 +100,8 @@ def test_hu0103_ca1_aluno_nasce_sem_senha_com_perfil_aluno(coord, caixa):
     assert corpo["curso"]["sigla"] == "EC"
 
 
-def test_hu0103_ca2_indica_o_campo_duplicado(coord, caixa):
+def test_ct_01_03_03_indica_o_campo_duplicado(coord, caixa):
+    """CT-01.03-03."""
     coord.post("/api/v1/alunos", json=ALUNO)
     r = coord.post("/api/v1/alunos", json={**ALUNO, "email": "outra@uea.edu.br"})
     assert (r.status_code, r.json()["campo"]) == (409, "matricula")
@@ -101,7 +109,8 @@ def test_hu0103_ca2_indica_o_campo_duplicado(coord, caixa):
     assert (r.status_code, r.json()["campo"]) == (409, "email")
 
 
-def test_hu0103_ca3_enfileira_ativacao_e_audita(coord, caixa, db):
+def test_ct_01_03_06_e_01_05_01_enfileira_ativacao_e_audita(coord, caixa, db):
+    """CT-01.03-06, CT-01.05-01."""
     criado = coord.post("/api/v1/alunos", json=ALUNO).json()
     assert caixa[-1]["para"] == ALUNO["email"] and caixa[-1]["token"]
     assert coord.get(f"/api/v1/alunos/{criado['id']}").json()["email_ativacao"] == "enviado"
@@ -127,7 +136,8 @@ def test_hu0103_busca_e_filtro_por_curso(coord, caixa):
 # ---------- HU01.08 ----------
 
 
-def test_hu0108_ca1_edicao_auditada_com_valor_anterior_e_novo(coord, caixa, db):
+def test_ct_01_08_01_e_01_08_06_edicao_auditada_com_valor_anterior_e_novo(coord, caixa, db):
+    """CT-01.08-01, CT-01.08-06."""
     criado = coord.post("/api/v1/alunos", json=ALUNO).json()
     r = coord.put(
         f"/api/v1/usuarios/{criado['id']}",
@@ -143,14 +153,16 @@ def test_hu0108_ca1_edicao_auditada_com_valor_anterior_e_novo(coord, caixa, db):
     assert log["telefone"] == (None, "(92) 99999-0000")
 
 
-def test_hu0108_a1_email_ou_matricula_de_outra_pessoa(coord, caixa):
+def test_ct_01_08_02_email_ou_matricula_de_outra_pessoa(coord, caixa):
+    """CT-01.08-02."""
     ana = coord.post("/api/v1/alunos", json=ALUNO).json()
     coord.post("/api/v1/docentes", json=DOCENTE)
     r = coord.put(f"/api/v1/usuarios/{ana['id']}", json={"email": DOCENTE["email"]})
     assert (r.status_code, r.json()["campo"]) == (409, "email")
 
 
-def test_hu0108_ca2_inativado_nao_entra_e_cadastro_continua(coord, caixa, anonimo):
+def test_ct_01_08_03_e_01_08_04_inativado_nao_entra_e_reativado_volta(coord, caixa, anonimo):
+    """CT-01.08-03, CT-01.08-04, CT-01.06-08."""
     criado = coord.post("/api/v1/docentes", json=DOCENTE).json()
     orientador = ativar(caixa, DOCENTE["email"])
 
