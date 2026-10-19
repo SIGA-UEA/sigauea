@@ -20,17 +20,21 @@ def _url() -> str:
     return f"sqlite:///{tempfile.mkdtemp()}/migracoes.db"
 
 
-def test_migracoes_batem_com_os_modelos():
+def test_ct_ht05_01_migracoes_criam_o_esquema_completo():
+    """CT-HT05-01: banco vazio + migrações = exatamente as tabelas de models.py."""
     url = _url()
     atualizar_banco(url)
     engine = create_engine(url)
     with engine.connect() as conexao:
         diferencas = compare_metadata(MigrationContext.configure(conexao), Base.metadata)
+    tabelas = set(inspect(engine).get_table_names())
     engine.dispose()
     assert diferencas == []
+    assert set(Base.metadata.tables) <= tabelas
 
 
-def test_banco_recusa_email_repetido_com_outras_maiusculas():
+def test_ct_ht05_02_banco_recusa_email_repetido_com_outras_maiusculas():
+    """CT-HT05-02: violação de UNIQUE no e-mail, sem diferenciar maiúsculas."""
     url = _url()
     atualizar_banco(url)
     engine = create_engine(url)
@@ -107,4 +111,27 @@ def test_ct_ht08_02_carga_inicial_repetida_nao_duplica():
         assert db.scalar(select(func.count()).select_from(Perfil)) == 5
         assert db.scalar(select(func.count()).select_from(AreaInteresse)) == 6
         assert db.scalar(select(func.count()).select_from(Usuario)) == 1 + len(CONTAS_DEMO)
+    engine.dispose()
+
+
+def test_ct_ht08_01_carga_inicial_deixa_os_dados_presentes():
+    """CT-HT08-01: banco vazio + carga = núcleo, cursos, áreas, perfis e coordenador."""
+    from sqlalchemy.orm import Session
+
+    from app.models import AreaInteresse, Curso, Nucleo, Perfil, Usuario
+    from app.seed import carregar_base, criar_coordenador
+
+    url = _url()
+    atualizar_banco(url)
+    engine = create_engine(url)
+    with Session(engine) as db:
+        nucleo = carregar_base(db)
+        criar_coordenador(db, nucleo, "Coordenação", "coord@exemplo.com")
+        db.commit()
+    with Session(engine) as db:
+        assert db.scalar(select(Nucleo.sigla)) == "NUCOMP"
+        assert db.scalar(select(func.count()).select_from(Curso)) == 3
+        assert db.scalar(select(func.count()).select_from(Perfil)) == 5
+        assert db.scalar(select(func.count()).select_from(AreaInteresse)) == 6
+        assert db.scalar(select(Usuario.email)) == "coord@exemplo.com"
     engine.dispose()

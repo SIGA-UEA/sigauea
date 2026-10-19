@@ -212,3 +212,25 @@ def test_ct_06_01_04_substituir_orientador_preserva_o_historico():
 @pytest.mark.skip(reason="Depende do módulo de ideias e propostas (RBN02.01), ainda não implementado.")
 def test_ct_01_10_06_professor_ve_as_propostas_da_sua_area():
     """CT-01.10-06: proposta direcionada à área aparece para o professor vinculado."""
+
+
+# ---------------------------------------------------------------- HT07 · log de auditoria
+
+
+def test_ct_ht07_01_log_registra_usuario_data_campo_e_valores(coord, caixa, db):
+    """CT-HT07-01: cada alteração grava quem, quando, campo, valor anterior e valor novo."""
+    criado = coord.post("/api/v1/docentes", json=DOCENTE).json()
+    eu = coord.get("/api/v1/auth/me").json()
+    r = coord.put(f"/api/v1/usuarios/{criado['id']}", json={"nome": "Nome Corrigido"})
+    assert r.status_code == 200
+    linha = db.scalars(
+        select(LogAuditoria).where(
+            LogAuditoria.acao == "editar_usuario",
+            LogAuditoria.entidade_id == criado["id"],
+            LogAuditoria.campo == "nome",
+        )
+    ).one()
+    assert linha.usuario_id == eu["id"]
+    assert linha.criado_em is not None
+    assert linha.valor_anterior == DOCENTE["nome"]
+    assert linha.valor_novo == "Nome Corrigido"
