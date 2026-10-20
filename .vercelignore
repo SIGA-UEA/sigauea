@@ -1,0 +1,5 @@
+# A Vercel publica só o site (Next.js). A API vai para o Render (render.yaml).
+backend/
+docs/
+*.pdf
+*.drawio

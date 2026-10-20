@@ -154,6 +154,26 @@ docker compose logs -f api
 
 O seed imprime o link de ativação do primeiro coordenador. Site em `http://localhost:3000`, API em `http://localhost:8000/docs`. Em produção, defina `POSTGRES_PASSWORD`, `FRONTEND_URL`, `COOKIE_SEGURO=1` e as variáveis de SMTP, e coloque HTTPS na frente do site (RNF02).
 
+### Publicar na internet (Vercel + Render + Neon)
+
+Ambiente de homologação do grupo, gratuito e com HTTPS (HT06): o site fica na **Vercel**, a API no **Render** e o banco no **Neon**. O navegador só fala com a Vercel, que repassa `/api/v1` para o Render; por isso o cookie de sessão funciona sem configurar CORS. O desenho está na página 2 de `docs/modelagem/diagrama-implantacao-siga-uea.drawio`.
+
+Os três publicam a branch `main`. Enquanto a `dev` não for integrada, troque para `dev` no Render (Settings → Build & Deploy → Branch) e na Vercel (Settings → Git → Production Branch).
+
+1. **Banco (Neon):** crie um projeto em neon.tech (PostgreSQL 16, região São Paulo, se houver). Em *Connection string*, copie o endereço. Pode colar como vem (`postgresql://...?sslmode=require`); a API acrescenta o driver sozinha.
+2. **API (Render):** em render.com, **New → Blueprint** e escolha este repositório; o `render.yaml` já traz os comandos. Na criação, preencha:
+   - `DATABASE_URL`: o endereço do Neon;
+   - `SEED_COORDENADOR_NOME` e `SEED_COORDENADOR_EMAIL`: o primeiro coordenador;
+   - `SMTP_USUARIO`, `SMTP_SENHA` e `EMAIL_REMETENTE`: os mesmos do `backend/.env` (senha de app do Gmail);
+   - `FRONTEND_URL`: por enquanto `https://siga-uea.vercel.app`; ajuste no passo 4.
+
+   Quando o deploy terminar, `https://<nome-da-api>.onrender.com/health` deve responder `{"status":"ok"}`.
+3. **Site (Vercel):** em vercel.com, **Add New → Project** e importe o repositório. Para o repositório da organização aparecer, autorize o app da Vercel na organização SIGA-UEA no GitHub. Em *Environment Variables*, crie `API_URL` com o endereço da API no Render, sem barra no final, e clique em **Deploy**. O `.vercelignore` deixa o backend de fora.
+4. **Volte ao Render** e ponha em `FRONTEND_URL` o endereço real do site na Vercel. Ao salvar, a API reinicia.
+5. **Primeiro acesso:** no Render, abra **Logs**. Enquanto o coordenador não tiver senha, cada início da API imprime um novo link de ativação, já com o endereço da Vercel. Abra o link, defina a senha e entre. Não use `--demo` aqui.
+
+**No plano grátis**, a API dorme depois de uns 15 minutos sem uso, e o primeiro acesso leva de 30 a 60 segundos: abra o sistema alguns minutos antes de apresentar. Se os e-mails não chegarem, confira nos Logs: alguns planos grátis bloqueiam SMTP. A conta é criada mesmo assim, e o envio pode ser refeito em "Reenviar ativação"; a saída é trocar o SMTP por um serviço de e-mail por API (Brevo ou Resend).
+
 ### Variáveis de ambiente
 
 | Variável | Onde | Padrão | Para que serve |

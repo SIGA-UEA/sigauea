@@ -1,12 +1,14 @@
-fastapi
-uvicorn[standard]
-sqlalchemy>=2.0
-bcrypt>=4.1
-email-validator
-psycopg[binary]
-alembic
-python-multipart
+# Versões com "~=": aceita só correções (ex.: 0.143.x), para o servidor instalar o mesmo
+# que os testes usaram. O código depende de recursos recentes (FastAPI >= 0.121, SQLAlchemy 2.1).
+fastapi~=0.143.0
+uvicorn[standard]~=0.54.0
+sqlalchemy~=2.1.4
+bcrypt~=5.0.0
+email-validator~=2.3.0
+psycopg[binary]~=3.3.6
+alembic~=1.20.0
+python-multipart~=0.0.32
 
 # testes
-pytest
-httpx
+pytest~=9.1.1
+httpx~=0.28.1

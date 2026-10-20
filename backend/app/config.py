@@ -26,9 +26,18 @@ def _carregar_env(arquivo: Path) -> None:
 
 _carregar_env(BASE_DIR / ".env")
 
+def url_do_banco(url: str) -> str:
+    """Aceita o endereço como os provedores entregam (Neon, Supabase, Render: postgres:// ou
+    postgresql://) e indica o driver psycopg que o SQLAlchemy usa."""
+    for prefixo in ("postgres://", "postgresql://"):
+        if url.startswith(prefixo):
+            return "postgresql+psycopg://" + url[len(prefixo):]
+    return url
+
+
 # Banco: SQLite em desenvolvimento; em produção use PostgreSQL, por exemplo
 # postgresql+psycopg://usuario:senha@host:5432/siga
-DATABASE_URL = os.environ.get("DATABASE_URL", f"sqlite:///{BASE_DIR / 'siga_dev.db'}")
+DATABASE_URL = url_do_banco(os.environ.get("DATABASE_URL", f"sqlite:///{BASE_DIR / 'siga_dev.db'}"))
 
 # Endereço do frontend, usado para montar os links enviados por e-mail.
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000").rstrip("/")
