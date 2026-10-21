@@ -35,6 +35,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.exemplo
 
 # vercel
 .vercel
@@ -42,3 +43,13 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# backend: banco local de desenvolvimento e cache de testes
+/backend/siga_dev.db
+/backend/.pytest_cache/
+
+# cache do Python em qualquer pasta
+__pycache__/
+
+# build do Next gerado por engano dentro do backend
+backend/.next/

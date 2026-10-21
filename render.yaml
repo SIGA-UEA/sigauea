@@ -1,0 +1,39 @@
+# API do SIGA UEA no Render (homologação, plano grátis). Blueprint: no Render, New → Blueprint
+# e escolha este repositório. Os valores com "sync: false" são pedidos na tela, na criação;
+# nenhuma senha fica no git. Passo a passo no README, seção "Publicar na internet".
+services:
+  - type: web
+    name: siga-uea-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    branch: main
+    autoDeploy: true
+    buildCommand: pip install -r requirements.txt
+    # O seed aplica as migrações e cria cursos, perfis e o 1º coordenador (só na primeira vez;
+    # o link de ativação dele aparece nos Logs). Depois sobe a API atrás do proxy do Render.
+    startCommand: python -m app.seed && uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips "*"
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.8"
+      - key: COOKIE_SEGURO
+        value: "1"
+      - key: DATABASE_URL          # do Neon (Connection string); pode colar como vem
+        sync: false
+      - key: FRONTEND_URL          # endereço do site na Vercel, para os links dos e-mails
+        sync: false
+      - key: SEED_COORDENADOR_NOME
+        sync: false
+      - key: SEED_COORDENADOR_EMAIL
+        sync: false
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORTA
+        value: "587"
+      - key: SMTP_USUARIO
+        sync: false
+      - key: SMTP_SENHA
+        sync: false
+      - key: EMAIL_REMETENTE
+        sync: false

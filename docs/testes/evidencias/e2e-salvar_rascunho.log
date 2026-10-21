@@ -1,0 +1,9 @@
+OK   coordenação entra pela API
+OK   coordenação cadastra a aluna (RBN01.03)
+OK   coordenação inclui a aluna na turma (RBN08.02)
+OK   link de ativação gerado (RBN01.05)
+OK   aluna ativa a conta e volta para o login
+OK   Salvar rascunho mantém a aluna no cadastro (RBN03.01)
+OK   continua no mesmo passo
+OK   rascunho aparece na lista, sem protocolo (CA-03)
+OK   sem erros de JavaScript 

@@ -1,0 +1,10 @@
+node_modules
+.next
+.git
+backend
+docs
+*.xlsx
+*.drawio
+*.html
+*.tsbuildinfo
+.env*
