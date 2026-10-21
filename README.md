@@ -174,7 +174,7 @@ Os três publicam a branch `main`. Enquanto a `dev` não for integrada, troque p
 4. **Volte ao Render** e ponha em `FRONTEND_URL` o endereço real do site na Vercel. Ao salvar, a API reinicia.
 5. **Primeiro acesso:** no Render, abra **Logs**. Enquanto o coordenador não tiver senha, cada início da API imprime um novo link de ativação, já com o endereço da Vercel. Abra o link, defina a senha e entre. Não use `--demo` aqui.
 
-**No plano grátis**, a API dorme depois de uns 15 minutos sem uso, e o primeiro acesso leva de 30 a 60 segundos: abra o sistema alguns minutos antes de apresentar. Se os e-mails não chegarem, confira nos Logs: alguns planos grátis bloqueiam SMTP. A conta é criada mesmo assim, e o envio pode ser refeito em "Reenviar ativação"; a saída é trocar o SMTP por um serviço de e-mail por API (Brevo ou Resend).
+**No plano grátis**, a API dorme depois de uns 15 minutos sem uso, e o primeiro acesso leva de 30 a 60 segundos: abra o sistema alguns minutos antes de apresentar. O plano grátis do Render bloqueia SMTP (as falhas aparecem nos Logs como "Falha no e-mail"). Por isso, lá, crie uma conta grátis em brevo.com, confirme `siga.uea1@gmail.com` como remetente (Senders) e gere uma chave em SMTP & API → API Keys; ponha em `BREVO_API_KEY` no Render. Com a chave, a API envia por HTTPS e ignora o SMTP. A conta é criada mesmo se o e-mail falhar, e o envio pode ser refeito em "Reenviar ativação".
 
 ### Variáveis de ambiente
 
@@ -184,6 +184,7 @@ Os três publicam a branch `main`. Enquanto a `dev` não for integrada, troque p
 | `FRONTEND_URL` | API | `http://localhost:3000` | Endereço usado nos links dos e-mails |
 | `COOKIE_SEGURO` | API | `0` | Use `1` em produção (HTTPS) |
 | `SMTP_HOST`, `SMTP_PORTA`, `SMTP_USUARIO`, `SMTP_SENHA`, `EMAIL_REMETENTE` | API | vazio | Envio real de e-mail |
+| `BREVO_API_KEY` | API | vazio | Envio pela API HTTPS da Brevo (onde o SMTP é bloqueado, como no Render grátis) |
 | `API_URL` | Site | `http://127.0.0.1:8000` | Endereço da API |
 
 ## Onde fica cada coisa

@@ -65,3 +65,5 @@ SMTP_PORTA = int(os.environ.get("SMTP_PORTA", "587"))
 SMTP_USUARIO = os.environ.get("SMTP_USUARIO", "")
 SMTP_SENHA = os.environ.get("SMTP_SENHA", "")
 EMAIL_REMETENTE = os.environ.get("EMAIL_REMETENTE", "SIGA UEA <nao-responda@uea.edu.br>")
+# Com chave da Brevo, o envio usa a API HTTPS dela em vez de SMTP (o Render grátis bloqueia SMTP).
+BREVO_API_KEY = os.environ.get("BREVO_API_KEY", "")

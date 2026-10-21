@@ -71,3 +71,36 @@ def test_rnf06_foto_alterada_no_banco_nao_e_entregue(coord, caixa, db):
     db.commit()
     r = coord.get(f"/api/v1/usuarios/{docente['id']}/foto")
     assert r.status_code == 500 and "não confere" in r.json()["detail"]
+
+
+def test_email_pela_brevo_monta_o_pedido_https(monkeypatch):
+    """Render grátis bloqueia SMTP: com BREVO_API_KEY o envio vai pela API HTTPS da Brevo."""
+    import json
+
+    from app import config
+    from app.services import email
+
+    pedidos = []
+
+    class Resposta:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+    def urlopen(pedido, timeout):
+        pedidos.append(pedido)
+        return Resposta()
+
+    monkeypatch.setattr(config, "BREVO_API_KEY", "chave-teste")
+    monkeypatch.setattr(config, "EMAIL_REMETENTE", "SIGA UEA <siga@exemplo.com>")
+    monkeypatch.setattr(email.urllib.request, "urlopen", urlopen)
+    email._entregar_brevo("ana@uea.edu.br", "Ative sua conta", "link")
+
+    (pedido,) = pedidos
+    corpo = json.loads(pedido.data)
+    assert pedido.full_url == "https://api.brevo.com/v3/smtp/email"
+    assert pedido.get_header("Api-key") == "chave-teste"
+    assert corpo["sender"] == {"name": "SIGA UEA", "email": "siga@exemplo.com"}
+    assert corpo["to"] == [{"email": "ana@uea.edu.br"}] and corpo["subject"] == "Ative sua conta"
