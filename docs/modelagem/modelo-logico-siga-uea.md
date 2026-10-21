@@ -2,7 +2,7 @@
 
 Gerado por [`modelo_logico.py`](modelo_logico.py); não edite à mão. O mesmo modelo gera o [`modelo-logico-siga-uea.drawio`](modelo-logico-siga-uea.drawio) (uma página por módulo) e o [`modelo-logico-siga-uea.sql`](modelo-logico-siga-uea.sql), que é executado num PostgreSQL para conferir chaves e restrições. O DER (modelo conceitual, estilo brModelo) que dá origem a este modelo está em [`der-conceitual-siga-uea.drawio`](der-conceitual-siga-uea.drawio).
 
-**45 tabelas**: 23 já criadas pelas migrações (MOD01 e o cadastro de TCC da S03) e 22 planejadas para os próximos marcos. Os nomes seguem as entidades dos diagramas de sequência FL01 a FL10 (`MatriculaTurma` → `matricula_turma`, `ResultadoDefesa` → `resultado_defesa`).
+**46 tabelas**: 23 já criadas pelas migrações (MOD01 e o cadastro de TCC da S03) e 23 planejadas para os próximos marcos. Os nomes seguem as entidades dos diagramas de sequência FL01 a FL10 (`MatriculaTurma` → `matricula_turma`, `ResultadoDefesa` → `resultado_defesa`).
 
 ## Histórico preservado (CA-02 da HT02)
 
@@ -19,6 +19,18 @@ Gerado por [`modelo_logico.py`](modelo_logico.py); não edite à mão. O mesmo m
 | Qualquer alteração | `log_auditoria`, que o banco não deixa alterar nem apagar (RNF03) |
 
 Indicadores (MOD06) e agenda (MOD07) não têm tabelas próprias: são consultas sobre `tcc`, `orientacao`, `banca_membro`, `publicacao_artigo` e `defesa` (`publicada`).
+
+## Requisitos sem tabela própria
+
+Toda RBN e RN da planilha de requisitos está citada em alguma tabela abaixo ou nesta lista (conferido por [`cobertura_requisitos.py`](cobertura_requisitos.py)).
+
+| Requisito | Por quê |
+|---|---|
+| RBN01.14 | Won't (fora desta versão): login único da UEA; o acesso usa e-mail e senha (usuario, sessao). |
+| RBN03.07 | Won't: importação do sistema acadêmico; o coordenador cadastra os alunos (aluno, matricula_turma). |
+| RBN07.05 | Won't: verificação de plágio continua fora do sistema. |
+| RBN12.04 | Won't: consulta automática do DOI; a situação editorial é atualizada à mão (historico_publicacao). |
+| RBN13.01 a RBN13.06, RN18 | Indicadores e relatório PDF (MOD06): consultas sobre tcc, matricula_turma, turma, orientacao, banca_membro e publicacao_artigo; cada TCC contado uma vez (tcc.id), sem nome de aluno, no escopo do perfil. |
 
 ## Diagrama
 
@@ -50,6 +62,10 @@ erDiagram
     docente ||--o{ proposta_destinatario : "professor_id"
     proposta ||--o{ comentario_proposta : "proposta_id"
     usuario ||--o{ comentario_proposta : "autor_id"
+    proposta |o--o{ denuncia : "proposta_id"
+    comentario_proposta |o--o{ denuncia : "comentario_id"
+    usuario ||--o{ denuncia : "denunciante_id"
+    docente |o--o{ denuncia : "moderador_id"
     curso ||--o{ turma : "curso_id"
     periodo_letivo ||--o{ turma : "periodo_id"
     docente ||--o{ turma : "professor_id"
@@ -239,6 +255,18 @@ erDiagram
         timestamp oculto_em
         timestamp criado_em
     }
+    denuncia {
+        serial id PK
+        integer proposta_id FK
+        integer comentario_id FK
+        integer denunciante_id FK
+        text motivo
+        timestamp criado_em
+        varchar situacao
+        integer moderador_id FK
+        text justificativa
+        timestamp decidida_em
+    }
     periodo_letivo {
         serial id PK
         varchar codigo UK
@@ -362,6 +390,7 @@ erDiagram
         timestamp publicada_em
         boolean divulgar_link
         boolean revisao_banca
+        timestamp lembrete_enviado_em
         timestamp criado_em
     }
     historico_defesa {
@@ -582,7 +611,7 @@ erDiagram
 | `docente_id` | INTEGER | PK FK → docente | não |  |
 | `area_id` | INTEGER | PK FK → area_interesse | não |  |
 
-**`aluno`** (criada) · Dados de quem é aluno. Requisitos: RBN01.03, RBN01.11
+**`aluno`** (criada) · Dados de quem é aluno. Requisitos: RBN01.03, RBN01.11, RN27
 
 | Coluna | Tipo | Chave | Nulo | Observação |
 |---|---|---|---|---|
@@ -645,7 +674,7 @@ Restrições: `CHECK (escopo = 'BANCA' AND defesa_id IS NOT NULL) OR (escopo = '
 | `expira_em` | TIMESTAMP |  | não |  |
 | `criado_em` | TIMESTAMP |  | não |  |
 
-**`notificacao_email`** (criada) · Fila de e-mails de todos os módulos (NotificacaoEmail). Requisitos: RBN03.06, RBN04.05, RBN09.05, RBN12.03
+**`notificacao_email`** (criada) · Fila de e-mails de todos os módulos (NotificacaoEmail). Requisitos: RBN03.06, RBN04.05, RBN09.05, RBN09.06, RBN12.03
 
 | Coluna | Tipo | Chave | Nulo | Observação |
 |---|---|---|---|---|
@@ -677,7 +706,7 @@ Restrições: `CHECK (escopo = 'BANCA' AND defesa_id IS NOT NULL) OR (escopo = '
 
 ### MOD02 · Ideias de TCC
 
-**`proposta`** (planejada) · Proposta de TCC de um aluno, direcionada a área ou a professores. Requisitos: RBN02.01, RN25
+**`proposta`** (planejada) · Proposta de TCC de um aluno, direcionada a área ou a professores. Requisitos: RBN02.01, RBN02.03, RN25
 
 | Coluna | Tipo | Chave | Nulo | Observação |
 |---|---|---|---|---|
@@ -699,7 +728,7 @@ Restrições: `CHECK destino <> 'AREA' OR area_id IS NOT NULL`
 | `proposta_id` | INTEGER | PK FK → proposta | não |  |
 | `professor_id` | INTEGER | PK FK → docente | não |  |
 
-**`comentario_proposta`** (planejada) · Comentários de professores nas propostas. Requisitos: RBN02.02
+**`comentario_proposta`** (planejada) · Comentários de professores nas propostas. Requisitos: RBN02.02, RBN02.03
 
 | Coluna | Tipo | Chave | Nulo | Observação |
 |---|---|---|---|---|
@@ -711,6 +740,23 @@ Restrições: `CHECK destino <> 'AREA' OR area_id IS NOT NULL`
 | `criado_em` | TIMESTAMP |  | não |  |
 
 Restrições: `CHECK length(trim(texto)) > 0`
+
+**`denuncia`** (planejada) · Denúncia de proposta ou comentário e a decisão da coordenação (moderação reativa). Requisitos: RBN02.03
+
+| Coluna | Tipo | Chave | Nulo | Observação |
+|---|---|---|---|---|
+| `id` | SERIAL | PK | não |  |
+| `proposta_id` | INTEGER | FK → proposta | sim |  |
+| `comentario_id` | INTEGER | FK → comentario_proposta | sim | uma das duas: proposta ou comentário |
+| `denunciante_id` | INTEGER | FK → usuario | não |  |
+| `motivo` | TEXT |  | não |  |
+| `criado_em` | TIMESTAMP |  | não |  |
+| `situacao` | VARCHAR(10) |  | não | valores: PENDENTE, MANTIDO, OCULTADO |
+| `moderador_id` | INTEGER | FK → docente | sim | coordenador |
+| `justificativa` | TEXT |  | sim | obrigatória ao decidir |
+| `decidida_em` | TIMESTAMP |  | sim |  |
+
+Restrições: `CHECK (proposta_id IS NULL) <> (comentario_id IS NULL)` · `CHECK length(trim(motivo)) > 0` · `CHECK situacao = 'PENDENTE' OR (moderador_id IS NOT NULL AND length(trim(justificativa)) > 0 AND decidida_em IS NOT NULL)`
 
 ### MOD03 · Gestão e acompanhamento dos TCCs
 
@@ -756,7 +802,7 @@ Restrições: `único (curso_id, disciplina, periodo_id, professor_id)`
 
 Restrições: `único (turma_id, aluno_id)` · `CHECK nota_final IS NULL OR nota_final BETWEEN 0 AND 10`
 
-**`tcc`** (criada) · O trabalho: cadastro, protocolo e situação acadêmica (TCC). Requisitos: RBN03.01 a RBN03.05, RBN08.04, RN04, RN10
+**`tcc`** (criada) · O trabalho: cadastro, protocolo e situação acadêmica (TCC). Requisitos: RBN03.01 a RBN03.05, RBN05.01, RBN05.03, RBN08.04, RN02, RN04, RN10
 
 | Coluna | Tipo | Chave | Nulo | Observação |
 |---|---|---|---|---|
@@ -871,7 +917,7 @@ Restrições: `único (tcc_id, versao)` · `CHECK tamanho_bytes BETWEEN 1 AND 20
 | `nome` | VARCHAR(100) | UK | não |  |
 | `descricao` | VARCHAR(200) |  | sim |  |
 
-**`defesa`** (planejada) · Agendamento da defesa e divulgação na agenda (Defesa). Requisitos: RBN09.01, RBN09.03, RBN09.07, RBN09.08, RBN14.01 a RBN14.04, RN09, RN14
+**`defesa`** (planejada) · Agendamento da defesa e divulgação na agenda (Defesa). Requisitos: RBN09.01, RBN09.03, RBN09.06, RBN09.07, RBN09.08, RBN14.01 a RBN14.04, RN08, RN09, RN14, RN22
 
 | Coluna | Tipo | Chave | Nulo | Observação |
 |---|---|---|---|---|
@@ -880,7 +926,7 @@ Restrições: `único (tcc_id, versao)` · `CHECK tamanho_bytes BETWEEN 1 AND 20
 | `formato` | VARCHAR(10) |  | não | valores: PRESENCIAL, REMOTO, HIBRIDO |
 | `data` | DATE |  | não |  |
 | `inicio` | TIME |  | não |  |
-| `fim` | TIME |  | não |  |
+| `fim` | TIME |  | não | TCC1 15 min, TCC2 20 min; pode ser maior (RN22) |
 | `local_id` | INTEGER | FK → local_defesa | sim |  |
 | `link` | VARCHAR(500) |  | sim |  |
 | `situacao` | VARCHAR(10) |  | não | valores: CONFIRMADA, REMARCADA, CANCELADA, REALIZADA |
@@ -889,6 +935,7 @@ Restrições: `único (tcc_id, versao)` · `CHECK tamanho_bytes BETWEEN 1 AND 20
 | `publicada_em` | TIMESTAMP |  | sim |  |
 | `divulgar_link` | BOOLEAN |  | não |  |
 | `revisao_banca` | BOOLEAN |  | não | orientador substituído |
+| `lembrete_enviado_em` | TIMESTAMP |  | sim | véspera; não envia se cancelada (RBN09.06) |
 | `criado_em` | TIMESTAMP |  | não |  |
 
 Restrições: `CHECK fim > inicio` · `CHECK (formato = 'PRESENCIAL' AND local_id IS NOT NULL) OR (formato = 'REMOTO' AND link IS NOT NULL) OR (formato = 'HIBRIDO' AND local_id IS NOT NULL AND link IS NOT NULL)`
@@ -982,7 +1029,7 @@ Restrições: `único (defesa_id, membro_id)`
 
 Restrições: `CHECK (conceito = 'EXEMPLAR' AND nota BETWEEN 8 AND 10) OR (conceito = 'COMPETENTE' AND nota BETWEEN 6 AND 7.9) OR (conceito = 'NECESSITA' AND nota BETWEEN 0 AND 5.9)`
 
-**`resultado_defesa`** (planejada) · Resultado confirmado, versionado por retificação (ResultadoDefesa). Requisitos: RBN09.11, RBN09.12, RBN11.01, RBN11.02, RN13, RN21
+**`resultado_defesa`** (planejada) · Resultado confirmado, versionado por retificação (ResultadoDefesa). Requisitos: RBN09.11 a RBN09.13, RBN11.01, RBN11.02, RN13, RN21
 
 | Coluna | Tipo | Chave | Nulo | Observação |
 |---|---|---|---|---|

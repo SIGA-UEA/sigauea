@@ -9,9 +9,11 @@ Marco de integração 1: banco, módulo de usuários e contrato de API integrado
 | Script SQL do PostgreSQL | [`docs/esquema-postgresql.sql`](esquema-postgresql.sql) |
 | Contrato da API (OpenAPI 3) | [`docs/openapi.json`](openapi.json), ou `/docs` com a API no ar |
 | **DER (modelo conceitual) do sistema, estilo brModelo** | [`docs/modelagem/der-conceitual-siga-uea.drawio`](modelagem/der-conceitual-siga-uea.drawio), 7 páginas (por módulo) |
-| **Diagrama de implantação (UML)** | [`docs/modelagem/diagrama-implantacao-siga-uea.drawio`](modelagem/diagrama-implantacao-siga-uea.drawio): produção (servidor com Docker Compose e proxy HTTPS), homologação gratuita (Vercel, Render, Neon/Supabase) e desenvolvimento local |
-| **DER em pé de galinha (crow's foot)** | [`docs/modelagem/der-pe-de-galinha-siga-uea.drawio`](modelagem/der-pe-de-galinha-siga-uea.drawio): visão geral das 45 entidades, sistema completo com atributos e só o que já está implementado |
-| **Modelo lógico completo (45 tabelas, todos os módulos)** | [`docs/modelagem/`](modelagem/modelo-logico-siga-uea.md): draw.io por módulo, dicionário de dados e DDL |
+| **Diagrama de implantação (UML)** | [`docs/modelagem/diagrama-implantacao-siga-uea.drawio`](modelagem/diagrama-implantacao-siga-uea.drawio): ambiente integrado (Vercel, Render e Neon) e ambiente local (Docker Compose); imagens em `docs/arquitetura/` |
+| **Documento de Arquitetura do Sistema (HT03)** | [`docs/arquitetura/Arquitetura_do_Sistema_SIGA_UEA.docx`](arquitetura/Arquitetura_do_Sistema_SIGA_UEA.docx) e PDF, no formato dos documentos do grupo |
+| **Contrato da API (HT03)** | [`docs/arquitetura/Contrato_da_API_SIGA_UEA.docx`](arquitetura/Contrato_da_API_SIGA_UEA.docx) e PDF (formato do grupo); versão para navegador em `docs/arquitetura/contrato-api-siga-uea.html`. As 51 operações, quem pode usar, corpo, resposta e códigos observados nos testes |
+| **DER em pé de galinha (crow's foot)** | [`docs/modelagem/der-pe-de-galinha-siga-uea.drawio`](modelagem/der-pe-de-galinha-siga-uea.drawio): visão geral das 46 entidades, sistema completo com atributos e só o que já está implementado |
+| **Modelo lógico completo (46 tabelas, todos os módulos)** | [`docs/modelagem/`](modelagem/modelo-logico-siga-uea.md): draw.io por módulo, dicionário de dados e DDL |
 | Modelo lógico só do MOD01 (draw.io) | [`docs/modelo-logico-usuarios.drawio`](modelo-logico-usuarios.drawio) |
 
 ## Diagrama do modelo lógico (MOD01)

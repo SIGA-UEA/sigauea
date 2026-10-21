@@ -15,6 +15,7 @@ os.environ["DATABASE_URL"] = (
 )
 os.environ["BCRYPT_CUSTO"] = "10"
 os.environ["SMTP_HOST"] = ""  # testes nunca enviam e-mail de verdade, mesmo com backend/.env
+os.environ["BREVO_API_KEY"] = ""
 
 import pytest
 from fastapi.testclient import TestClient

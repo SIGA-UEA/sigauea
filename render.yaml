@@ -37,3 +37,5 @@ services:
         sync: false
       - key: EMAIL_REMETENTE
         sync: false
+      - key: BREVO_API_KEY         # o Render grátis bloqueia SMTP; com esta chave o e-mail sai por HTTPS
+        sync: false

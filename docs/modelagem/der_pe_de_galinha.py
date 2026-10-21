@@ -3,8 +3,8 @@
 A fonte é a mesma de modelo_logico.py (tabelas, colunas e chaves); aqui só muda o desenho.
 Gera docs/modelagem/der-pe-de-galinha-siga-uea.drawio com três páginas:
 
-  1. Visão geral      as 45 entidades (só o nome) e todos os relacionamentos com cardinalidade
-  2. Completo         as 45 tabelas com todas as colunas; cada linha liga a FK à PK
+  1. Visão geral      as 46 entidades (só o nome) e todos os relacionamentos com cardinalidade
+  2. Completo         as 46 tabelas com todas as colunas; cada linha liga a FK à PK
   3. Implementado     as tabelas que já existem nas migrações (S02 e S03)
 
 O posicionamento e o roteamento das linhas são do ELK (elk_layout.mjs):
@@ -314,7 +314,7 @@ def main() -> None:
     todas = [t.nome for t in ml.T]
     feitas = [t.nome for t in ml.T if t.implementada]
     specs = [
-        ("1 · Visão geral (45 entidades)", "SIGA UEA · DER pé de galinha · visão geral do sistema", todas, False, False),
+        (f"1 · Visão geral ({len(todas)} entidades)", "SIGA UEA · DER pé de galinha · visão geral do sistema", todas, False, False),
         ("2 · Completo com atributos", "SIGA UEA · DER pé de galinha · sistema completo, com atributos", todas, True, False),
         (f"3 · Implementado ({len(feitas)} tabelas)",
          f"SIGA UEA · DER pé de galinha · o que já está no banco (S02 e S03, {len(feitas)} tabelas)", feitas, True, True),

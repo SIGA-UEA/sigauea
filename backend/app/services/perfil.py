@@ -178,4 +178,7 @@ def obter_foto(db: Session, usuario_id: int) -> FotoUsuario:
     foto = db.get(FotoUsuario, usuario_id)
     if foto is None:
         raise ErroAPI(404, "Sem foto.")
+    # RNF06: o SHA-256 gravado no envio é conferido também na leitura; arquivo alterado não é entregue.
+    if hashlib.sha256(foto.conteudo).hexdigest() != foto.sha256:
+        raise ErroAPI(500, "O arquivo da foto não confere com o original. Envie a foto de novo.")
     return foto
