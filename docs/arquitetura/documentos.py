@@ -99,7 +99,8 @@ def arquitetura() -> Doc:
         "de cinco pessoas com 8 h semanais, um único serviço para publicar, testar e manter reduz o risco de "
         "integração, apontado no Plano de Integração como o principal risco técnico do projeto.")
     d.p("O caminho completo é: navegador → site (HTTPS) → repasse de /api/v1 → API → PostgreSQL, com a API enviando "
-        "e-mails ao servidor SMTP.")
+        "e-mails pela API HTTPS da Brevo no ambiente integrado (o plano grátis do Render bloqueia SMTP) e pelo "
+        "SMTP do Gmail no ambiente local.")
 
     d.h1("3. CAMADAS DO SITE")
     d.p("O site fica nas pastas app/, components/ e lib/ do repositório, além do arquivo proxy.ts.")
@@ -199,7 +200,7 @@ def arquitetura() -> Doc:
     d.tabela(["Ambiente", "Onde roda", "Uso"], [
         ["Local", "npm run dev, uvicorn --reload e SQLite, ou Docker Compose", "Desenvolvimento e testes de cada "
          "integrante (README, seção Como rodar)."],
-        ["Integrado e homologação", "Vercel (site), Render (API) e Neon (PostgreSQL)", "Testes de integração e "
+        ["Integrado e homologação", "Vercel (site), Render (API), Neon (PostgreSQL) e Brevo (e-mail)", "Testes de integração e "
          "validação com a coordenação (HT06). Configuração em render.yaml, .vercelignore e README."],
     ], [3.6, 5.6, 6.8])
     img = AQUI / "diagrama-implantacao-1-ambiente-integrado.png"
@@ -219,6 +220,9 @@ def arquitetura() -> Doc:
          "Criar as tabelas ao iniciar a aplicação"],
         ["E-mail depois da resposta, registrado em notificacao_email", "A falha de envio não desfaz o cadastro e "
          "pode ser reenviada (RBN01.05, RBN03.06)", "Enviar dentro da requisição"],
+        ["E-mail pela API HTTPS da Brevo no Render", "O plano grátis do Render bloqueia as portas de SMTP (25, 465 e "
+         "587); HTTPS passa em qualquer hospedagem. Sem a chave, a API usa SMTP", "Gmail por SMTP direto; plano pago "
+         "do Render"],
         ["Restrições no banco além do código", "Duplicidade e concorrência barradas mesmo com dois cliques (RNF06)",
          "Conferir só no código"],
     ], [5.2, 6.4, 4.4])

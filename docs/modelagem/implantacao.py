@@ -276,7 +276,7 @@ def legenda_xml(idx, x, y) -> list[str]:
 # ================================================================ páginas
 def integrado() -> Pagina:
     p = Pagina("1 · Ambiente integrado (Vercel, Render e Neon)",
-               "SIGA UEA · Diagrama de implantação · Ambiente integrado: Vercel (site), Render (API) e Neon (banco)")
+               "SIGA UEA · Diagrama de implantação · Ambiente integrado: Vercel (site), Render (API), Neon (banco) e Brevo (e-mail)")
     p.forma("cli", "device", 40, 110, 260, 240, "Computador ou celular do usuário",
             "aluno, docente, coordenação e banca<br>(inclusive externos) · visitante da<br>agenda pública (RAN14)")
     p.forma("nav", "ambiente", 60, 205, 220, 130, "Navegador web", "Chrome ou Safari, a partir de 360 px", dentro="cli")
@@ -298,10 +298,10 @@ def integrado() -> Pagina:
     p.forma("rapi", "artefato", 935, 245, 310, 45, "API SIGA (backend/)", dentro="rnode")
     p.forma("rstart", "artefato", 935, 297, 310, 50, "ao subir: migrações + carga inicial<br>(python -m app.seed)",
             dentro="rnode")
-    p.forma("rcfg", "artefato", 935, 354, 310, 55, "DATABASE_URL, SMTP_*, FRONTEND_URL,<br>COOKIE_SEGURO=1", dentro="rnode")
+    p.forma("rcfg", "artefato", 935, 354, 310, 55, "DATABASE_URL, BREVO_API_KEY, FRONTEND_URL,<br>COOKIE_SEGURO=1", dentro="rnode")
     p.forma("rpdf", "artefato_plan", 935, 416, 310, 55, "gerador de PDF: ata, folha, certificados,<br>relatório "
             "(RBN09.14 a 09.17, RBN13.06)", dentro="rnode")
-    p.forma("cron", "planejado", 920, 540, 340, 170, "Cron Job · Python 3.12", "mesmo código, banco e SMTP da API",
+    p.forma("cron", "planejado", 920, 540, 340, 170, "Cron Job · Python 3.12", "mesmo código, banco e e-mail da API",
             dentro="render")
     p.forma("tarefas", "artefato_plan", 935, 605, 310, 95, "tarefas agendadas: lembrete da defesa<br>(RBN09.06), "
             "revogar aluno (RBN01.11),<br>expirar conta externa (RBN01.12), reenviar<br>e-mails, cópia diária do banco",
@@ -309,11 +309,11 @@ def integrado() -> Pagina:
 
     p.forma("neon", "nuvem", 1420, 90, 330, 240, "Neon (plano grátis)", "PostgreSQL gerenciado")
     p.forma("pg", "ambiente", 1440, 165, 290, 145, "PostgreSQL 16", "conexão com TLS (sslmode=require)", dentro="neon")
-    p.forma("pbanco", "artefato", 1455, 235, 260, 55, "banco siga (23 tabelas hoje, 45 no fim)", dentro="pg")
+    p.forma("pbanco", "artefato", 1455, 235, 260, 55, "banco siga (23 tabelas hoje, 46 no fim)", dentro="pg")
     p.forma("stor", "device_plan", 1420, 400, 330, 150, "Armazenamento de arquivos e backup",
             "ex.: Supabase Storage · PDFs do TCC até 20 MB<br>(RAN07) e cópias do banco por 5 anos (RNF03)")
-    p.forma("smtp", "externo", 1420, 620, 330, 140, "Servidor de e-mail",
-            "smtp.gmail.com · conta siga.uea1@gmail.com<br>se o Render bloquear SMTP: Brevo ou Resend")
+    p.forma("smtp", "externo", 1420, 620, 330, 140, "Brevo (envio de e-mail)",
+            "API HTTPS · remetente siga.uea1@gmail.com<br>o Render grátis bloqueia SMTP (25, 465 e 587)")
 
     p.forma("nota", "nota", 1830, 90, 330, 380,
             "<b>Notas</b><br>• O navegador só fala com a Vercel; a Vercel repassa /api/v1 ao Render. O cookie de "
@@ -322,17 +322,19 @@ def integrado() -> Pagina:
             "• RNF03: o log de auditoria fica no PostgreSQL, que recusa alterar ou apagar registros.<br>"
             "• RNF07: o plano grátis do Render dorme; para 99% no pico é preciso um plano pago ou o "
             "monitoramento acordando a API.<br>"
+            "• E-mail pela API HTTPS da Brevo, porque o Render grátis bloqueia SMTP; no ambiente local continua "
+            "o SMTP do Gmail.<br>"
             "• Deploy automático a cada push na main (HT06, CA-02).<br>"
             "• Configuração no repositório: render.yaml, .vercelignore e README (Publicar na internet).<br>"
-            "• Situação em 20/10/2026: configuração pronta; a publicação depende de criar as contas na Vercel, no "
-            "Render e no Neon.")
+            "• Situação em 21/10/2026: API publicada no Render; site na Vercel, banco no Neon e e-mail na Brevo "
+            "em configuração.")
     p.legenda(40, 880)
 
     p.liga("cli", "vercel", "HTTPS · :443", (1, 0.5), (0, 140 / 300))
     p.liga("vercel", "render", "HTTPS<br>/api/v1/*", (1, 0.5), (0, 150 / 640))
     p.liga("render", "neon", "TCP + TLS · :5432", (1, 126 / 640), (0, 126 / 240))
     p.liga("render", "stor", "HTTPS · PDFs", (1, 380 / 640), (0, 70 / 150), tipo="planejado")
-    p.liga("render", "smtp", "SMTP · :587", (1, 600 / 640), (0, 70 / 140))
+    p.liga("render", "smtp", "HTTPS · :443<br>API de e-mail", (1, 600 / 640), (0, 70 / 140))
     p.liga("mon", "render", "HTTPS · /health<br>a cada 5 min", (1, 0.5), (0, 630 / 640), tipo="planejado",
            pontos=[(600, 765), (600, 720)], trecho=2)
     p.liga("git", "vercel", "«deploy» a cada push", (1, 50 / 150), (0.5, 1), pontos=[(620, 520)], tipo="deploy",
