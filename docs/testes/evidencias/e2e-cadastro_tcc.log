@@ -1,0 +1,18 @@
+OK   aluno matriculado vê o convite para cadastrar (RBN08.01)
+OK   passo 1 valida campos obrigatórios
+OK   palavras-chave incluídas como chips
+OK   erro some ao corrigir o campo
+OK   rascunho salvo ao continuar (DS-FL01-B)
+OK   pendência: orientador ainda não aceitou (RBN03.03)
+OK   envio bloqueado enquanto há pendências
+OK   orientador vê o pedido pendente (DS-FL03)
+OK   orientador aceitou a orientação
+OK   aluno vê o vínculo aceito
+OK   protocolo único gerado: TCC-2026-00001 (RBN03.04)
+OK   histórico registra a submissão (RNF03)
+OK   cadastro em análise não é editável
+OK   sem botão de novo cadastro: um TCC por período (RN04)
+OK   coordenação vê a turma com o aluno
+OK   turmas sem rolagem horizontal em 360 px (360)
+OK   coordenação vê o TCC enviado na lista
+OK   sem erros de JavaScript nas páginas 

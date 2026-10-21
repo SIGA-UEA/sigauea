@@ -1,0 +1,6 @@
+Execução: 20/10/2026 20:33 · API em http://127.0.0.1:8002 · PostgreSQL 16 local
+30 submissões simultâneas · respostas [200]
+média 0.561 s · p95 0.733 s · máximo 0.734 s
+protocolos distintos: 30 de 30
+RNF01 OK · RNF06 / CT-03.04-05 OK
+código de saída: 0

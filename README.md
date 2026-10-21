@@ -130,6 +130,8 @@ $env:TEST_DATABASE_URL = "postgresql+psycopg://usuario:senha@localhost:5432/siga
 python -m pytest
 ```
 
+**Relatório de execução dos testes:** `docs/testes/Relatorio_Execucao_Testes_SIGA_UEA.xlsx` cruza cada caso de teste da matriz (`docs/matriz-ct-testes.md`) com a execução: suíte da API no SQLite e no PostgreSQL, testes no navegador (`docs/testes/e2e/`) e carga. As evidências (saídas e capturas de tela) ficam em `docs/testes/evidencias/`; o passo a passo para refazer está no começo de `docs/testes/relatorio_execucao.py`.
+
 **Teste de carga (RNF01, CT-03.04-05):** `backend/scripts/carga_rnf01.py` faz 30 submissões simultâneas do cadastro de TCC e confere o p95 (meta: 3 s) e se os 30 protocolos são distintos. Rode num banco de teste; as instruções estão no começo do arquivo.
 
 **Banco de dados (migrações):**
