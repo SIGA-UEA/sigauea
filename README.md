@@ -251,7 +251,7 @@ Sprint S03, cadastro de TCC de ponta a ponta (tela, API, banco, protocolo único
 
 O PDF do trabalho não é pedido no cadastro: ele entra depois, em Documentos e versões (RAN07).
 
-Banco: PostgreSQL com migrações Alembic; a suíte inteira de testes passa também no PostgreSQL 16. Modelo de dados e contrato da API em [`docs/modelo-de-dados.md`](docs/modelo-de-dados.md). A modelagem do sistema inteiro está em [`docs/modelagem/`](docs/modelagem/): o DER (modelo conceitual, no estilo brModelo) e o modelo lógico com as 45 tabelas de todos os módulos; as tabelas dos próximos módulos ganham migração quando cada módulo for implementado.
+Banco: PostgreSQL com migrações Alembic; a suíte inteira de testes passa também no PostgreSQL 16. Modelo de dados e contrato da API em [`docs/modelo-de-dados.md`](docs/modelo-de-dados.md). A modelagem do sistema inteiro está em [`docs/modelagem/`](docs/modelagem/): o DER (modelo conceitual, no estilo brModelo) e o modelo lógico com as 46 tabelas de todos os módulos; as tabelas dos próximos módulos ganham migração quando cada módulo for implementado.
 
 Ficam para os módulos seguintes, porque dependem deles: revogação do acesso do aluno 7 dias após a aprovação em TCC2 (RBN01.11), conta limitada de membro externo da banca (RBN01.12) e de coorientador externo (RBN01.13).
 

@@ -216,6 +216,28 @@ CREATE TABLE comentario_proposta (
     CHECK (length(trim(texto)) > 0)
 );
 
+-- Denúncia de proposta ou comentário e a decisão da coordenação (moderação reativa).
+CREATE TABLE denuncia (
+    id SERIAL,
+    proposta_id INTEGER,
+    comentario_id INTEGER,
+    denunciante_id INTEGER NOT NULL,
+    motivo TEXT NOT NULL,
+    criado_em TIMESTAMP NOT NULL,
+    situacao VARCHAR(10) NOT NULL CHECK (situacao IN ('PENDENTE', 'MANTIDO', 'OCULTADO')),
+    moderador_id INTEGER,
+    justificativa TEXT,
+    decidida_em TIMESTAMP,
+    PRIMARY KEY (id),
+    FOREIGN KEY (proposta_id) REFERENCES proposta (id) ON DELETE RESTRICT,
+    FOREIGN KEY (comentario_id) REFERENCES comentario_proposta (id) ON DELETE RESTRICT,
+    FOREIGN KEY (denunciante_id) REFERENCES usuario (id) ON DELETE RESTRICT,
+    FOREIGN KEY (moderador_id) REFERENCES docente (usuario_id) ON DELETE RESTRICT,
+    CHECK ((proposta_id IS NULL) <> (comentario_id IS NULL)),
+    CHECK (length(trim(motivo)) > 0),
+    CHECK (situacao = 'PENDENTE' OR (moderador_id IS NOT NULL AND length(trim(justificativa)) > 0 AND decidida_em IS NOT NULL))
+);
+
 -- Período letivo AAAA/N e prazo da versão final (PeriodoLetivo).
 CREATE TABLE periodo_letivo (
     id SERIAL,
@@ -408,6 +430,7 @@ CREATE TABLE defesa (
     publicada_em TIMESTAMP,
     divulgar_link BOOLEAN NOT NULL,
     revisao_banca BOOLEAN NOT NULL,
+    lembrete_enviado_em TIMESTAMP,
     criado_em TIMESTAMP NOT NULL,
     PRIMARY KEY (id),
     FOREIGN KEY (tcc_id) REFERENCES tcc (id) ON DELETE RESTRICT,

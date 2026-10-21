@@ -705,7 +705,7 @@ def mod01():
 def mod02():
     p = Pagina("MOD02 · Ideias de TCC", "DER conceitual · MOD02 · Ideias de TCC")
     p.ent("aluno", "Aluno", 40, 360, ref=True)
-    p.ent("proposta", "Proposta", 560, 360, ["#Id_proposta", "Título", "Descrição", "Destino", "Data"])
+    p.ent("proposta", "Proposta", 560, 360, ["#Id_proposta", "Título", "Descrição", "Destino", "Data", "Oculta_em"])
     p.rel("propoe", "Propõe")
     p.liga("propoe", "aluno", "(1,1)")
     p.liga("propoe", "proposta", "(0,n)")
@@ -724,6 +724,22 @@ def mod02():
     p.rel("escreve", "Escreve")
     p.liga("escreve", "docente", "(1,1)")
     p.liga("escreve", "comentario", "(0,n)")
+    # RBN02.03: denúncia de proposta ou de comentário, decidida pela coordenação.
+    p.ent("denuncia", "Denúncia", 560, 680,
+          ["#Id_denúncia", "Motivo", "Data", "Situação", "Justificativa", "Decidida_em"])
+    p.rel("denunciada", "Denunciada em")
+    p.liga("denunciada", "proposta", "(0,1)")
+    p.liga("denunciada", "denuncia", "(0,n)")
+    p.ent("usuario", "Usuário", 1140, 680, ref=True)
+    p.rel("denuncia_rel", "Denuncia")
+    p.liga("denuncia_rel", "usuario", "(1,1)")
+    p.liga("denuncia_rel", "denuncia", "(0,n)")
+    p.rel("refere", "Refere-se a")
+    p.liga("refere", "comentario", "(0,1)")
+    p.liga("refere", "denuncia", "(0,n)")
+    p.rel("modera", "Modera")
+    p.liga("modera", "docente", "(0,1)")
+    p.liga("modera", "denuncia", "(0,n)")
     return p
 
 

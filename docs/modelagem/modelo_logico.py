@@ -103,7 +103,7 @@ T: list[Tabela] = [
         c("usuario_id", "INTEGER", pk=True, fk="usuario"), c("matricula", "VARCHAR(20)", uk=True),
         c("curso_id", "INTEGER", fk="curso"),
         c("acesso_ate", "DATE", nulo=True, novo=True, nota="aprovação em TCC2 + 7 dias (RN27)")],
-        implementada=True, requisitos="RBN01.03, RBN01.11"),
+        implementada=True, requisitos="RBN01.03, RBN01.11, RN27"),
     Tabela("foto_usuario", "MOD01", "Foto de perfil (opcional).", [
         c("usuario_id", "INTEGER", pk=True, fk="usuario"), c("tipo", "VARCHAR(20)"),
         c("conteudo", "BYTEA"), c("sha256", "CHAR(64)"), c("atualizado_em", "TIMESTAMP")],
@@ -131,7 +131,7 @@ T: list[Tabela] = [
         c("erro", "TEXT", nulo=True),
         c("entidade", "VARCHAR(40)", nulo=True, novo=True, nota="ex.: tcc, defesa"),
         c("entidade_id", "INTEGER", nulo=True, novo=True), criado(), c("enviado_em", "TIMESTAMP", nulo=True)],
-        implementada=True, requisitos="RBN03.06, RBN04.05, RBN09.05, RBN12.03"),
+        implementada=True, requisitos="RBN03.06, RBN04.05, RBN09.05, RBN09.06, RBN12.03"),
     Tabela("log_auditoria", "MOD01", "Log imutável de alterações (RNF03); trigger recusa UPDATE/DELETE.", [
         id_(), c("usuario_id", "INTEGER", fk="usuario", nulo=True), c("acao", "VARCHAR(40)"),
         c("entidade", "VARCHAR(40)"), c("entidade_id", "INTEGER", nulo=True), c("campo", "VARCHAR(40)", nulo=True),
@@ -144,14 +144,25 @@ T: list[Tabela] = [
         c("destino", "VARCHAR(12)", valores=("AREA", "PROFESSORES")),
         c("area_id", "INTEGER", fk="area_interesse", nulo=True, nota="obrigatória se destino = AREA"),
         c("oculta_em", "TIMESTAMP", nulo=True), criado()],
-        checks=["destino <> 'AREA' OR area_id IS NOT NULL"], requisitos="RBN02.01, RN25"),
+        checks=["destino <> 'AREA' OR area_id IS NOT NULL"], requisitos="RBN02.01, RBN02.03, RN25"),
     Tabela("proposta_destinatario", "MOD02", "Professores escolhidos quando destino = PROFESSORES.", [
         c("proposta_id", "INTEGER", pk=True, fk="proposta"), c("professor_id", "INTEGER", pk=True, fk="docente")],
         requisitos="RBN02.01"),
     Tabela("comentario_proposta", "MOD02", "Comentários de professores nas propostas.", [
         id_(), c("proposta_id", "INTEGER", fk="proposta"), c("autor_id", "INTEGER", fk="usuario"),
         c("texto", "TEXT"), c("oculto_em", "TIMESTAMP", nulo=True), criado()],
-        checks=["length(trim(texto)) > 0"], requisitos="RBN02.02"),
+        checks=["length(trim(texto)) > 0"], requisitos="RBN02.02, RBN02.03"),
+    Tabela("denuncia", "MOD02", "Denúncia de proposta ou comentário e a decisão da coordenação (moderação reativa).", [
+        id_(), c("proposta_id", "INTEGER", fk="proposta", nulo=True),
+        c("comentario_id", "INTEGER", fk="comentario_proposta", nulo=True, nota="uma das duas: proposta ou comentário"),
+        c("denunciante_id", "INTEGER", fk="usuario"), c("motivo", "TEXT"), criado(),
+        c("situacao", "VARCHAR(10)", valores=("PENDENTE", "MANTIDO", "OCULTADO")),
+        c("moderador_id", "INTEGER", fk="docente", nulo=True, nota="coordenador"),
+        c("justificativa", "TEXT", nulo=True, nota="obrigatória ao decidir"),
+        c("decidida_em", "TIMESTAMP", nulo=True)],
+        checks=["(proposta_id IS NULL) <> (comentario_id IS NULL)", "length(trim(motivo)) > 0",
+                "situacao = 'PENDENTE' OR (moderador_id IS NOT NULL AND length(trim(justificativa)) > 0 AND decidida_em IS NOT NULL)"],
+        requisitos="RBN02.03"),
 
     # ======================= MOD03 · Gestão e acompanhamento =======================
     Tabela("periodo_letivo", "MOD03", "Período letivo AAAA/N e prazo da versão final (PeriodoLetivo).", [
@@ -184,7 +195,7 @@ T: list[Tabela] = [
         c("desistencia_motivo", "TEXT", nulo=True),
         c("tcc_origem_id", "INTEGER", fk="tcc", nulo=True, nota="TCC1 que originou o TCC2"),
         criado(), c("atualizado_em", "TIMESTAMP")],
-        unicos=[("aluno_id", "periodo_id")], implementada=True, requisitos="RBN03.01 a RBN03.05, RBN08.04, RN04, RN10"),
+        unicos=[("aluno_id", "periodo_id")], implementada=True, requisitos="RBN03.01 a RBN03.05, RBN05.01, RBN05.03, RBN08.04, RN02, RN04, RN10"),
     Tabela("tcc_palavra_chave", "MOD03", "Palavras-chave do TCC (no máximo 10).", [
         c("tcc_id", "INTEGER", pk=True, fk="tcc"), c("ordem", "SMALLINT", pk=True), c("palavra", "VARCHAR(60)")],
         checks=["ordem BETWEEN 1 AND 10"], implementada=True, requisitos="RBN03.01"),
@@ -227,16 +238,17 @@ T: list[Tabela] = [
     Tabela("defesa", "MOD04", "Agendamento da defesa e divulgação na agenda (Defesa).", [
         id_(), c("tcc_id", "INTEGER", fk="tcc"),
         c("formato", "VARCHAR(10)", valores=("PRESENCIAL", "REMOTO", "HIBRIDO")),
-        c("data", "DATE"), c("inicio", "TIME"), c("fim", "TIME"),
+        c("data", "DATE"), c("inicio", "TIME"), c("fim", "TIME", nota="TCC1 15 min, TCC2 20 min; pode ser maior (RN22)"),
         c("local_id", "INTEGER", fk="local_defesa", nulo=True), c("link", "VARCHAR(500)", nulo=True),
         c("situacao", "VARCHAR(10)", valores=("CONFIRMADA", "REMARCADA", "CANCELADA", "REALIZADA")),
         c("responsavel_id", "INTEGER", fk="docente", nota="RN14"),
         c("publicada", SIM_NAO, nota="agenda (RAN14)"), c("publicada_em", "TIMESTAMP", nulo=True),
-        c("divulgar_link", SIM_NAO), c("revisao_banca", SIM_NAO, nota="orientador substituído"), criado()],
+        c("divulgar_link", SIM_NAO), c("revisao_banca", SIM_NAO, nota="orientador substituído"),
+        c("lembrete_enviado_em", "TIMESTAMP", nulo=True, nota="véspera; não envia se cancelada (RBN09.06)"), criado()],
         checks=["fim > inicio",
                 "(formato = 'PRESENCIAL' AND local_id IS NOT NULL) OR (formato = 'REMOTO' AND link IS NOT NULL) "
                 "OR (formato = 'HIBRIDO' AND local_id IS NOT NULL AND link IS NOT NULL)"],
-        requisitos="RBN09.01, RBN09.03, RBN09.07, RBN09.08, RBN14.01 a RBN14.04, RN09, RN14"),
+        requisitos="RBN09.01, RBN09.03, RBN09.06, RBN09.07, RBN09.08, RBN14.01 a RBN14.04, RN08, RN09, RN14, RN22"),
     Tabela("historico_defesa", "MOD04", "Agendamento, remarcação, cancelamento e suplência (HistoricoDefesa).", [
         id_(), c("defesa_id", "INTEGER", fk="defesa"),
         c("evento", "VARCHAR(20)", valores=("AGENDAMENTO", "REMARCACAO", "CANCELAMENTO", "SUPLENTE_CONVOCADO")),
@@ -289,7 +301,7 @@ T: list[Tabela] = [
         c("versao_final_id", "INTEGER", fk="documento_tcc", nulo=True),
         c("entregue_com_atraso", SIM_NAO, nulo=True), c("atraso_aceito", SIM_NAO, nulo=True),
         c("atraso_decidido_por", "INTEGER", fk="usuario", nulo=True), c("atraso_decidido_em", "TIMESTAMP", nulo=True)],
-        unicos=[("defesa_id", "versao")], requisitos="RBN09.11, RBN09.12, RBN11.01, RBN11.02, RN13, RN21"),
+        unicos=[("defesa_id", "versao")], requisitos="RBN09.11 a RBN09.13, RBN11.01, RBN11.02, RN13, RN21"),
     Tabela("correcao", "MOD04", "Correções exigidas pela banca (Correcao).", [
         id_(), c("resultado_id", "INTEGER", fk="resultado_defesa"), c("descricao", "TEXT"),
         c("avaliador_id", "INTEGER", fk="banca_membro"),
@@ -333,6 +345,18 @@ T: list[Tabela] = [
 
 POR_NOME = {t.nome: t for t in T}
 
+# Requisitos da planilha que não têm tabela própria, e por quê. Com as tabelas acima,
+# cobrem todas as RBN e RN da Matriz (conferido por docs/modelagem/cobertura_requisitos.py).
+SEM_TABELA = {
+    "RBN01.14": "Won't (fora desta versão): login único da UEA; o acesso usa e-mail e senha (usuario, sessao).",
+    "RBN03.07": "Won't: importação do sistema acadêmico; o coordenador cadastra os alunos (aluno, matricula_turma).",
+    "RBN07.05": "Won't: verificação de plágio continua fora do sistema.",
+    "RBN12.04": "Won't: consulta automática do DOI; a situação editorial é atualizada à mão (historico_publicacao).",
+    "RBN13.01 a RBN13.06, RN18": "Indicadores e relatório PDF (MOD06): consultas sobre tcc, matricula_turma, turma, "
+                                 "orientacao, banca_membro e publicacao_artigo; cada TCC contado uma vez (tcc.id), "
+                                 "sem nome de aluno, no escopo do perfil.",
+}
+
 # O alvo de uma FK é sempre a chave primária simples da tabela de destino.
 def pk_de(tabela: str) -> str:
     return [col.nome for col in POR_NOME[tabela].cols if col.pk][0]
@@ -352,7 +376,7 @@ PAGINAS = {
               ["docente_area", "usuario_perfil", "foto_usuario", "usuario_externo"],
               ["area_interesse", "perfil", "acesso_limitado", "tcc", "defesa"],
               ["token_usuario", "sessao", "notificacao_email", "log_auditoria"]],
-    "MOD02": [["usuario", "area_interesse"], ["proposta", "comentario_proposta"],
+    "MOD02": [["usuario", "area_interesse"], ["proposta", "comentario_proposta", "denuncia"],
               ["proposta_destinatario", "docente"]],
     "MOD03": [["curso", "periodo_letivo", "area_interesse"], ["turma", "matricula_turma", "aluno"],
               ["tcc", "tcc_palavra_chave"], ["historico_situacao", "analise_cadastro", "tarefa_tcc"],
@@ -566,6 +590,15 @@ def markdown() -> str:
         "",
         "Indicadores (MOD06) e agenda (MOD07) não têm tabelas próprias: são consultas sobre `tcc`, `orientacao`, "
         "`banca_membro`, `publicacao_artigo` e `defesa` (`publicada`).",
+        "",
+        "## Requisitos sem tabela própria",
+        "",
+        "Toda RBN e RN da planilha de requisitos está citada em alguma tabela abaixo ou nesta lista "
+        "(conferido por [`cobertura_requisitos.py`](cobertura_requisitos.py)).",
+        "",
+        "| Requisito | Por quê |",
+        "|---|---|",
+        *[f"| {req} | {motivo} |" for req, motivo in SEM_TABELA.items()],
         "",
         "## Diagrama",
         "",
