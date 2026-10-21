@@ -180,6 +180,8 @@ def arquitetura() -> Doc:
         ["Interceptação", "HTTPS em todo o caminho (RNF02) e TLS também entre a API e o banco no ambiente integrado."],
         ["Alteração do histórico", "Log de auditoria com gatilho no banco que recusa UPDATE e DELETE (migração "
          "0003, RNF03)."],
+        ["Dados pessoais (LGPD)", "Cada perfil vê só o que precisa (RN07), os testes usam dados fictícios e as "
+         "alterações ficam auditadas. Não se presume conformidade jurídica certificada (risco R08)."],
     ], [5.0, 11.0])
 
     d.h1("7. DADOS E CONSISTÊNCIA")
@@ -221,15 +223,53 @@ def arquitetura() -> Doc:
          "Conferir só no código"],
     ], [5.2, 6.4, 4.4])
 
-    d.h1("10. VERIFICAÇÃO DA ARQUITETURA")
+    d.h1("10. ATENDIMENTO AOS REQUISITOS NÃO FUNCIONAIS")
+    d.p("A tabela compara cada requisito não funcional da planilha Requisitos_SIGA_UEA.xlsx com o que o sistema faz "
+        "em 20/10/2026. Atendido: cumprido e verificado; Parcial: parte cumprida e parte pendente; Planejado: "
+        "depende de um módulo ou do ambiente ainda não entregue.")
+    d.tabela(["RNF", "O que a planilha exige", "Como o sistema atende", "Situação"], [
+        ["RNF01", "Submissão do cadastro em até 3 s (p95) com 30 envios simultâneos.",
+         "Trava de linha, transação curta e e-mail depois da resposta. Medido: p95 de 0,73 s com 30 envios, em "
+         "PostgreSQL 16 local.", "Atendido localmente; repetir no ambiente integrado"],
+        ["RNF02", "bcrypt custo ≥ 10; HTTPS com TLS ≥ 1.2; sessão de 60 min; LGPD; agenda pública sem dados "
+         "pessoais.", "bcrypt custo 12, sessão de 60 min com renovação e acesso por perfil e vínculo. O HTTPS vem "
+         "da Vercel e do Render. A agenda pública é do MOD07.", "Parcial: HTTPS depende da publicação; agenda "
+         "planejada"],
+        ["RNF03", "Log não editável com usuário, data/hora (America/Manaus), campo, valor anterior e novo; "
+         "retenção de 5 anos.", "Log com todos esses campos; o banco recusa alterar ou apagar (migração 0003). A "
+         "data é gravada em UTC e mostrada no fuso de Manaus.", "Parcial: a retenção de 5 anos depende do backup "
+         "planejado"],
+        ["RNF04", "Sem rolagem horizontal em 360 e 768 px, no Chrome e no Safari móveis.",
+         "Telas testadas em 360 e 768 px no Google Chrome, sem rolagem horizontal (59 checagens).",
+         "Parcial: falta o teste no Safari"],
+        ["RNF05", "Ata em PDF em até 5 s (p95) após a confirmação do resultado.",
+         "Gerador de PDF previsto na API (MOD04).", "Planejado"],
+        ["RNF06", "Sem protocolo duplicado; falha de envio não apaga a versão anterior; SHA-256 conferido no envio "
+         "e na leitura.", "Protocolo com trava de linha e restrição única; arquivo validado antes de substituir o "
+         "anterior; SHA-256 gravado no envio e conferido ao ler (fotos). Os PDFs do TCC seguem o mesmo padrão.",
+         "Atendido para fotos e protocolo; PDFs com o RAN07"],
+        ["RNF07", "99% de disponibilidade no pico e recuperação em até 30 min.",
+         "No plano grátis do Render a API dorme sem uso; o diagrama de implantação prevê monitoramento e backup.",
+         "Planejado: exige plano pago ou monitoramento"],
+    ], [1.6, 4.6, 6.4, 3.4])
+    d.p("Pontos em que o sistema difere da planilha, por decisão registrada da equipe:")
     d.lista([
-        "Suíte da API (backend/tests, pytest): 122 execuções em SQLite e em PostgreSQL 16, cobrindo as 51 operações "
+        "RN16 diz que as recusas de orientação não são guardadas. O sistema guarda a recusa e o motivo, porque o "
+        "RNF03 exige registrar toda alteração; a recusa não vale como vínculo. Sugere-se ajustar o texto da RN16.",
+        "A planilha fala em e-mail institucional; por decisão da equipe, o cadastro aceita qualquer e-mail válido.",
+        "O DS-FL01 envia o e-mail ao orientador só na submissão; como o RBN03.03 exige o aceite antes, o aviso sai "
+        "quando o aluno indica o orientador, e outro sai na submissão.",
+    ], numerada=False)
+
+    d.h1("11. VERIFICAÇÃO DA ARQUITETURA")
+    d.lista([
+        "Suíte da API (backend/tests, pytest): 123 execuções em SQLite e em PostgreSQL 16, cobrindo as 51 operações "
         "do contrato.",
         "Testes no navegador (docs/testes/e2e): fluxos completos pela tela e responsividade em 360 e 768 px.",
         "Teste de carga (backend/scripts/carga_rnf01.py): RNF01 e RNF06.",
         "Resultados e evidências: Relatório de Execução de Testes (pasta 07_Testes).",
     ], numerada=False)
-    finais(d, 11, "Criação do documento.", [REF_PLANO, REF_REQ, REF_CONF,
+    finais(d, 12, "Criação do documento.", [REF_PLANO, REF_REQ, REF_CONF,
            "SIGA UEA. Contrato da API. Versão 1.0. Manaus: NUCOMP – EST/UEA, 20 out. 2026."])
     return d
 

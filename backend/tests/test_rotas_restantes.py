@@ -57,3 +57,17 @@ def test_so_a_coordenacao_remove_foto_de_outra_pessoa(cenario):
     alvo = cenario["orientador"]["id"]
     assert cenario["aluno"].delete(f"/api/v1/usuarios/{alvo}/foto").status_code == 403
     assert cenario["otto"].delete(f"/api/v1/usuarios/{alvo}/foto").status_code == 403
+
+
+def test_rnf06_foto_alterada_no_banco_nao_e_entregue(coord, caixa, db):
+    """RNF06: o checksum SHA-256 é conferido no envio e também na leitura."""
+    from app.models import FotoUsuario
+
+    docente = coord.post("/api/v1/docentes", json=DOCENTE).json()
+    coord.put(f"/api/v1/usuarios/{docente['id']}/foto", files={"foto": ("f.jpg", JPG)})
+    assert coord.get(f"/api/v1/usuarios/{docente['id']}/foto").content == JPG
+    foto = db.get(FotoUsuario, docente["id"])
+    foto.conteudo = JPG + b"corrompido"
+    db.commit()
+    r = coord.get(f"/api/v1/usuarios/{docente['id']}/foto")
+    assert r.status_code == 500 and "não confere" in r.json()["detail"]

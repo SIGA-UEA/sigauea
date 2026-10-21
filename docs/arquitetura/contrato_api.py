@@ -45,6 +45,7 @@ SIGNIFICADO = {
     415: "Formato de arquivo não aceito (conferido pelo conteúdo).",
     422: "Regra de negócio não atendida: senha fora do padrão, elegibilidade ou pendências do cadastro.",
     423: "Conta bloqueada por 15 minutos após 3 tentativas inválidas.",
+    500: "Arquivo armazenado não confere com o original (SHA-256, RNF06); o arquivo não é entregue.",
 }
 GRUPOS = [  # ordem e título das seções, pela tag do OpenAPI
     ("autenticação", "Acesso e sessão (TEL01 · RBN01.04 a RBN01.07)"),
