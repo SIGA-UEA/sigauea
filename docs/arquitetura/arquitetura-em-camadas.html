@@ -1,0 +1,271 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>SIGA UEA · Arquitetura em camadas</title><style>
+body{font-family:Arial,Helvetica,sans-serif;color:#1b2432;margin:32px auto;max-width:980px;line-height:1.5;font-size:13px}
+h1{font-size:24px;margin:0 0 6px} h2{font-size:17px;margin:26px 0 8px;border-bottom:2px solid #1a73e8;padding-bottom:4px}
+code{font-family:Consolas,monospace;font-size:12px;background:#f1f5fb;padding:0 3px;border-radius:3px}
+pre{background:#f6f9fe;border:1px solid #dde4ee;border-radius:6px;padding:10px;overflow-x:auto;font-size:12px}
+pre code{background:none;padding:0}
+table{border-collapse:collapse;width:100%;margin:6px 0 10px;page-break-inside:avoid}
+th,td{border:1px solid #dde4ee;padding:5px 7px;text-align:left;vertical-align:top} th{background:#f1f5fb}
+li{margin:2px 0} @media print{body{margin:0;max-width:none}}
+</style></head><body><h1>SIGA UEA · Arquitetura em camadas</h1>
+<p>HT03 (SCRUM-108) · Arquitetura e contrato de API · versão de 20/10/2026, sobre o código da branch <code>dev</code>.</p>
+<p>Este documento descreve como o sistema está organizado em camadas, o caminho de uma requisição e as decisões que sustentam essa organização. Ele acompanha os diagramas de componentes e de pacotes (<code>SIGA_UEA_componentes_e_pacotes.drawio</code>), o diagrama de implantação (<code>docs/modelagem/diagrama-implantacao-siga-uea.drawio</code>) e o contrato da API (<code>docs/arquitetura/contrato-api-siga-uea.html</code>).</p>
+<h2>1. Visão geral</h2>
+<p>O SIGA UEA é uma aplicação web em três partes, que conversam só por contratos explícitos:</p>
+<table>
+<thead>
+<tr>
+<th>Parte</th>
+<th>Tecnologia</th>
+<th>Papel</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Site</strong></td>
+<td>Next.js 16 com React 19 (TypeScript, Tailwind)</td>
+<td>Telas e navegação. Não guarda regra de negócio nem acessa o banco.</td>
+</tr>
+<tr>
+<td><strong>API</strong></td>
+<td>Python 3.12 com FastAPI, SQLAlchemy 2.1 e Alembic</td>
+<td>Toda regra de negócio, autorização, validação e auditoria. Exposta como REST/JSON sob <code>/api/v1</code>.</td>
+</tr>
+<tr>
+<td><strong>Banco</strong></td>
+<td>PostgreSQL 16 (SQLite no desenvolvimento)</td>
+<td>Dados, restrições de integridade e o log de auditoria imutável. Esquema criado por migrações.</td>
+</tr>
+</tbody>
+</table>
+<p>O site e a API integram-se <strong>somente pelo contrato da API</strong>; a API e o banco, <strong>somente pelo esquema versionado nas migrações</strong> (Plano de Integração, 4.6.1). O e-mail fica encapsulado num componente próprio (<code>services/email.py</code>), que pode ser trocado sem mexer no resto.</p>
+<p>É um <strong>monólito modular</strong>: uma única API, organizada por módulo de negócio (usuários, turmas, cadastro de TCC; depois defesa, publicação, agenda), e não microsserviços. Para cinco pessoas com 8 h por semana, um só serviço para publicar, testar e manter reduz o risco de integração, que é o principal risco técnico do projeto (Plano de Integração, seção 2).</p>
+<pre><code>Navegador ──HTTPS──▶ Site (Next.js) ──/api/v1 (rewrite)──▶ API (FastAPI) ──SQL/TLS──▶ PostgreSQL
+                                                              └──SMTP──▶ Servidor de e-mail
+</code></pre>
+<h2>2. Camadas do site (<code>app/</code>, <code>components/</code>, <code>lib/</code>, <code>proxy.ts</code>)</h2>
+<table>
+<thead>
+<tr>
+<th>Camada</th>
+<th>Onde</th>
+<th>Responsabilidade</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Páginas</strong></td>
+<td><code>app/(publico)/</code> (entrar, ativar, esqueci-senha, redefinir-senha · TEL01) e <code>app/(sistema)/</code> (início, usuários e perfis, meu perfil, TCCs, cadastro, acompanhamento, orientações, turmas)</td>
+<td>Uma pasta por tela. As telas internas são componentes de cliente (<code>"use client"</code>) que chamam a API e mostram o resultado.</td>
+</tr>
+<tr>
+<td><strong>Componentes de interface</strong></td>
+<td><code>components/</code> (campo, botão, modal, aviso, casca, selos de situação, cartão de turma)</td>
+<td>Peças reutilizadas, sem acesso à API. Garantem o mesmo visual e a acessibilidade em todas as telas.</td>
+</tr>
+<tr>
+<td><strong>Cliente da API e sessão</strong></td>
+<td><code>lib/api.ts</code>, <code>lib/sessao.tsx</code>, <code>lib/sessao-servidor.ts</code>, <code>lib/tipos.ts</code></td>
+<td><code>api.ts</code> é o único ponto que faz chamadas HTTP: monta a requisição, lê o erro no formato padrão e leva ao login quando a API responde 401. <code>sessao-servidor.ts</code> pergunta à API "quem sou eu?" antes de desenhar uma tela interna; <code>sessao.tsx</code> entrega o usuário logado às telas. <code>tipos.ts</code> espelha os esquemas da API.</td>
+</tr>
+<tr>
+<td><strong>Proxy de navegação e repasse</strong></td>
+<td><code>proxy.ts</code> e <code>next.config.ts</code> (rewrites)</td>
+<td><code>proxy.ts</code> manda para o login quem abre uma tela interna sem o cookie de sessão; é só um atalho, porque quem valida a sessão é sempre a API. Os rewrites repassam <code>/api/v1/*</code> para a API, de modo que o navegador fala com uma única origem.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Regra:</strong> o site nunca decide permissão. Esconder um item do menu é conveniência; a autorização de verdade é conferida pela API em toda rota.</p>
+<h2>3. Camadas da API (<code>backend/app/</code>)</h2>
+<pre><code>routes/  ──▶  services/  ──▶  models.py  ──▶  banco (database.py, migrations/)
+   │              │
+schemas/       auditoria, e-mail, tokens          transversais: deps.py, security.py, erros.py, config.py
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Camada</th>
+<th>Onde</th>
+<th>Responsabilidade</th>
+<th>Não faz</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Rotas</strong></td>
+<td><code>routes/</code> (auth, perfil, usuarios, areas, catalogo, turmas, tccs, health)</td>
+<td>Recebe a requisição HTTP, declara o perfil exigido, converte a entrada pelo esquema e chama um serviço.</td>
+<td>Não tem regra de negócio nem consulta o banco diretamente.</td>
+</tr>
+<tr>
+<td><strong>Esquemas</strong></td>
+<td><code>schemas/</code> (Pydantic)</td>
+<td>Formato de entrada e de saída de cada rota: tipos, obrigatoriedade, tamanhos e validações de campo (ex.: resumo de até 500 palavras, até 10 palavras-chave). Entrada inválida vira <strong>400</strong> com a mensagem de cada campo.</td>
+<td>Não acessa o banco.</td>
+</tr>
+<tr>
+<td><strong>Segurança e sessão</strong></td>
+<td><code>deps.py</code>, <code>security.py</code></td>
+<td><code>usuario_atual</code> exige sessão válida e renova os 60 minutos; <code>exigir_perfil(...)</code> devolve 403 a quem não tem o perfil. <code>security.py</code> aplica a regra de senha, gera o hash bcrypt (custo ≥ 10) e os tokens de link.</td>
+<td>Não conhece telas.</td>
+</tr>
+<tr>
+<td><strong>Serviços</strong></td>
+<td><code>services/</code> (autenticacao, tokens, usuarios, perfil, areas, turmas, tccs, auditoria, email)</td>
+<td><strong>Regras de negócio</strong>: RN04 (um TCC por período), RN05 (matrícula), RN07 (vínculo), elegibilidade do orientador, geração do protocolo, transições de situação. Cada operação é uma transação; cada alteração grava no log de auditoria. Os comentários citam o passo do diagrama de sequência (DS-FL01, DS-FL03…).</td>
+<td>Não monta resposta HTTP: sinaliza erro com <code>ErroAPI(código, mensagem)</code>, que a camada de rotas devolve.</td>
+</tr>
+<tr>
+<td><strong>Modelos</strong></td>
+<td><code>models.py</code> (SQLAlchemy)</td>
+<td>Tabelas, relacionamentos e restrições (únicas, CHECK de domínio). Os nomes seguem o modelo lógico (<code>docs/modelagem</code>).</td>
+<td>Não tem regra de negócio.</td>
+</tr>
+<tr>
+<td><strong>Acesso ao banco e esquema</strong></td>
+<td><code>database.py</code>, <code>migracoes.py</code>, <code>migrations/</code> (Alembic), <code>seed.py</code></td>
+<td>Uma sessão por requisição, fechada assim que a rota termina; migrações versionadas 0001 a 0004; carga inicial repetível.</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Transversais:</strong> <code>erros.py</code> dá o formato único de erro (<code>detail</code>, <code>campos</code>, <code>campo</code>, <code>criterios</code>, <code>motivo</code>, <code>campos_pendentes</code>); <code>config.py</code> lê as variáveis de ambiente e o <code>backend/.env</code>; <code>services/auditoria.py</code> grava o log que o banco não deixa alterar (RNF03); <code>services/email.py</code> registra cada envio em <code>notificacao_email</code> e envia <strong>depois</strong> da resposta, sem atrasar quem pediu.</p>
+<p>A pasta <code>repositories/</code> existe, mas está vazia: os serviços usam o ORM diretamente. Ela fica reservada caso alguma consulta cresça a ponto de merecer uma camada própria.</p>
+<h2>4. Caminho de uma requisição: envio do cadastro de TCC</h2>
+<p>Exemplo de <code>POST /api/v1/tccs/{id}/submissao</code> (DS-FL01, RBN03.03 e RBN03.04):</p>
+<ol>
+<li><strong>Navegador → site:</strong> o aluno confirma "Enviar para análise" em TEL05. <code>lib/api.ts</code> faz <code>POST /api/v1/tccs/12/submissao</code> no mesmo endereço do site, levando o cookie <code>siga_sessao</code>.</li>
+<li><strong>Site → API:</strong> o rewrite do Next.js repassa a chamada para a API.</li>
+<li><strong>Rota</strong> (<code>routes/tccs.py</code>): a dependência <code>exigir_perfil(aluno)</code> confere a sessão (401 se inválida) e o perfil (403); a rota chama <code>tccs.submeter</code>.</li>
+<li><strong>Serviço</strong> (<code>services/tccs.py</code>):</li>
+<li>carrega o TCC <strong>travando a linha</strong> (<code>SELECT … FOR UPDATE</code>), para que dois cliques não gerem dois protocolos (RNF06);</li>
+<li>confere o dono (404 se for de outro aluno, RN07), a matrícula (403, RN05) e as pendências (422 com <code>campos_pendentes</code>, por exemplo o orientador ainda não aceitou);</li>
+<li>se já estava em análise, devolve o mesmo protocolo;</li>
+<li>se não, gera <code>TCC-AAAA-NNNNN</code>, muda a situação para EM_ANALISE, grava o histórico e o log de auditoria na mesma transação e agenda o e-mail ao orientador.</li>
+<li><strong>Resposta:</strong> 200 com o protocolo. A sessão do banco fecha; o e-mail sai em seguida, com conexão própria.</li>
+<li><strong>Site:</strong> a tela mostra o protocolo e bloqueia a edição.</li>
+</ol>
+<p>Esse caminho foi medido com 30 envios simultâneos: p95 de 0,73 s, contra a meta de 3 s do RNF01 (relatório de execução, aba "Desempenho RNF01").</p>
+<h2>5. Segurança (RNF02)</h2>
+<table>
+<thead>
+<tr>
+<th>Ameaça ou requisito</th>
+<th>Como a arquitetura responde</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Roubo de sessão por script na página</td>
+<td>Token só em cookie <code>httponly</code> (o JavaScript não lê), <code>SameSite=Lax</code>, <code>Secure</code> em produção (<code>COOKIE_SEGURO=1</code>).</td>
+</tr>
+<tr>
+<td>Senha vazada do banco</td>
+<td>Só o hash bcrypt (custo ≥ 10) fica gravado; tokens de link e de sessão também só como hash.</td>
+</tr>
+<tr>
+<td>Força bruta no login</td>
+<td>Bloqueio de 15 minutos após 3 tentativas; mensagem genérica que não revela se o e-mail existe.</td>
+</tr>
+<tr>
+<td>Acesso a dado de outro usuário</td>
+<td>Autorização por perfil em toda rota e por vínculo no serviço (RN07); sem vínculo, a API responde 404, sem revelar que o registro existe.</td>
+</tr>
+<tr>
+<td>Interceptação</td>
+<td>HTTPS em todo o caminho; TLS também entre a API e o banco no ambiente integrado.</td>
+</tr>
+<tr>
+<td>Alteração do histórico</td>
+<td>Log de auditoria com trigger no banco que recusa UPDATE e DELETE (migração 0003, RNF03).</td>
+</tr>
+</tbody>
+</table>
+<h2>6. Dados e consistência</h2>
+<ul>
+<li><strong>Integridade no banco, não só no código:</strong> e-mail único sem diferenciar maiúsculas (<code>lower(email)</code>), um TCC por aluno e período (<code>uq_tcc_aluno_periodo</code>), protocolo único e domínios de situação com CHECK.</li>
+<li><strong>Transações curtas:</strong> cada operação do serviço é uma transação. A sessão fecha quando a rota termina, antes das tarefas em segundo plano; sem isso, sob carga, cada requisição segurava duas conexões e o pool se esgotava (corrigido na S03 e medido no teste de carga).</li>
+<li><strong>Esquema só por migração:</strong> o mesmo esquema no SQLite de desenvolvimento e no PostgreSQL. Um teste falha se alguém mudar <code>models.py</code> sem criar a migração.</li>
+</ul>
+<h2>7. Ambientes</h2>
+<table>
+<thead>
+<tr>
+<th>Ambiente</th>
+<th>Onde roda</th>
+<th>Uso</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Desenvolvimento</td>
+<td><code>npm run dev</code> + <code>uvicorn --reload</code> + SQLite, ou Docker Compose</td>
+<td>Trabalho do dia a dia (README, "Como rodar").</td>
+</tr>
+<tr>
+<td>Integrado</td>
+<td>Vercel (site), Render (API), Neon (PostgreSQL)</td>
+<td>Homologação e entregas (HT06). Configuração em <code>render.yaml</code>, <code>.vercelignore</code> e README, "Publicar na internet".</td>
+</tr>
+</tbody>
+</table>
+<p>Detalhes, portas e protocolos estão no diagrama de implantação.</p>
+<h2>8. Decisões de arquitetura</h2>
+<table>
+<thead>
+<tr>
+<th>Decisão</th>
+<th>Motivo</th>
+<th>Alternativa descartada</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Monólito modular (uma API por módulos)</td>
+<td>Equipe pequena, integração como maior risco; um só serviço para publicar e testar</td>
+<td>Microsserviços por módulo</td>
+</tr>
+<tr>
+<td>Site e API na mesma origem, com repasse de <code>/api/v1</code></td>
+<td>Cookie de sessão sem CORS e sem expor a API diretamente</td>
+<td>Site chamando a API em outro domínio</td>
+</tr>
+<tr>
+<td>Sessão em cookie <code>httponly</code></td>
+<td>Protege o token de scripts na página</td>
+<td>Token em <code>localStorage</code></td>
+</tr>
+<tr>
+<td>Regras no serviço, rotas finas</td>
+<td>Regras testáveis sem HTTP e reaproveitáveis entre rotas</td>
+<td>Regra dentro da rota ou na tela</td>
+</tr>
+<tr>
+<td>Validação responde 400, regra de negócio 409/422</td>
+<td>É o que as fichas pedem; separa "campo inválido" de "operação não permitida"</td>
+<td>O 422 padrão do FastAPI para tudo</td>
+</tr>
+<tr>
+<td>Esquema por migrações (Alembic)</td>
+<td>Mesmo banco em todos os ambientes, histórico versionado no Git (HT05)</td>
+<td><code>create_all</code> no início da aplicação</td>
+</tr>
+<tr>
+<td>E-mail depois da resposta, com registro em <code>notificacao_email</code></td>
+<td>A falha de envio não desfaz o cadastro e pode ser reenviada (RBN01.05, RBN03.06)</td>
+<td>Enviar dentro da requisição</td>
+</tr>
+<tr>
+<td>Restrições no banco além do código</td>
+<td>Duplicidade e concorrência barradas mesmo com dois servidores ou dois cliques (RNF06)</td>
+<td>Conferir só no código</td>
+</tr>
+</tbody>
+</table>
+<h2>9. Como a arquitetura é verificada</h2>
+<ul>
+<li><strong>Suíte da API</strong> (<code>backend/tests</code>, pytest): 122 execuções, em SQLite e PostgreSQL 16, uma por critério de aceite; inclui as 51 operações do contrato.</li>
+<li><strong>Testes no navegador</strong> (<code>docs/testes/e2e</code>): fluxos completos pela tela, responsividade em 360 e 768 px.</li>
+<li><strong>Teste de carga</strong> (<code>backend/scripts/carga_rnf01.py</code>): RNF01 e RNF06.</li>
+<li>Resultados e evidências: <code>docs/testes/Relatorio_Execucao_Testes_SIGA_UEA.xlsx</code>.</li>
+</ul></body></html>

@@ -1,18 +1,17 @@
-"""Diagrama de implantação (UML deployment) do SIGA UEA: o sistema completo.
+"""Diagrama de implantação (UML deployment) do SIGA UEA, com a decisão do Plano de Integração v2.3.
 
-Gera docs/modelagem/diagrama-implantacao-siga-uea.drawio com três páginas:
+Gera docs/modelagem/diagrama-implantacao-siga-uea.drawio com duas páginas:
 
-  1. Produção        um servidor (VM Linux) com Docker Compose (HT06)
-  2. Homologação     serviços gratuitos separados: Vercel (site), Render (API) e Neon/Supabase (banco)
-  3. Desenvolvimento a máquina do desenvolvedor
+  1. Ambiente integrado  Vercel (site), Render (API) e Neon (PostgreSQL), com deploy pelo GitHub
+  2. Ambiente local      Docker Compose na máquina da equipe (db, api e web)
 
-Mostra o que já existe e o que os requisitos ainda pedem (em amarelo/laranja tracejado):
-armazenamento dos PDFs (RAN07), gerador de PDF (RBN09.14 a 09.17, RBN13.06), agendador de
-tarefas (RBN09.06, RBN01.11, RBN01.12), agenda pública (RAN14), backup (RNF03) e
-monitoramento (RNF07). Cada página tem legenda, e o texto das ligações fica ao lado da linha.
+Mostra o que já existe e, em amarelo/laranja tracejado, o que os requisitos ainda pedem:
+armazenamento dos PDFs e backup (RAN07, RNF03), gerador de PDF (RBN09.14 a 09.17, RBN13.06),
+tarefas agendadas (RBN09.06, RBN01.11, RBN01.12) e monitoramento (RNF07). Cada página tem legenda,
+e o texto das ligações fica ao lado da linha (o gerador confere que não encosta em linha nem caixa).
 
-Fontes: docker-compose.yml, Dockerfile, backend/Dockerfile, next.config.ts, backend/.env.exemplo,
-backend/app/config.py, as fichas HT05 a HT08 e a planilha de requisitos.
+Fontes: render.yaml, .vercelignore, docker-compose.yml, Dockerfile, backend/Dockerfile, next.config.ts,
+backend/.env.exemplo, backend/app/config.py, ficha HT06 e Plano de Integração v2.3 (seções 2 e 4.6.3).
 
     python docs/modelagem/implantacao.py
 """
@@ -253,7 +252,7 @@ def legenda_xml(idx, x, y) -> list[str]:
          f'fontSize=11;" vertex="1" parent="1"><mxGeometry x="{x}" y="{y}" width="{LEG_W}" height="{LEG_H}" '
          f'as="geometry"/></mxCell>']
     itens = [
-        ("caixa", "fillColor=#dae8fc;strokeColor=#6c8ebf;", "Nó, ambiente ou artefato que já existe"),
+        ("caixa", "fillColor=#dae8fc;strokeColor=#6c8ebf;", "Já existe no repositório (código ou configuração)"),
         ("caixa", PLANEJADO, "Planejado: pedido pelos requisitos, ainda não existe"),
         ("linha", LINHAS["existe"], "Comunicação que já existe (protocolo · porta)"),
         ("linha", LINHAS["planejado"], "Comunicação planejada"),
@@ -275,160 +274,116 @@ def legenda_xml(idx, x, y) -> list[str]:
 
 
 # ================================================================ páginas
-def producao() -> Pagina:
-    p = Pagina("1 · Produção (servidor com Docker)",
-               "SIGA UEA · Diagrama de implantação · Produção: um servidor com Docker Compose (HT06)")
+def integrado() -> Pagina:
+    p = Pagina("1 · Ambiente integrado (Vercel, Render e Neon)",
+               "SIGA UEA · Diagrama de implantação · Ambiente integrado: Vercel (site), Render (API) e Neon (banco)")
     p.forma("cli", "device", 40, 110, 260, 240, "Computador ou celular do usuário",
             "aluno, docente, coordenação e banca<br>(inclusive externos) · visitante da<br>agenda pública (RAN14)")
     p.forma("nav", "ambiente", 60, 205, 220, 130, "Navegador web", "Chrome ou Safari, a partir de 360 px", dentro="cli")
     p.forma("ui", "artefato", 75, 265, 190, 55, "Interface SIGA", dentro="nav")
-    p.forma("git", "externo", 40, 450, 260, 150, "GitHub", "repositório SIGA-UEA/sigauea")
-    p.forma("repo", "artefato", 60, 520, 220, 60, "código da branch main", dentro="git")
-    p.forma("mon", "device_plan", 40, 680, 260, 130, "Monitoramento externo",
+    p.forma("git", "externo", 40, 470, 260, 150, "GitHub", "repositório SIGA-UEA/sigauea")
+    p.forma("repo", "artefato", 60, 540, 220, 60, "código da branch main", dentro="git")
+    p.forma("mon", "device_plan", 40, 700, 260, 130, "Monitoramento externo",
             "ex.: UptimeRobot · avisa a equipe<br>se o sistema cair (RNF07)")
 
-    p.forma("srv", "device", 460, 70, 1300, 890, "Servidor de aplicação · VM Linux",
-            "2 vCPU · 4 GB de RAM · 20 GB de disco · provedor a definir (HT06)")
-    p.forma("dock", "ambiente", 480, 150, 1260, 790, "Docker Engine + Docker Compose", "docker-compose.yml",
-            dentro="srv")
-    p.forma("proxy", "planejado", 520, 225, 200, 190, "proxy · Caddy ou Nginx", "porta 443, a única exposta",
-            dentro="dock")
-    p.forma("cert", "artefato_plan", 535, 320, 170, 70, "certificado TLS<br>(Let's Encrypt)", dentro="proxy")
-    p.forma("web", "container", 820, 225, 220, 190, "web · Node.js 24", "Next.js 16 · porta 3000", dentro="dock")
-    p.forma("webimg", "artefato", 835, 300, 190, 55, "imagem web (Dockerfile)", dentro="web")
-    p.forma("webcfg", "artefato", 835, 362, 190, 40, "API_URL=http://api:8000", dentro="web")
-    p.forma("env", "artefato", 820, 480, 220, 120, ".env do servidor",
-            "DATABASE_URL, POSTGRES_PASSWORD, FRONTEND_URL, COOKIE_SEGURO=1, SMTP_*", dentro="dock")
-    p.forma("api", "container", 1140, 225, 260, 380, "api · Python 3.12 + Uvicorn", "FastAPI · porta 8000",
-            dentro="dock")
-    p.forma("apiimg", "artefato", 1155, 300, 230, 50, "imagem api (backend/Dockerfile)", dentro="api")
-    p.forma("mig", "artefato", 1155, 358, 230, 50, "migrações Alembic", dentro="api")
-    p.forma("seed", "artefato", 1155, 416, 230, 50, "carga inicial (python -m app.seed)", dentro="api")
-    p.forma("pdf", "artefato_plan", 1155, 474, 230, 55, "gerador de PDF: ata, folha, certi-<br>"
-            "ficados, relatório (RBN09.14 a 09.17)", dentro="api")
-    p.forma("arq", "artefato_plan", 1155, 537, 230, 55, "volume <i>arquivos</i> montado na api:<br>"
-            "PDFs até 20 MB, SHA-256 (RAN07)", dentro="api")
-    p.forma("db", "container", 1500, 225, 200, 240, "db · PostgreSQL 16", "porta 5432 · rede interna", dentro="dock")
-    p.forma("banco", "artefato", 1515, 300, 170, 55, "banco siga (23 tabelas<br>hoje, 45 no fim)", dentro="db")
-    p.forma("vol", "artefato", 1515, 368, 170, 70, "volume <i>dados</i><br>(/var/lib/postgresql/<br>data)", dentro="db")
-    p.forma("worker", "planejado", 1140, 700, 260, 210, "worker · Python 3.12", "mesma imagem da api · agendador",
-            dentro="dock")
-    p.forma("tarefas", "artefato_plan", 1155, 775, 230, 115, "tarefas agendadas:<br>lembrete 1 dia antes (RBN09.06)<br>"
-            "revogar aluno após 7 dias (RBN01.11)<br>expirar conta externa (RBN01.12)<br>reenviar e-mails com falha",
-            dentro="worker")
+    p.forma("vercel", "nuvem", 460, 90, 320, 300, "Vercel (plano Hobby)", "HTTPS automático · *.vercel.app")
+    p.forma("vnode", "ambiente", 480, 165, 280, 205, "Node.js 24 (funções do Next.js 16)", dentro="vercel")
+    p.forma("site", "artefato", 495, 222, 250, 45, "site SIGA (build da branch main)", dentro="vnode")
+    p.forma("vprx", "artefato", 495, 272, 250, 45, "proxy.ts (sessão) + rewrites /api/v1", dentro="vnode")
+    p.forma("vcfg", "artefato", 495, 322, 250, 45, "API_URL = endereço da API no Render", dentro="vnode")
 
-    p.forma("smtp", "externo", 1980, 110, 280, 140, "Servidor de e-mail", "smtp.gmail.com<br>conta siga.uea1@gmail.com")
-    p.forma("nota", "nota", 1980, 300, 340, 330,
-            "<b>Notas</b><br>• RNF02: só o proxy é exposto (443, TLS ≥ 1.2); site, API e banco ficam na rede interna "
-            "do Compose. Cookie de sessão httponly e, em produção, Secure (COOKIE_SEGURO=1).<br>"
-            "• RNF03: o log de auditoria fica no PostgreSQL e o banco não deixa alterar nem apagar; o backup guarda "
-            "banco e arquivos por 5 anos após a conclusão do TCC.<br>"
-            "• RNF07: 99% no pico; recuperação em até 30 min (reiniciar os contêineres ou restaurar o backup).<br>"
-            "• A API aplica as migrações ao subir (alembic upgrade head) e só então atende.")
-    p.forma("bkp", "device_plan", 1980, 700, 280, 140, "Armazenamento de backup",
-            "fora do servidor (outro provedor<br>ou disco) · retenção de 5 anos")
+    p.forma("render", "nuvem", 900, 90, 380, 640, "Render (Free Web Service)",
+            "dorme após ~15 min sem uso; o 1º acesso leva 30 a 60 s")
+    p.forma("rnode", "container", 920, 175, 340, 330, "Python 3.12 + Uvicorn", "FastAPI · render.yaml", dentro="render")
+    p.forma("rapi", "artefato", 935, 245, 310, 45, "API SIGA (backend/)", dentro="rnode")
+    p.forma("rstart", "artefato", 935, 297, 310, 50, "ao subir: migrações + carga inicial<br>(python -m app.seed)",
+            dentro="rnode")
+    p.forma("rcfg", "artefato", 935, 354, 310, 55, "DATABASE_URL, SMTP_*, FRONTEND_URL,<br>COOKIE_SEGURO=1", dentro="rnode")
+    p.forma("rpdf", "artefato_plan", 935, 416, 310, 55, "gerador de PDF: ata, folha, certificados,<br>relatório "
+            "(RBN09.14 a 09.17, RBN13.06)", dentro="rnode")
+    p.forma("cron", "planejado", 920, 540, 340, 170, "Cron Job · Python 3.12", "mesmo código, banco e SMTP da API",
+            dentro="render")
+    p.forma("tarefas", "artefato_plan", 935, 605, 310, 95, "tarefas agendadas: lembrete da defesa<br>(RBN09.06), "
+            "revogar aluno (RBN01.11),<br>expirar conta externa (RBN01.12), reenviar<br>e-mails, cópia diária do banco",
+            dentro="cron")
+
+    p.forma("neon", "nuvem", 1420, 90, 330, 240, "Neon (plano grátis)", "PostgreSQL gerenciado")
+    p.forma("pg", "ambiente", 1440, 165, 290, 145, "PostgreSQL 16", "conexão com TLS (sslmode=require)", dentro="neon")
+    p.forma("pbanco", "artefato", 1455, 235, 260, 55, "banco siga (23 tabelas hoje, 45 no fim)", dentro="pg")
+    p.forma("stor", "device_plan", 1420, 400, 330, 150, "Armazenamento de arquivos e backup",
+            "ex.: Supabase Storage · PDFs do TCC até 20 MB<br>(RAN07) e cópias do banco por 5 anos (RNF03)")
+    p.forma("smtp", "externo", 1420, 620, 330, 140, "Servidor de e-mail",
+            "smtp.gmail.com · conta siga.uea1@gmail.com<br>se o Render bloquear SMTP: Brevo ou Resend")
+
+    p.forma("nota", "nota", 1830, 90, 330, 380,
+            "<b>Notas</b><br>• O navegador só fala com a Vercel; a Vercel repassa /api/v1 ao Render. O cookie de "
+            "sessão fica na mesma origem (httponly e Secure), sem CORS.<br>"
+            "• RNF02: HTTPS em todo o caminho (TLS ≥ 1.2) e TLS também até o banco.<br>"
+            "• RNF03: o log de auditoria fica no PostgreSQL, que recusa alterar ou apagar registros.<br>"
+            "• RNF07: o plano grátis do Render dorme; para 99% no pico é preciso um plano pago ou o "
+            "monitoramento acordando a API.<br>"
+            "• Deploy automático a cada push na main (HT06, CA-02).<br>"
+            "• Configuração no repositório: render.yaml, .vercelignore e README (Publicar na internet).<br>"
+            "• Situação em 20/10/2026: configuração pronta; a publicação depende de criar as contas na Vercel, no "
+            "Render e no Neon.")
     p.legenda(40, 880)
 
-    p.liga("cli", "proxy", "HTTPS · :443<br>TLS ≥ 1.2", (1, 140 / 240), (0, 25 / 190))
-    p.liga("proxy", "web", "HTTP · :3000", (1, 0.4), (0, 0.4))
-    p.liga("web", "api", "HTTP · :8000<br>/api/v1/*", (1, 0.4), (0, 76 / 380))
-    p.liga("api", "db", "TCP · :5432", (1, 76 / 380), (0, 76 / 240))
-    p.liga("api", "smtp", "SMTP · :587<br>STARTTLS", (230 / 260, 0), (0, 85 / 140), pontos=[(1370, 195)])
-    p.liga("worker", "db", "TCP · :5432", (1, 60 / 210), (0.5, 1), tipo="planejado", pontos=[(1600, 760)], trecho=1)
-    p.liga("worker", "smtp", "SMTP · :587", (1, 160 / 210), (0, 120 / 140), tipo="planejado",
-           pontos=[(1950, 860), (1950, 230)], trecho=0)
-    p.liga("db", "bkp", "backup diário<br>(dump + arquivos)", (1, 195 / 240), (0, 0.5), tipo="planejado",
-           pontos=[(1800, 420), (1800, 770)], trecho=2)
-    p.liga("mon", "proxy", "HTTPS · a cada 5 min<br>(verificação)", (1, 0.5), (0.5, 1), tipo="planejado",
-           pontos=[(620, 745)], trecho=1)
-    p.liga("git", "srv", "«deploy» git pull +<br>docker compose up", (1, 75 / 150), (0, 455 / 890), tipo="deploy",
-           lado="abaixo")
-    return p
-
-
-def homologacao() -> Pagina:
-    p = Pagina("2 · Homologação (serviços gratuitos)",
-               "SIGA UEA · Diagrama de implantação · Homologação: serviços gratuitos separados")
-    p.forma("cli", "device", 40, 110, 260, 220, "Computador ou celular do usuário", "coordenação e equipe testando")
-    p.forma("nav", "ambiente", 60, 175, 220, 135, "Navegador web", "Chrome ou Safari", dentro="cli")
-    p.forma("ui", "artefato", 75, 240, 190, 55, "Interface SIGA", dentro="nav")
-    p.forma("git", "externo", 40, 520, 260, 150, "GitHub", "repositório SIGA-UEA/sigauea")
-    p.forma("repo", "artefato", 60, 590, 220, 60, "código da branch main", dentro="git")
-
-    p.forma("vercel", "nuvem", 460, 90, 320, 290, "Vercel (plano Hobby)", "HTTPS automático · *.vercel.app")
-    p.forma("vnode", "ambiente", 480, 165, 280, 195, "Node.js 24 (funções do Next)", dentro="vercel")
-    p.forma("site", "artefato", 495, 225, 250, 55, "site Next.js 16 (build da main)", dentro="vnode")
-    p.forma("vcfg", "artefato", 495, 290, 250, 55, "API_URL = endereço da API no Render", dentro="vnode")
-
-    p.forma("render", "nuvem", 900, 90, 360, 420, "Render (Free Web Service)",
-            "dorme após ~15 min sem uso; o 1º acesso leva 30 a 60 s")
-    p.forma("rnode", "container", 920, 175, 320, 315, "Python 3.12 + Uvicorn", "FastAPI", dentro="render")
-    p.forma("rapi", "artefato", 935, 245, 290, 50, "API SIGA (backend/)", dentro="rnode")
-    p.forma("rstart", "artefato", 935, 302, 290, 50, "start: python -m app.seed && uvicorn …", dentro="rnode")
-    p.forma("rcfg", "artefato", 935, 359, 290, 55, "DATABASE_URL, SMTP_*, FRONTEND_URL,<br>COOKIE_SEGURO=1", dentro="rnode")
-    p.forma("rpdf", "artefato_plan", 935, 421, 290, 55, "gerador de PDF (RBN09.14 a 09.17)", dentro="rnode")
-
-    p.forma("neon", "nuvem", 1420, 90, 330, 240, "Neon ou Supabase (plano grátis)",
-            "Supabase: usar o Session pooler (IPv4)")
-    p.forma("pg", "ambiente", 1440, 165, 290, 145, "PostgreSQL 16 gerenciado", "conexão com TLS", dentro="neon")
-    p.forma("pbanco", "artefato", 1455, 235, 260, 55, "banco siga", dentro="pg")
-    p.forma("stor", "device_plan", 1420, 400, 330, 150, "Armazenamento de arquivos",
-            "Supabase Storage ou similar · PDFs do<br>TCC, ata e certificados (RAN07)")
-    p.forma("smtp", "externo", 1420, 620, 330, 150, "Servidor de e-mail",
-            "smtp.gmail.com :587 · se o Render bloquear SMTP,<br>trocar por Brevo ou Resend (API HTTPS)")
-    p.forma("nota", "nota", 460, 800, 800, 125,
-            "<b>Notas</b><br>• Ambiente para homologação e apresentação (HT06), sem custo e sem cartão.<br>"
-            "• Não cumpre o RNF07 (99%): a API dorme. Abrir o sistema alguns minutos antes de apresentar.<br>"
-            "• Tarefas agendadas (lembretes, revogação) precisam de um agendador: Render Cron Job ou GitHub "
-            "Actions agendado.<br>"
-            "• O cookie de sessão fica na mesma origem: o navegador só fala com a Vercel, que repassa /api/v1.")
-    p.legenda(40, 720)
-
-    p.liga("cli", "vercel", "HTTPS · :443", (1, 120 / 220), (0, 140 / 290))
-    p.liga("vercel", "render", "HTTPS<br>/api/v1/*", (1, 0.45), (0, 130.5 / 420))
-    p.liga("render", "neon", "TCP + TLS · :5432", (1, 126 / 420), (0, 126 / 240))
-    p.liga("render", "stor", "HTTPS · PDFs", (1, 380 / 420), (0, 70 / 150), tipo="planejado")
-    p.liga("render", "smtp", "SMTP · :587", (0.75, 1), (0, 75 / 150), pontos=[(1170, 695)], trecho=1)
-    p.liga("git", "vercel", "«deploy» a cada push", (1, 45 / 150), (0.5, 1), pontos=[(620, 565)], tipo="deploy",
+    p.liga("cli", "vercel", "HTTPS · :443", (1, 0.5), (0, 140 / 300))
+    p.liga("vercel", "render", "HTTPS<br>/api/v1/*", (1, 0.5), (0, 150 / 640))
+    p.liga("render", "neon", "TCP + TLS · :5432", (1, 126 / 640), (0, 126 / 240))
+    p.liga("render", "stor", "HTTPS · PDFs", (1, 380 / 640), (0, 70 / 150), tipo="planejado")
+    p.liga("render", "smtp", "SMTP · :587", (1, 600 / 640), (0, 70 / 140))
+    p.liga("mon", "render", "HTTPS · /health<br>a cada 5 min", (1, 0.5), (0, 630 / 640), tipo="planejado",
+           pontos=[(600, 765), (600, 720)], trecho=2)
+    p.liga("git", "vercel", "«deploy» a cada push", (1, 50 / 150), (0.5, 1), pontos=[(620, 520)], tipo="deploy",
            trecho=0)
-    p.liga("git", "render", "«deploy» a cada push", (1, 105 / 150), (0.3, 1), pontos=[(1008, 625)], tipo="deploy",
-           trecho=0, lado="abaixo")
+    p.liga("git", "render", "«deploy» a cada push", (1, 110 / 150), (0, 490 / 640), tipo="deploy", lado="abaixo")
     return p
 
 
-def desenvolvimento() -> Pagina:
-    p = Pagina("3 · Desenvolvimento local", "SIGA UEA · Diagrama de implantação · Desenvolvimento local")
-    p.forma("pc", "device", 40, 70, 1400, 560, "Computador do desenvolvedor", "Windows 11, macOS ou Linux")
-    p.forma("nav", "ambiente", 60, 150, 220, 140, "Navegador web", dentro="pc")
-    p.forma("url", "artefato", 75, 215, 190, 50, "http://localhost:3000", dentro="nav")
-    p.forma("node", "ambiente", 360, 150, 280, 220, "Node.js 24", dentro="pc")
-    p.forma("dev", "artefato", 375, 205, 250, 50, "npm run dev (Next.js, porta 3000)", dentro="node")
-    p.forma("prx", "artefato", 375, 265, 250, 50, "proxy.ts + rewrites de /api/v1", dentro="node")
-    p.forma("py", "ambiente", 720, 150, 320, 330, "Python 3.12 (backend/.venv)", dentro="pc")
-    p.forma("uv", "artefato", 735, 205, 290, 50, "uvicorn app.main:app --reload (8000)", dentro="py")
-    p.forma("tst", "artefato", 735, 265, 290, 50, "pytest (testes da API)", dentro="py")
-    p.forma("denv", "artefato", 735, 325, 290, 60, "backend/.env (fora do git)<br>SMTP e FRONTEND_URL", dentro="py")
-    p.forma("sd", "artefato", 735, 395, 290, 60, "python -m app.seed --demo<br>(contas e turma de demonstração)",
-            dentro="py")
-    p.forma("sqlite", "artefato", 1170, 160, 240, 60, "backend/siga_dev.db (SQLite)", dentro="pc")
-    p.forma("pgl", "ambiente", 1170, 280, 240, 140, "PostgreSQL 16 (opcional)", "Docker ou instalação local",
+def local() -> Pagina:
+    p = Pagina("2 · Ambiente local (Docker Compose)",
+               "SIGA UEA · Diagrama de implantação · Ambiente local: Docker Compose na máquina da equipe")
+    p.forma("pc", "device", 40, 70, 1360, 640, "Computador da equipe", "Windows 11, macOS ou Linux")
+    p.forma("nav", "ambiente", 60, 150, 160, 140, "Navegador web", dentro="pc")
+    p.forma("url", "artefato", 72, 215, 136, 50, "localhost:3000", dentro="nav")
+    p.forma("dock", "ambiente", 340, 150, 1040, 520, "Docker Engine + Docker Compose", "docker-compose.yml",
             dentro="pc")
-    p.forma("pgb", "artefato", 1185, 350, 210, 50, "banco de teste", dentro="pgl")
-    p.forma("smtp", "externo", 1520, 150, 280, 160, "Servidor de e-mail",
-            "smtp.gmail.com :587 · opcional: sem<br>SMTP, o e-mail sai no terminal da API")
-    p.legenda(40, 680)
+    p.forma("web", "container", 380, 225, 240, 200, "web · Node.js 24", "Next.js 16 · porta 3000 publicada",
+            dentro="dock")
+    p.forma("webimg", "artefato", 395, 300, 210, 50, "imagem web (Dockerfile)", dentro="web")
+    p.forma("webcfg", "artefato", 395, 358, 210, 45, "API_URL=http://api:8000", dentro="web")
+    p.forma("env", "artefato", 380, 470, 240, 110, "variáveis do Compose",
+            "POSTGRES_PASSWORD, FRONTEND_URL,<br>COOKIE_SEGURO, SMTP_* (opcionais)", dentro="dock")
+    p.forma("api", "container", 720, 225, 280, 300, "api · Python 3.12 + Uvicorn", "FastAPI · porta 8000 publicada",
+            dentro="dock")
+    p.forma("apiimg", "artefato", 735, 300, 250, 50, "imagem api (backend/Dockerfile)", dentro="api")
+    p.forma("mig", "artefato", 735, 358, 250, 50, "ao subir: alembic upgrade head", dentro="api")
+    p.forma("seed", "artefato", 735, 416, 250, 50, "docker compose run api<br>python -m app.seed", dentro="api")
+    p.forma("db", "container", 1100, 225, 260, 260, "db · PostgreSQL 16", "imagem postgres:16-alpine<br>"
+            "porta 5432 só na rede do Compose", dentro="dock")
+    p.forma("banco", "artefato", 1115, 315, 230, 55, "banco siga", dentro="db")
+    p.forma("vol", "artefato", 1115, 380, 230, 60, "volume <i>dados</i><br>(/var/lib/postgresql/data)", dentro="db")
 
-    p.liga("nav", "node", "HTTP · :3000", (1, 0.5), (0, 70 / 220))
-    p.liga("node", "py", "HTTP · :8000<br>/api/v1/*", (1, 0.32), (0, 70.4 / 330))
-    p.liga("py", "sqlite", "arquivo (SQLAlchemy)", (1, 40 / 330), (0, 0.5))
-    p.liga("py", "pgl", "TCP · :5432<br>(TEST_DATABASE_URL)", (1, 200 / 330), (0, 70 / 140))
-    p.liga("py", "smtp", "SMTP · :587 (via backend/.env)", (0.5, 1), (0.5, 1), pontos=[(880, 580), (1660, 580)],
+    p.forma("nota", "nota", 1440, 70, 330, 320,
+            "<b>Notas</b><br>• Subir tudo: docker compose up --build -d (README, seção Com Docker).<br>"
+            "• Sem Docker também funciona: npm run dev, uvicorn --reload e SQLite (README, Como rodar).<br>"
+            "• A execução registrada em docs/testes rodou fora do Docker: API e site locais (build de "
+            "produção) com PostgreSQL 16 e SQLite.<br>"
+            "• Sem SMTP configurado, os e-mails aparecem no log da API (docker compose logs -f api).")
+    p.forma("smtp", "externo", 1440, 430, 330, 140, "Servidor de e-mail", "smtp.gmail.com :587 · opcional")
+    p.legenda(40, 760)
+
+    p.liga("nav", "web", "HTTP · :3000", (1, 100 / 140), (0, 25 / 200))
+    p.liga("web", "api", "HTTP · :8000<br>/api/v1/*", (1, 76 / 200), (0, 76 / 300))
+    p.liga("api", "db", "TCP · :5432", (1, 76 / 300), (0, 76 / 260))
+    p.liga("api", "smtp", "SMTP · :587 (opcional, via .env)", (0.5, 1), (0.5, 1), pontos=[(860, 620), (1605, 620)],
            trecho=1)
     return p
 
 
 def main() -> None:
-    paginas = [producao(), homologacao(), desenvolvimento()]
+    paginas = [integrado(), local()]
     total = 0
     for p in paginas:
         probs = p.conferir()
