@@ -58,6 +58,61 @@ GRUPOS = [  # ordem e título das seções, pela tag do OpenAPI
 ]
 
 
+# Finalidade de cada operação, em português (o "summary" do OpenAPI vem do nome da função).
+FINALIDADE = {
+    "GET /health": "Informa se a API está no ar (usado pela hospedagem e pelo monitoramento).",
+    "POST /auth/login": "Entra no sistema com e-mail e senha e cria a sessão.",
+    "POST /auth/logout": "Sai do sistema e encerra a sessão.",
+    "GET /auth/me": "Devolve o usuário da sessão atual, com os perfis.",
+    "POST /auth/validar-token": "Confere se um link de ativação ou de recuperação ainda vale, antes de mostrar o formulário.",
+    "POST /auth/ativar": "Ativa a conta pelo link do e-mail, definindo a primeira senha.",
+    "POST /auth/esqueci-senha": "Pede o link de recuperação de senha por e-mail.",
+    "POST /auth/redefinir-senha": "Define uma nova senha pelo link de recuperação.",
+    "GET /usuarios/me": "Mostra os dados do próprio perfil.",
+    "PUT /usuarios/me": "Altera os dados do próprio perfil que o usuário pode editar.",
+    "POST /usuarios/me/senha": "Troca a própria senha, informando a atual.",
+    "PUT /usuarios/me/foto": "Envia ou troca a própria foto.",
+    "DELETE /usuarios/me/foto": "Remove a própria foto.",
+    "GET /usuarios/{}/foto": "Mostra a foto de um usuário.",
+    "PUT /usuarios/{}/foto": "Envia ou troca a foto de um docente (coordenação).",
+    "DELETE /usuarios/{}/foto": "Remove a foto de um usuário (coordenação).",
+    "POST /docentes": "Cadastra um docente e envia o link de ativação.",
+    "GET /docentes": "Lista os docentes, com filtros por curso, cargo e busca.",
+    "POST /alunos": "Cadastra um aluno e envia o link de ativação.",
+    "GET /alunos": "Lista os alunos, com filtros por curso e busca.",
+    "GET /alunos/{}": "Mostra o cadastro de um aluno.",
+    "GET /docentes/{}": "Mostra o cadastro de um docente.",
+    "PUT /usuarios/{}": "Altera o cadastro de um usuário.",
+    "PATCH /usuarios/{}/inativar": "Inativa um usuário, sem apagar o histórico.",
+    "PATCH /usuarios/{}/reativar": "Reativa um usuário inativado.",
+    "POST /usuarios/{}/reenviar-ativacao": "Gera e envia um novo link de ativação.",
+    "GET /areas/gestao": "Lista as áreas de interesse com quantos docentes usam cada uma.",
+    "GET /areas": "Lista as áreas de interesse.",
+    "POST /areas": "Cria uma área de interesse.",
+    "PUT /areas/{}": "Renomeia uma área de interesse.",
+    "DELETE /areas/{}": "Exclui uma área de interesse e desvincula os docentes.",
+    "GET /perfis": "Lista os cinco perfis de acesso.",
+    "GET /cursos": "Lista os cursos contemplados.",
+    "GET /periodos": "Lista os períodos letivos.",
+    "POST /periodos": "Cria um período letivo.",
+    "GET /turmas": "Lista as turmas de TCC, com filtro por período.",
+    "POST /turmas": "Cria uma turma de TCC1 ou TCC2 com o professor responsável.",
+    "GET /turmas/minhas": "Lista as turmas do usuário: as que o docente conduz e a do aluno.",
+    "GET /turmas/{}": "Mostra uma turma com os alunos e o TCC de cada um.",
+    "POST /turmas/{}/alunos": "Inclui um aluno na turma.",
+    "PATCH /turmas/{}/alunos/{}": "Altera a situação da matrícula do aluno na turma.",
+    "GET /tccs/formulario": "Abre o formulário de cadastro: turma, orientadores elegíveis, áreas e rascunho existente.",
+    "GET /tccs": "Lista os TCCs que o usuário pode ver.",
+    "POST /tccs": "Cria o rascunho do cadastro de TCC.",
+    "GET /tccs/{}": "Mostra o cadastro de um TCC, com orientação e histórico.",
+    "PUT /tccs/{}": "Atualiza o rascunho ou o cadastro devolvido.",
+    "POST /tccs/{}/submissao": "Envia o cadastro para análise e gera o protocolo.",
+    "POST /tccs/{}/orientacoes": "Indica um novo orientador ou o coorientador.",
+    "GET /orientacoes": "Lista os pedidos de orientação recebidos pelo docente.",
+    "GET /orientacoes/{}": "Mostra um pedido de orientação.",
+    "POST /orientacoes/{}/resposta": "Aceita ou recusa um pedido de orientação.",
+}
+
 def chave(metodo: str, caminho: str) -> str:
     return f"{metodo.upper()} {re.sub(r'\{[^}]+\}', '{}', caminho.removeprefix('/api/v1'))}"
 
@@ -74,6 +129,14 @@ def permissoes() -> dict[str, tuple[str, str]]:
         for m, c in re.findall(r"`(GET|POST|PUT|PATCH|DELETE) ([^`]+)`", partes[0]):
             out[chave(m, c)] = (partes[1].replace("`", ""), partes[2].replace("`", ""))
     out.setdefault("GET /health", ("público", "HT06 (verificação do Render)"))
+    # linhas que agrupam operações com perfis diferentes: separadas aqui, conferidas no código das rotas
+    out.update({
+        "POST /auth/login": ("qualquer pessoa", "RBN01.06"),
+        "POST /auth/logout": ("qualquer pessoa (encerra a sessão, se houver)", "RBN01.06"),
+        "GET /auth/me": ("logado", "RBN01.06"),
+        "GET /periodos": ("logado", "RBN08.01"),
+        "POST /periodos": ("coordenador", "RBN08.01"),
+    })
     return out
 
 
@@ -167,7 +230,7 @@ def operacao(metodo: str, caminho: str, op: dict, perms: dict) -> str:
         f"<td class='num'>{obs.get(c, 0)}</td></tr>" for c in codigos if c != 405)
     desc = html.escape((op.get("description") or "").strip()).replace("\n", "<br>")
     return (f"<section class='op'><h3><span class='met {metodo}'>{metodo.upper()}</span> <code>{html.escape(caminho)}</code></h3>"
-            f"<p class='resumo'>{html.escape(op.get('summary', ''))}</p>"
+            f"<p class='resumo'>{html.escape(FINALIDADE.get(k, op.get('summary', '')))}</p>"
             f"<p><b>Quem pode:</b> {html.escape(quem)} · <b>Requisito:</b> {html.escape(req)}</p>"
             + (f"<p class='nota'>{desc}</p>" if desc else "") + entrada + saida
             + "<h4>Respostas</h4><table class='cods'><tr><th>Código</th><th>Significado</th>"

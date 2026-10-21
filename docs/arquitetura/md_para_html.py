@@ -1,8 +1,8 @@
 """Converte um documento Markdown da pasta docs/arquitetura em HTML com o visual do contrato da API.
 
     pip install markdown
-    python docs/arquitetura/md_para_html.py docs/arquitetura/arquitetura-em-camadas.md
-    node docs/arquitetura/html_para_pdf.mjs docs/arquitetura/arquitetura-em-camadas.html
+    python docs/arquitetura/md_para_html.py docs/modelagem/modelo-logico-siga-uea.md
+    node docs/arquitetura/html_para_pdf.mjs docs/modelagem/modelo-logico-siga-uea.html
 """
 
 import sys
