@@ -4,7 +4,7 @@ Cada requisito tem de estar citado em alguma tabela (campo requisitos) ou em
 SEM_TABELA, com o motivo. Sai com erro se faltar algum.
 
     pip install openpyxl
-    python docs/modelagem/cobertura_requisitos.py ["Requisitos_SIGA_UEA (4).xlsx"]
+    python docs/modelagem/cobertura_requisitos.py [docs/requisitos/Requisitos_SIGA_UEA.xlsx]
 """
 
 import re
@@ -17,7 +17,7 @@ AQUI = Path(__file__).resolve().parent
 sys.path.insert(0, str(AQUI))
 import modelo_logico as ml  # noqa: E402
 
-PLANILHA = AQUI.parent.parent / "Requisitos_SIGA_UEA (4).xlsx"
+PLANILHA = AQUI.parent.parent / "docs" / "requisitos" / "Requisitos_SIGA_UEA.xlsx"
 
 
 def citados(texto: str) -> set[str]:

@@ -204,7 +204,7 @@ backend/app/
   seed.py            carga inicial de desenvolvimento
 backend/migrations/  migrações do banco (Alembic): 0001 esquema inicial, 0002 foto, 0003 auditoria imutável, 0004 cadastro de TCC
 backend/tests/       um teste por critério de aceite
-docs/                modelo de dados (diagrama ER), script SQL do PostgreSQL e contrato da API
+docs/                requisitos, protótipo, modelagem, arquitetura, testes e gestão (ver Documentação)
 
 app/(publico)/       telas sem login: entrar, ativar, esqueci-senha, redefinir-senha (TEL01)
 app/(sistema)/       telas com login: inicio, usuarios e perfil (TEL02), tccs (TEL04, TEL05 cadastro,
@@ -258,7 +258,18 @@ Ficam para os módulos seguintes, porque dependem deles: revogação do acesso d
 
 ## Documentação
 
-Os requisitos completos (módulos, RAN, RBN, regras de negócio e RNF) ficam na planilha **Requisitos_SIGA_UEA**, na pasta SIGA-NUCOMP. Os identificadores dos requisitos podem mudar durante a reorganização, então consulte sempre a versão vigente.
+Os documentos ficam em `docs/`, conforme o Plano de Gerenciamento de Configuração ([`docs/gestao/`](docs/gestao/)):
+
+| Pasta | O que tem |
+|---|---|
+| [`docs/requisitos/`](docs/requisitos/) | planilha de requisitos (módulos, RAN, RBN, regras de negócio, RNF, fluxos e telas) |
+| [`docs/prototipos/`](docs/prototipos/) | protótipo navegável das telas |
+| [`docs/modelagem/`](docs/modelagem/) | histórias de usuário, DER, modelo lógico, dicionário de dados, diagramas de classes, de robustez e de sequência e de implantação |
+| [`docs/arquitetura/`](docs/arquitetura/) | arquitetura do sistema e contrato da API |
+| [`docs/testes/`](docs/testes/) | relatório de execução, roteiro e2e e evidências |
+| [`docs/gestao/`](docs/gestao/) | plano de configuração |
+
+Os diagramas de classes e de sequência são gerados por `docs/modelagem/diagrama_classes.py` (lido do código) e `docs/modelagem/diagramas_sequencia.py` (fluxos em `fluxos_sequencia.py`, na ordem das telas). Os identificadores dos requisitos podem mudar durante a reorganização, então consulte sempre a versão vigente.
 
 ## Equipe
 
