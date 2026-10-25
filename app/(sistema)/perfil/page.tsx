@@ -15,6 +15,7 @@ import { CampoSenha } from "@/components/campo-senha";
 import { Icone } from "@/components/icone";
 import { api, ErroApi } from "@/lib/api";
 import { senhaValida } from "@/lib/senha";
+import { MENSAGEM_TELEFONE, soTelefone, telefoneValido } from "@/lib/telefone";
 import { useSessao } from "@/lib/sessao";
 import {
   FOTO_TIPOS,
@@ -131,6 +132,7 @@ function SecaoPerfil({ eu, escolheAreas }: { eu: Usuario; escolheAreas: boolean 
   async function salvar(evento: React.SyntheticEvent) {
     evento.preventDefault();
     setAviso(null);
+    if (!telefoneValido(telefone)) return setErros({ telefone: MENSAGEM_TELEFONE });
     if (editaCurso && !cursoId) return setErros({ curso_id: "Escolha o curso." });
     setErros({});
     setSalvando(true);
@@ -232,8 +234,9 @@ function SecaoPerfil({ eu, escolheAreas }: { eu: Usuario; escolheAreas: boolean 
               <Entrada
                 type="tel"
                 autoComplete="tel"
+                inputMode="tel"
                 value={telefone}
-                onChange={(e) => setTelefone(e.target.value)}
+                onChange={(e) => setTelefone(soTelefone(e.target.value))}
                 erro={erros.telefone}
                 placeholder="(92) 90000-0000"
                 maxLength={20}

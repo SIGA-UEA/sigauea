@@ -1,13 +1,26 @@
+import re
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, PlainSerializer, StringConstraints
+from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field, PlainSerializer, StringConstraints
 
 # O banco guarda UTC sem fuso; o "Z" avisa o navegador para converter para a hora local.
 DataHora = Annotated[datetime, PlainSerializer(lambda d: d.isoformat(timespec="seconds") + "Z")]
 
 Nome = Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=150)]
-Telefone = Annotated[str, StringConstraints(strip_whitespace=True, max_length=20)]
+
+
+def _telefone(valor: str) -> str | None:
+    """Telefone com DDD: 10 a 13 dígitos, com ou sem parênteses, espaços, hífen ou "+". Vazio apaga o telefone."""
+    if not valor:
+        return None
+    digitos = len(re.sub(r"\D", "", valor))
+    if not re.fullmatch(r"\+?[\d\s().-]+", valor) or not 10 <= digitos <= 13:
+        raise ValueError("Informe o telefone com DDD, só com números (ex.: (92) 99123-4567).")
+    return valor
+
+
+Telefone = Annotated[str, StringConstraints(strip_whitespace=True, max_length=20), AfterValidator(_telefone)]
 Matricula = Annotated[str, StringConstraints(strip_whitespace=True, pattern=r"^\d{6,20}$")]
 Cargo = Literal["coordenador", "professor", "orientador"]
 

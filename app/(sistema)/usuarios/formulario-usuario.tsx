@@ -10,6 +10,7 @@ import { Avatar } from "@/components/avatar";
 import { Campo, Entrada, Selecao } from "@/components/campo";
 import { Modal } from "@/components/modal";
 import { api, ErroApi } from "@/lib/api";
+import { MENSAGEM_TELEFONE, soTelefone, telefoneValido } from "@/lib/telefone";
 import {
   FOTO_TIPOS,
   NOME_CARGO,
@@ -71,6 +72,7 @@ export function FormularioUsuario({ tipo, usuario, cursos, areas, euId, aoSalvar
     const e: Erros = {};
     if (nome.trim().length < 3) e.nome = "Informe o nome completo.";
     if (!/^\S+@\S+\.\S+$/.test(email.trim())) e.email = "Informe um e-mail válido.";
+    if (docente && !telefoneValido(telefone)) e.telefone = MENSAGEM_TELEFONE;
     if (cursoObrigatorio && !cursoId) e.curso_id = "Escolha o curso.";
     if (docente && perfis.length === 0) e.perfis = "Marque ao menos um perfil.";
     if (!docente && !/^\d{6,20}$/.test(matricula)) e.matricula = "Use só números (6 a 20 dígitos).";
@@ -150,8 +152,9 @@ export function FormularioUsuario({ tipo, usuario, cursos, areas, euId, aoSalvar
             <Campo rotulo="Telefone" dica="opcional" erro={erros.telefone}>
               <Entrada
                 type="tel"
+                inputMode="tel"
                 value={telefone}
-                onChange={(e) => setTelefone(e.target.value)}
+                onChange={(e) => setTelefone(soTelefone(e.target.value))}
                 erro={erros.telefone}
                 placeholder="(92) 90000-0000"
                 maxLength={20}
