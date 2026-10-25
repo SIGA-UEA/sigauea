@@ -53,3 +53,9 @@ __pycache__/
 
 # build do Next gerado por engano dentro do backend
 backend/.next/
+
+# documentos do projeto: ficam no Drive da equipe, o repositório guarda só o código
+/docs/
+/*.docx
+/*.pdf
+/*.drawio

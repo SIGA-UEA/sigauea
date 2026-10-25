@@ -1,7 +1,7 @@
 """Cadastro e submissão do TCC (RAN03) e vínculos de orientação (RAN06).
 
 Cada função segue um diagrama de sequência; os comentários "DS-FL01 passo N"
-apontam para a mensagem correspondente no SIGA_UEA_FL01-10_diagramasSeq.drawio.
+apontam para a mensagem correspondente no diagrama do Documento de Sequência.
 """
 
 from datetime import date
@@ -90,7 +90,7 @@ def _vinculo_out(o: Orientacao | None) -> VinculoOut | None:
 
 
 def pendencias(tcc: Tcc) -> list[str]:
-    """O que impede a submissão (DS-FL01 passo 5, validarObrigatorios, e RBN03.03)."""
+    """O que impede a submissão (DS-FL01 passo 6 e RBN03.03)."""
     faltam = []
     if not tcc.titulo.strip():
         faltam.append("Informe o título.")
@@ -200,7 +200,7 @@ def _docentes_com(db: Session, perfis: tuple[str, ...]) -> list[Usuario]:
 
 
 def orientadores_elegiveis(db: Session) -> list[Usuario]:
-    """DS-FL01-A passo 6: docentes ativos com perfil de orientador."""
+    """DS-FL01-A passo 10: docentes ativos com perfil de orientador."""
     return _docentes_com(db, (PERFIL_ORIENTADOR,))
 
 
@@ -209,7 +209,7 @@ def coorientadores_elegiveis(db: Session) -> list[Usuario]:
 
 
 def _verificar_elegibilidade(db: Session, orientador_id: int | None, coorientador_id: int | None) -> None:
-    """DS-FL01-B passo 6 (E2): orientador e coorientador elegíveis e diferentes (RBN06.02)."""
+    """DS-FL01-B passo 13 (E2): orientador e coorientador elegíveis e diferentes (RBN06.02)."""
     erros = {}
     if orientador_id and orientador_id not in {u.id for u in orientadores_elegiveis(db)}:
         erros["orientador_id"] = "Escolha um docente ativo com perfil de orientador."
@@ -226,12 +226,12 @@ def _verificar_elegibilidade(db: Session, orientador_id: int | None, coorientado
 
 
 def formulario(db: Session, aluno: Usuario) -> FormularioOut:
-    m = _exigir_matriculado(db, aluno.id)  # passo 3 + 403
+    m = _exigir_matriculado(db, aluno.id)  # passo 7 + 403
     tcc = db.scalar(
         select(Tcc).where(Tcc.aluno_id == aluno.id, Tcc.periodo_id == m.turma.periodo_id)
-    )  # passo 4
+    )  # passo 8
     origem = None
-    if tcc is None and m.turma.disciplina == "TCC2":  # passo 5 (A4, RBN08.04)
+    if tcc is None and m.turma.disciplina == "TCC2":  # passo 9 (A4, RBN08.04)
         tcc1 = db.scalar(
             select(Tcc).where(Tcc.aluno_id == aluno.id, Tcc.etapa == "TCC1").order_by(Tcc.id.desc())
         )
@@ -249,7 +249,7 @@ def formulario(db: Session, aluno: Usuario) -> FormularioOut:
         situacao_matricula=m.situacao,
         tcc=para_saida(tcc) if tcc else None,
         origem=origem,
-        orientadores=[pessoa(u) for u in orientadores_elegiveis(db)],  # passo 6
+        orientadores=[pessoa(u) for u in orientadores_elegiveis(db)],  # passo 10
         coorientadores=[pessoa(u) for u in coorientadores_elegiveis(db)],
         areas=[
             AreaOut.model_validate(a) for a in db.scalars(select(AreaInteresse).order_by(AreaInteresse.nome))
@@ -268,7 +268,7 @@ def _area(db: Session, area_id: int) -> AreaInteresse:
 
 
 def _obter_do_aluno(db: Session, tcc_id: int, aluno: Usuario, travar: bool = False) -> Tcc:
-    """DS-FL01 passo 3/4 obter(idTcc, idAluno): inexistente ou de outro aluno (RN07)."""
+    """DS-FL01 passo 4 e DS-FL01-B passo 12: inexistente ou de outro aluno (RN07)."""
     tcc = db.get(Tcc, tcc_id, with_for_update=travar)
     if tcc is None or tcc.aluno_id != aluno.id:
         raise ErroAPI(404, "Cadastro de TCC não encontrado.")
@@ -314,7 +314,7 @@ def _salvar_artigo(db: Session, tcc: Tcc, dados: TccSalvar, ator: Usuario) -> No
 
 
 def _aviso_vinculo(db: Session, tarefas: BackgroundTasks, o: Orientacao, tcc: Tcc) -> None:
-    """RBN03.06 e DS-FL03-B passos 8 e 9: o professor indicado recebe e-mail com acesso autenticado."""
+    """RBN03.06, DS-FL01-B passo 18 e DS-FL03-B passo 12: o professor indicado recebe e-mail."""
     papel = "orientador(a)" if o.papel == PAPEL_ORIENTADOR else "coorientador(a)"
     email.enfileirar(
         db,
@@ -331,7 +331,7 @@ def _aviso_vinculo(db: Session, tarefas: BackgroundTasks, o: Orientacao, tcc: Tc
 
 
 def _registrar_vinculo(db, tarefas, tcc: Tcc, professor_id: int, papel: str, ator: Usuario) -> Orientacao:
-    """DS-FL03-B passo 6 registrarVinculo: status PENDENTE com data (RN16)."""
+    """DS-FL01-B passo 16 e DS-FL03-B passo 10: vínculo PENDENTE com data (RN16)."""
     o = Orientacao(tcc=tcc, professor_id=professor_id, papel=papel, status=PENDENTE)
     db.add(o)
     db.flush()
@@ -349,7 +349,7 @@ def _registrar_vinculo(db, tarefas, tcc: Tcc, professor_id: int, papel: str, ato
 
 
 def _salvar_vinculo(db, tarefas, tcc: Tcc, papel: str, professor_id: int | None, ator: Usuario) -> None:
-    """DS-FL01-B passo 10 salvarVinculos: troca o pendente; aceito só a coordenação substitui (FL03-C)."""
+    """DS-FL01-B passos 15 e 16: troca o pendente; aceito só a coordenação substitui (FL03-C)."""
     atual = _vinculo(tcc, papel)
     if atual and atual.status in VIGENTES and atual.professor_id == professor_id:
         return
@@ -370,14 +370,14 @@ def _palavras(tcc: Tcc, palavras: list[str]) -> None:
 
 
 def criar(db: Session, tarefas: BackgroundTasks, aluno: Usuario, dados: TccSalvar) -> Tcc:
-    m = _exigir_matriculado(db, aluno.id)  # passo 3 (RN05)
+    m = _exigir_matriculado(db, aluno.id)  # passo 4 (RN05)
     turma = m.turma
     if db.scalar(select(Tcc.id).where(Tcc.aluno_id == aluno.id, Tcc.periodo_id == turma.periodo_id)):
-        # passo 5 existeNoPeriodo (RN04)
+        # alt "POST e já existe cadastro no período" (RN04)
         raise ErroAPI(409, "Você já tem um cadastro de TCC neste período letivo.", motivo="duplicado")
-    _verificar_elegibilidade(db, dados.orientador_id, dados.coorientador_id)  # passo 6
-    _area(db, dados.area_id)
-    tcc = Tcc(  # passo 7: RASCUNHO, sem protocolo
+    _verificar_elegibilidade(db, dados.orientador_id, dados.coorientador_id)  # passo 13
+    _area(db, dados.area_id)  # passo 5
+    tcc = Tcc(  # passo 6: RASCUNHO, sem protocolo
         aluno_id=aluno.id,
         turma_id=turma.id,
         periodo_id=turma.periodo_id,
@@ -413,7 +413,7 @@ def criar(db: Session, tarefas: BackgroundTasks, aluno: Usuario, dados: TccSalva
     db.flush()
     db.refresh(tcc)
     _salvar_artigo(db, tcc, dados, aluno)  # passo 9
-    _salvar_vinculo(db, tarefas, tcc, PAPEL_ORIENTADOR, dados.orientador_id, aluno)  # passo 10
+    _salvar_vinculo(db, tarefas, tcc, PAPEL_ORIENTADOR, dados.orientador_id, aluno)  # passos 15 e 16
     _salvar_vinculo(db, tarefas, tcc, PAPEL_COORIENTADOR, dados.coorientador_id, aluno)
     db.commit()
     db.refresh(tcc)
@@ -421,13 +421,13 @@ def criar(db: Session, tarefas: BackgroundTasks, aluno: Usuario, dados: TccSalva
 
 
 def atualizar(db: Session, tarefas: BackgroundTasks, aluno: Usuario, tcc_id: int, dados: TccSalvar) -> Tcc:
-    _exigir_matriculado(db, aluno.id)  # passo 3 (RN05)
-    tcc = _obter_do_aluno(db, tcc_id, aluno)  # passo 4 (RN07)
+    _exigir_matriculado(db, aluno.id)  # passo 4 (RN05)
+    tcc = _obter_do_aluno(db, tcc_id, aluno)  # passo 12 (RN07)
     if tcc.situacao not in EDITAVEIS:
         raise ErroAPI(409, "O cadastro não pode ser editado nesta situação.", motivo="nao_editavel")
-    _verificar_elegibilidade(db, dados.orientador_id, dados.coorientador_id)  # passo 6
-    _area(db, dados.area_id)
-    # passo 8: atualizar mantém protocolo e parecer (RBN03.05); cada campo alterado vai para o log
+    _verificar_elegibilidade(db, dados.orientador_id, dados.coorientador_id)  # passo 13
+    _area(db, dados.area_id)  # passo 5
+    # passos 6 e 14: atualizar mantém protocolo e parecer (RBN03.05); cada campo alterado vai para o log
     novos = {
         "titulo": dados.titulo,
         "subtitulo": dados.subtitulo or None,
@@ -465,7 +465,7 @@ def atualizar(db: Session, tarefas: BackgroundTasks, aluno: Usuario, tcc_id: int
         _palavras(tcc, dados.palavras_chave)
     tcc.atualizado_em = agora()
     _salvar_artigo(db, tcc, dados, aluno)  # passo 9
-    _salvar_vinculo(db, tarefas, tcc, PAPEL_ORIENTADOR, dados.orientador_id, aluno)  # passo 10
+    _salvar_vinculo(db, tarefas, tcc, PAPEL_ORIENTADOR, dados.orientador_id, aluno)  # passos 15 e 16
     _salvar_vinculo(db, tarefas, tcc, PAPEL_COORIENTADOR, dados.coorientador_id, aluno)
     db.commit()
     db.refresh(tcc)
@@ -476,12 +476,12 @@ def atualizar(db: Session, tarefas: BackgroundTasks, aluno: Usuario, tcc_id: int
 
 
 def gerar_protocolo(tcc: Tcc) -> str:
-    """DS-FL01 passo 9: único por construção (ano do período + número do cadastro)."""
+    """DS-FL01 passo 8: único por construção (ano do período + número do cadastro)."""
     return f"TCC-{tcc.periodo.codigo[:4]}-{tcc.id:05d}"
 
 
 def submeter(db: Session, tarefas: BackgroundTasks, aluno: Usuario, tcc_id: int) -> SubmissaoOut:
-    # passo 3, com trava de linha: dois cliques ao mesmo tempo não geram dois protocolos (RNF06)
+    # passo 4, com trava de linha: dois cliques ao mesmo tempo não geram dois protocolos (RNF06)
     tcc = _obter_do_aluno(db, tcc_id, aluno, travar=True)
     if tcc.situacao == EM_ANALISE:  # repetição da solicitação: devolve o protocolo, nada é criado
         db.commit()
@@ -490,17 +490,17 @@ def submeter(db: Session, tarefas: BackgroundTasks, aluno: Usuario, tcc_id: int)
         )
     if tcc.situacao not in EDITAVEIS:
         raise ErroAPI(409, "O TCC não pode ser submetido nesta situação.", motivo="nao_editavel")
-    _exigir_matriculado(db, aluno.id)  # passo 4 (RN05)
-    faltam = pendencias(tcc)  # passo 5 (E1) e RBN03.03
+    _exigir_matriculado(db, aluno.id)  # passo 5 (RN05)
+    faltam = pendencias(tcc)  # passo 6 (E1) e RBN03.03
     if faltam:
         raise ErroAPI(422, "Ainda falta completar o cadastro.", campos_pendentes=faltam)
     anterior = tcc.situacao
     primeira = tcc.protocolo is None
-    tcc.situacao = EM_ANALISE  # passo 8
+    tcc.situacao = EM_ANALISE  # passo 7
     tcc.submetido_em = agora()
     tcc.atualizado_em = agora()
     if primeira:
-        tcc.protocolo = gerar_protocolo(tcc)  # passo 9 (RBN03.04)
+        tcc.protocolo = gerar_protocolo(tcc)  # passos 8 e 9 (RBN03.04)
     db.add(
         HistoricoSituacao(
             tcc_id=tcc.id,
@@ -530,7 +530,7 @@ def submeter(db: Session, tarefas: BackgroundTasks, aluno: Usuario, tcc_id: int)
             campo="protocolo",
             novo=tcc.protocolo,
         )
-    # passos 11 a 14: aviso ao orientador, fora da requisição (RNF01 exclui o envio do tempo medido)
+    # passos 12 e 13: aviso ao orientador, fora da requisição (RNF01 exclui o envio do tempo medido)
     orientador = _vinculo(tcc, PAPEL_ORIENTADOR)
     email.enfileirar(
         db,
@@ -594,28 +594,31 @@ def listar_para(db: Session, usuario: Usuario) -> list[Tcc]:
 def indicar(
     db: Session, tarefas: BackgroundTasks, aluno: Usuario, tcc_id: int, dados: IndicarOrientador
 ) -> Orientacao:
-    """DS-FL03-B: indicar novo orientador (após recusa) ou o coorientador."""
+    """Indicar novo orientador (após recusa) ou o coorientador pela rota própria.
+
+    Nenhuma tela usa esta rota: a tela de cadastro indica pelo PUT /tccs/{id} (nota no DS-FL03-B).
+    """
     tcc = _obter_do_aluno(db, tcc_id, aluno)
     if tcc.situacao not in EDITAVEIS:
         raise ErroAPI(409, "O cadastro não pode ser editado nesta situação.", motivo="nao_editavel")
     outro = _vinculo(tcc, PAPEL_COORIENTADOR if dados.papel == PAPEL_ORIENTADOR else PAPEL_ORIENTADOR)
     outro_id = outro.professor_id if outro and outro.status in VIGENTES else None
     if dados.papel == PAPEL_ORIENTADOR:
-        _verificar_elegibilidade(db, dados.professor_id, outro_id)  # passo 4 (E1)
+        _verificar_elegibilidade(db, dados.professor_id, outro_id)  # DS-FL03-B passo 9 (E1)
     else:
         _verificar_elegibilidade(db, outro_id, dados.professor_id)
     atual = _vinculo(tcc, dados.papel)
-    if atual and atual.status in VIGENTES:  # passo 5
+    if atual and atual.status in VIGENTES:
         raise ErroAPI(
             409, "Já existe um vínculo pendente ou aceito para este papel.", motivo="vinculo_vigente"
         )
-    o = _registrar_vinculo(db, tarefas, tcc, dados.professor_id, dados.papel, aluno)  # passos 6 a 9
+    o = _registrar_vinculo(db, tarefas, tcc, dados.professor_id, dados.papel, aluno)  # DS-FL03-B passos 10 a 13
     db.commit()
     return o
 
 
 def listar_solicitacoes(db: Session, professor: Usuario, status: str | None) -> list[Orientacao]:
-    """DS-FL03-A passo 3 listarDoOrientador(idOrientador, status)."""
+    """DS-FL03-A passo 4: vínculos do orientador, filtrados pelo status."""
     consulta = select(Orientacao).where(
         Orientacao.professor_id == professor.id, Orientacao.encerrado_em.is_(None)
     )
@@ -647,12 +650,12 @@ def responder(
     db: Session, tarefas: BackgroundTasks, professor: Usuario, orientacao_id: int, dados: RespostaOrientacao
 ) -> Orientacao:
     """DS-FL03: o orientador aceita ou recusa (RBN06.03)."""
-    o = obter_solicitacao(db, professor, orientacao_id)  # passo 3
+    o = obter_solicitacao(db, professor, orientacao_id)  # passo 7
     if o.status != PENDENTE or o.encerrado_em is not None:
         raise ErroAPI(409, "Esta solicitação já foi respondida.", motivo="respondida")
     if dados.decisao == "RECUSAR" and not (dados.motivo or "").strip():
         raise ErroAPI(400, "Confira os campos destacados.", campos={"motivo": "Informe o motivo da recusa."})
-    o.status = ACEITA if dados.decisao == "ACEITAR" else RECUSADA  # passos 4 e 5
+    o.status = ACEITA if dados.decisao == "ACEITAR" else RECUSADA  # passo 8
     o.respondido_em = agora()
     o.motivo_recusa = dados.motivo if o.status == RECUSADA else None
     auditoria.registrar(
@@ -665,7 +668,7 @@ def responder(
         anterior=PENDENTE,
         novo=o.status,
     )
-    aluno = o.tcc.aluno.usuario  # passo 7
+    aluno = o.tcc.aluno.usuario  # passo 10
     if o.status == ACEITA:
         assunto, texto = "SIGA UEA: orientação aceita", f"{professor.nome} aceitou orientar o seu TCC."
     else:
@@ -674,7 +677,7 @@ def responder(
             f"{professor.nome} recusou o pedido de orientação. Motivo: {o.motivo_recusa}\n"
             "Indique outro orientador para poder submeter o cadastro."
         )
-    email.enfileirar(  # passos 8 a 11
+    email.enfileirar(  # passos 11 a 13
         db,
         tarefas,
         aluno,
