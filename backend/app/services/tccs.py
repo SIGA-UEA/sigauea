@@ -133,7 +133,9 @@ def para_saida(tcc: Tcc) -> TccOut:
                 doi=pub.doi,
                 qualis=pub.qualis,
             )
-            if pub and tcc.modalidade == "ARTIGO"
+            # RBN03.02 CA-05: os dados do artigo continuam guardados quando o aluno troca para monografia e
+            # voltam ao escolher "Artigo" de novo; a tela só os mostra na modalidade artigo.
+            if pub
             else None
         ),
         submetido_em=tcc.submetido_em,
@@ -313,20 +315,73 @@ def _salvar_artigo(db: Session, tcc: Tcc, dados: TccSalvar, ator: Usuario) -> No
     pub.doi, pub.qualis = a.doi or None, a.qualis or None
 
 
+def _mensagem_vinculo(o: Orientacao, tcc: Tcc) -> tuple[str, str]:
+    """RBN03.06 CA-02: título e link de acesso, sem senha nem dados desnecessários (como a matrícula)."""
+    papel = "orientador(a)" if o.papel == PAPEL_ORIENTADOR else "coorientador(a)"
+    return (
+        "SIGA UEA: pedido de orientação de TCC",
+        f"Olá, {o.professor.nome}.\n\n{tcc.aluno.usuario.nome} indicou você como {papel} do TCC "
+        f'"{tcc.titulo}".\n\nPara aceitar ou recusar, entre no sistema:\n{config.FRONTEND_URL}/orientacoes\n',
+    )
+
+
+def _mensagem_submissao(tcc: Tcc, orientador: Orientacao) -> tuple[str, str]:
+    return (
+        f"SIGA UEA: cadastro de TCC submetido ({tcc.protocolo})",
+        f'Olá, {orientador.professor.nome}.\n\n{tcc.aluno.usuario.nome} submeteu o cadastro do TCC '
+        f'"{tcc.titulo}", que você orienta. Protocolo: {tcc.protocolo}.\nA coordenação vai analisar o cadastro.'
+        f"\n\n{config.FRONTEND_URL}/tccs/{tcc.id}\n",
+    )
+
+
+def _mensagem_resposta(o: Orientacao) -> tuple[str, str]:
+    aluno = o.tcc.aluno.usuario
+    if o.status == ACEITA:
+        assunto, texto = "SIGA UEA: orientação aceita", f"{o.professor.nome} aceitou orientar o seu TCC."
+    else:
+        assunto = "SIGA UEA: orientação recusada"
+        texto = (
+            f"{o.professor.nome} recusou o pedido de orientação. Motivo: {o.motivo_recusa}\n"
+            "Indique outro orientador para poder submeter o cadastro."
+        )
+    return assunto, f"Olá, {aluno.nome}.\n\n{texto}\n\n{config.FRONTEND_URL}/tccs/{o.tcc_id}\n"
+
+
+def _reenviar_falhas(db: Session, tarefas: BackgroundTasks, tcc: Tcc) -> None:
+    """RBN03.06 CA-03: o e-mail sobre o TCC que falhou volta para a fila na próxima ação sobre o TCC.
+
+    Usa a mesma linha de notificação, então o reenvio não duplica o aviso nem o TCC. O texto é montado de
+    novo a partir do TCC; se o vínculo mudou (pedido substituído ou respondido), o aviso antigo fica como está.
+    """
+    falhas = db.scalars(
+        select(NotificacaoEmail).where(
+            NotificacaoEmail.entidade == "tcc",
+            NotificacaoEmail.entidade_id == tcc.id,
+            NotificacaoEmail.status == "falha",
+        )
+    ).all()
+    for n in falhas:
+        mensagem = None
+        if n.tipo == "VINCULO_ORIENTACAO":
+            o = next((o for o in tcc.orientacoes if o.professor_id == n.usuario_id and o.status == PENDENTE
+                      and o.encerrado_em is None), None)
+            mensagem = o and _mensagem_vinculo(o, tcc)
+        elif n.tipo == "CADASTRO_SUBMETIDO" and tcc.protocolo:
+            orientador = _vinculo(tcc, PAPEL_ORIENTADOR)
+            mensagem = orientador and _mensagem_submissao(tcc, orientador)
+        elif n.tipo in ("ORIENTACAO_ACEITA", "ORIENTACAO_RECUSADA"):
+            status = ACEITA if n.tipo == "ORIENTACAO_ACEITA" else RECUSADA
+            o = next((o for o in reversed(tcc.orientacoes) if o.status == status), None)
+            mensagem = o and _mensagem_resposta(o)
+        if mensagem:
+            n.status = "pendente"
+            tarefas.add_task(email.processar, n.id, *mensagem)
+
+
 def _aviso_vinculo(db: Session, tarefas: BackgroundTasks, o: Orientacao, tcc: Tcc) -> None:
     """RBN03.06, DS-FL01-B passo 18 e DS-FL03-B passo 12: o professor indicado recebe e-mail."""
-    papel = "orientador(a)" if o.papel == PAPEL_ORIENTADOR else "coorientador(a)"
     email.enfileirar(
-        db,
-        tarefas,
-        o.professor,
-        "VINCULO_ORIENTACAO",
-        "SIGA UEA: pedido de orientação de TCC",
-        f"Olá, {o.professor.nome}.\n\n{tcc.aluno.usuario.nome} (matrícula {tcc.aluno.matricula}) indicou você "
-        f'como {papel} do TCC "{tcc.titulo}".\n\nPara aceitar ou recusar, entre no sistema:\n'
-        f"{config.FRONTEND_URL}/orientacoes\n",
-        entidade="tcc",
-        entidade_id=tcc.id,
+        db, tarefas, o.professor, "VINCULO_ORIENTACAO", *_mensagem_vinculo(o, tcc), entidade="tcc", entidade_id=tcc.id
     )
 
 
@@ -415,6 +470,7 @@ def criar(db: Session, tarefas: BackgroundTasks, aluno: Usuario, dados: TccSalva
     _salvar_artigo(db, tcc, dados, aluno)  # passo 9
     _salvar_vinculo(db, tarefas, tcc, PAPEL_ORIENTADOR, dados.orientador_id, aluno)  # passos 15 e 16
     _salvar_vinculo(db, tarefas, tcc, PAPEL_COORIENTADOR, dados.coorientador_id, aluno)
+    _reenviar_falhas(db, tarefas, tcc)
     db.commit()
     db.refresh(tcc)
     return tcc
@@ -467,6 +523,7 @@ def atualizar(db: Session, tarefas: BackgroundTasks, aluno: Usuario, tcc_id: int
     _salvar_artigo(db, tcc, dados, aluno)  # passo 9
     _salvar_vinculo(db, tarefas, tcc, PAPEL_ORIENTADOR, dados.orientador_id, aluno)  # passos 15 e 16
     _salvar_vinculo(db, tarefas, tcc, PAPEL_COORIENTADOR, dados.coorientador_id, aluno)
+    _reenviar_falhas(db, tarefas, tcc)
     db.commit()
     db.refresh(tcc)
     return tcc
@@ -532,15 +589,13 @@ def submeter(db: Session, tarefas: BackgroundTasks, aluno: Usuario, tcc_id: int)
         )
     # passos 12 e 13: aviso ao orientador, fora da requisição (RNF01 exclui o envio do tempo medido)
     orientador = _vinculo(tcc, PAPEL_ORIENTADOR)
+    _reenviar_falhas(db, tarefas, tcc)
     email.enfileirar(
         db,
         tarefas,
         orientador.professor,
         "CADASTRO_SUBMETIDO",
-        f"SIGA UEA: cadastro de TCC submetido ({tcc.protocolo})",
-        f'Olá, {orientador.professor.nome}.\n\n{aluno.nome} submeteu o cadastro do TCC "{tcc.titulo}", '
-        f"que você orienta. Protocolo: {tcc.protocolo}.\nA coordenação vai analisar o cadastro.\n\n"
-        f"{config.FRONTEND_URL}/tccs/{tcc.id}\n",
+        *_mensagem_submissao(tcc, orientador),
         entidade="tcc",
         entidade_id=tcc.id,
     )
@@ -669,21 +724,13 @@ def responder(
         novo=o.status,
     )
     aluno = o.tcc.aluno.usuario  # passo 10
-    if o.status == ACEITA:
-        assunto, texto = "SIGA UEA: orientação aceita", f"{professor.nome} aceitou orientar o seu TCC."
-    else:
-        assunto = "SIGA UEA: orientação recusada"
-        texto = (
-            f"{professor.nome} recusou o pedido de orientação. Motivo: {o.motivo_recusa}\n"
-            "Indique outro orientador para poder submeter o cadastro."
-        )
+    _reenviar_falhas(db, tarefas, o.tcc)
     email.enfileirar(  # passos 11 a 13
         db,
         tarefas,
         aluno,
         "ORIENTACAO_" + ("ACEITA" if o.status == ACEITA else "RECUSADA"),
-        assunto,
-        f"Olá, {aluno.nome}.\n\n{texto}\n\n{config.FRONTEND_URL}/tccs/{o.tcc_id}\n",
+        *_mensagem_resposta(o),
         entidade="tcc",
         entidade_id=o.tcc_id,
     )

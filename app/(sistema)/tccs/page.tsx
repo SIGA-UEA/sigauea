@@ -10,7 +10,7 @@ import { Icone } from "@/components/icone";
 import { SeloOrientacao, SeloSituacao } from "@/components/situacao-tcc";
 import { api, ErroApi } from "@/lib/api";
 import { useSessao } from "@/lib/sessao";
-import { dataHora, type Formulario, type Tcc } from "@/lib/tipos";
+import { dataHora, NOME_SITUACAO_EDITORIAL, type Formulario, type Tcc } from "@/lib/tipos";
 
 export default function PaginaTccs() {
   const { tem } = useSessao();
@@ -87,8 +87,12 @@ export default function PaginaTccs() {
                   <div className="min-w-0 flex-1 basis-72">
                     <p className="truncate font-medium">{t.titulo}</p>
                     <p className="text-sm text-suave">
-                      {t.aluno.nome} · {t.etapa} · {t.modalidade === "ARTIGO" ? "Artigo" : "Monografia"} ·{" "}
-                      {t.turma.periodo}
+                      {t.aluno.nome} · {t.curso.sigla} · {t.etapa} ·{" "}
+                      {t.modalidade === "ARTIGO" ? "Artigo" : "Monografia"} · {t.turma.periodo}
+                    </p>
+                    {/* RBN05.01 CA-01: o orientador aparece na lista */}
+                    <p className="text-sm text-suave">
+                      Orientador: {t.orientador && t.orientador.status !== "RECUSADA" ? t.orientador.professor.nome : "não indicado"}
                     </p>
                   </div>
                   <div className="basis-44 text-sm">
@@ -98,6 +102,12 @@ export default function PaginaTccs() {
                   <div className="flex flex-wrap gap-1.5">
                     <SeloSituacao situacao={t.situacao} />
                     {t.orientador && <SeloOrientacao status={t.orientador.status} />}
+                    {/* RBN05.01 CA-03: a situação editorial do artigo fica separada da situação do cadastro */}
+                    {t.artigo && t.modalidade === "ARTIGO" && (
+                      <span className="rounded-full border border-borda px-2.5 py-0.5 text-[13px] text-suave">
+                        Artigo: {NOME_SITUACAO_EDITORIAL[t.artigo.situacao]}
+                      </span>
+                    )}
                   </div>
                 </Link>
               </li>
