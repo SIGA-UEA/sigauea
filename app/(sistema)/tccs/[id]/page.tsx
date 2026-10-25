@@ -65,7 +65,7 @@ export default function PaginaTcc() {
           <Item k="Área" v={tcc.area.nome} />
           <Item k="Palavras-chave" v={tcc.palavras_chave.join(", ") || "—"} />
           <Item k="Resumo" v={tcc.resumo || "—"} />
-          {tcc.artigo && (
+          {tcc.artigo && tcc.modalidade === "ARTIGO" && (
             <Item
               k="Artigo"
               v={`${tcc.artigo.veiculo} · ${NOME_SITUACAO_EDITORIAL[tcc.artigo.situacao]}${tcc.artigo.doi ? ` · DOI ${tcc.artigo.doi}` : ""}`}

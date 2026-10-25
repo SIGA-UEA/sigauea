@@ -547,7 +547,7 @@ export default function PaginaCadastroTcc() {
                 ["Etapa e modalidade", `${tcc.etapa} · ${tcc.modalidade === "ARTIGO" ? "Artigo" : "Monografia"}`],
                 ["Orientador", tcc.orientador ? `${tcc.orientador.professor.nome}` : "não indicado"],
                 ["Coorientador", tcc.coorientador ? tcc.coorientador.professor.nome : "—"],
-                ...(tcc.artigo
+                ...(tcc.artigo && tcc.modalidade === "ARTIGO"
                   ? [["Artigo", `${tcc.artigo.veiculo} · ${NOME_SITUACAO_EDITORIAL[tcc.artigo.situacao]}`] as [string, string]]
                   : []),
               ]}

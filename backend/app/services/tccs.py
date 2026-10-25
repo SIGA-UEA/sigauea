@@ -133,7 +133,9 @@ def para_saida(tcc: Tcc) -> TccOut:
                 doi=pub.doi,
                 qualis=pub.qualis,
             )
-            if pub and tcc.modalidade == "ARTIGO"
+            # RBN03.02 CA-05: os dados do artigo continuam guardados quando o aluno troca para monografia e
+            # voltam ao escolher "Artigo" de novo; a tela só os mostra na modalidade artigo.
+            if pub
             else None
         ),
         submetido_em=tcc.submetido_em,
