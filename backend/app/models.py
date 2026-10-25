@@ -257,7 +257,7 @@ class LogAuditoria(Base):
 
 # =====================================================================
 # MOD03 · Cadastro e acompanhamento do TCC (Sprint S03)
-# Nomes iguais aos do modelo lógico (docs/modelagem) e às entidades dos
+# Nomes iguais aos do modelo lógico (Documento do Modelo de Dados) e às entidades dos
 # diagramas de sequência FL01 e FL03 (MatriculaTurma, TCC, Orientacao...).
 # =====================================================================
 

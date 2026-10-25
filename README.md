@@ -130,8 +130,6 @@ $env:TEST_DATABASE_URL = "postgresql+psycopg://usuario:senha@localhost:5432/siga
 python -m pytest
 ```
 
-**Relatório de execução dos testes:** `docs/testes/Relatorio_Execucao_Testes_SIGA_UEA.xlsx` cruza cada caso de teste da matriz (`docs/matriz-ct-testes.md`) com a execução: suíte da API no SQLite e no PostgreSQL, testes no navegador (`docs/testes/e2e/`) e carga. As evidências (saídas e capturas de tela) ficam em `docs/testes/evidencias/`; o passo a passo para refazer está no começo de `docs/testes/relatorio_execucao.py`.
-
 **Teste de carga (RNF01, CT-03.04-05):** `backend/scripts/carga_rnf01.py` faz 30 submissões simultâneas do cadastro de TCC e confere o p95 (meta: 3 s) e se os 30 protocolos são distintos. Rode num banco de teste; as instruções estão no começo do arquivo.
 
 **Banco de dados (migrações):**
@@ -158,7 +156,7 @@ O seed imprime o link de ativação do primeiro coordenador. Site em `http://loc
 
 ### Publicar na internet (Vercel + Render + Neon)
 
-Ambiente de homologação do grupo, gratuito e com HTTPS (HT06): o site fica na **Vercel**, a API no **Render** e o banco no **Neon**. O navegador só fala com a Vercel, que repassa `/api/v1` para o Render; por isso o cookie de sessão funciona sem configurar CORS. O desenho está na página 2 de `docs/modelagem/diagrama-implantacao-siga-uea.drawio`.
+Ambiente de homologação do grupo, gratuito e com HTTPS (HT06): o site fica na **Vercel**, a API no **Render** e o banco no **Neon**. O navegador só fala com a Vercel, que repassa `/api/v1` para o Render; por isso o cookie de sessão funciona sem configurar CORS.
 
 Os três publicam a branch `main`. Enquanto a `dev` não for integrada, troque para `dev` no Render (Settings → Build & Deploy → Branch) e na Vercel (Settings → Git → Production Branch).
 
@@ -204,7 +202,6 @@ backend/app/
   seed.py            carga inicial de desenvolvimento
 backend/migrations/  migrações do banco (Alembic): 0001 esquema inicial, 0002 foto, 0003 auditoria imutável, 0004 cadastro de TCC
 backend/tests/       um teste por critério de aceite
-docs/                modelo de dados (diagrama ER), script SQL do PostgreSQL e contrato da API
 
 app/(publico)/       telas sem login: entrar, ativar, esqueci-senha, redefinir-senha (TEL01)
 app/(sistema)/       telas com login: inicio, usuarios e perfil (TEL02), tccs (TEL04, TEL05 cadastro,
@@ -252,13 +249,13 @@ Sprint S03, cadastro de TCC de ponta a ponta (tela, API, banco, protocolo único
 
 O PDF do trabalho não é pedido no cadastro: ele entra depois, em Documentos e versões (RAN07).
 
-Banco: PostgreSQL com migrações Alembic; a suíte inteira de testes passa também no PostgreSQL 16. Modelo de dados e contrato da API em [`docs/modelo-de-dados.md`](docs/modelo-de-dados.md). A modelagem do sistema inteiro está em [`docs/modelagem/`](docs/modelagem/): o DER (modelo conceitual, no estilo brModelo) e o modelo lógico com as 46 tabelas de todos os módulos; as tabelas dos próximos módulos ganham migração quando cada módulo for implementado.
+Banco: PostgreSQL com migrações Alembic; a suíte inteira de testes passa também no PostgreSQL 16. As tabelas dos próximos módulos ganham migração quando cada módulo for implementado.
 
 Ficam para os módulos seguintes, porque dependem deles: revogação do acesso do aluno 7 dias após a aprovação em TCC2 (RBN01.11), conta limitada de membro externo da banca (RBN01.12) e de coorientador externo (RBN01.13).
 
 ## Documentação
 
-Os requisitos completos (módulos, RAN, RBN, regras de negócio e RNF) ficam na planilha **Requisitos_SIGA_UEA**, na pasta SIGA-NUCOMP. Os identificadores dos requisitos podem mudar durante a reorganização, então consulte sempre a versão vigente.
+Os documentos do projeto (requisitos, histórias de usuário, modelagem, diagramas, testes e gestão) ficam no Drive da equipe, fora deste repositório, que guarda só o código. A documentação da API sai do próprio código em `http://localhost:8000/docs`.
 
 ## Equipe
 

@@ -1,6 +1,6 @@
 """Rotas do contrato da API que nenhum outro teste chamava (HT03, CA-01: toda operação com rota testada).
 
-O levantamento veio do registrador de status (docs/arquitetura/coleta_status.py): estas eram as
+O levantamento veio do registrador de status: estas eram as
 operações sem nenhuma resposta observada na suíte.
 """
 
