@@ -142,7 +142,7 @@ export default function PaginaAnalise() {
         </p>
       </header>
 
-      <div role="tablist" className="flex gap-1 overflow-x-auto border-b border-borda">
+      <div role="tablist" className="flex gap-1 border-b border-borda">
         {(
           [
             ["fila", `Aguardando análise (${contagem.fila})`],
@@ -273,56 +273,60 @@ function Fila({
     );
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
-      <div className={selecionado ? "hidden lg:block" : ""}>
-        <p className="mb-2 text-[13px] text-suave">Ordenados do mais antigo para o mais recente.</p>
-        <ul className="flex flex-col gap-2">
-          {fila.map((c) => (
-            <li key={c.id}>
-              <button
-                type="button"
-                onClick={() => selecionar(c.id)}
-                aria-current={selecionado === c.id}
-                className={`w-full rounded-xl border bg-superficie p-3 text-left hover:border-azul ${
-                  selecionado === c.id ? "border-azul ring-1 ring-azul" : "border-borda"
-                }`}
-              >
-                <p className="font-medium break-words">{c.titulo}</p>
-                <p className="text-[13px] text-suave">
-                  {c.aluno.nome} · {c.curso.sigla} · {c.etapa}
-                </p>
-                <p className="mt-1.5 flex items-center gap-1.5 text-[13px]">
-                  <Icone nome="relogio" className="size-3.5 text-suave" />
-                  {c.dias_aguardando >= 5 ? (
-                    <Selo cor="ambar">Aguarda há {c.dias_aguardando} dias</Selo>
-                  ) : (
-                    <Selo cor="cinza">
-                      {c.dias_aguardando === 0
-                        ? "Enviado hoje"
-                        : `Enviado há ${c.dias_aguardando} ${c.dias_aguardando === 1 ? "dia" : "dias"}`}
-                    </Selo>
-                  )}
-                </p>
-              </button>
-            </li>
-          ))}
-        </ul>
-      </div>
-      <div className={selecionado ? "" : "hidden lg:block"}>
-        {selecionado === null ? (
-          <section className="flex flex-col items-center gap-2 rounded-xl border border-borda bg-superficie p-8 text-center">
-            <p className="font-medium">Selecione um cadastro</p>
-            <p className="text-sm text-suave">Escolha um item da fila para ver os dados, o PDF e registrar o parecer.</p>
-          </section>
-        ) : (
-          <Detalhe
-            key={selecionado}
-            id={selecionado}
-            voltar={() => selecionar(null)}
-            aposDecidir={aposDecidir}
-            aposConflito={aposConflito}
-          />
-        )}
+    <div className="flex flex-col gap-2">
+      <p className={`text-[13px] text-suave ${selecionado ? "hidden lg:block" : ""}`}>
+        Ordenados do mais antigo para o mais recente.
+      </p>
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
+        <div className={selecionado ? "hidden lg:block" : ""}>
+          <ul className="flex flex-col gap-2">
+            {fila.map((c) => (
+              <li key={c.id}>
+                <button
+                  type="button"
+                  onClick={() => selecionar(c.id)}
+                  aria-current={selecionado === c.id}
+                  className={`w-full rounded-xl border bg-superficie p-3 text-left hover:border-azul ${
+                    selecionado === c.id ? "border-azul ring-1 ring-azul" : "border-borda"
+                  }`}
+                >
+                  <p className="font-medium break-words">{c.titulo}</p>
+                  <p className="text-[13px] text-suave">
+                    {c.aluno.nome} · {c.curso.sigla} · {c.etapa}
+                  </p>
+                  <p className="mt-1.5 flex items-center gap-1.5 text-[13px]">
+                    <Icone nome="relogio" className="size-3.5 text-suave" />
+                    {c.dias_aguardando >= 5 ? (
+                      <Selo cor="ambar">Aguarda há {c.dias_aguardando} dias</Selo>
+                    ) : (
+                      <Selo cor="cinza">
+                        {c.dias_aguardando === 0
+                          ? "Enviado hoje"
+                          : `Enviado há ${c.dias_aguardando} ${c.dias_aguardando === 1 ? "dia" : "dias"}`}
+                      </Selo>
+                    )}
+                  </p>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className={selecionado ? "" : "hidden lg:block"}>
+          {selecionado === null ? (
+            <section className="flex flex-col items-center gap-2 rounded-xl border border-borda bg-superficie p-8 text-center">
+              <p className="font-medium">Selecione um cadastro</p>
+              <p className="text-sm text-suave">Escolha um item da fila para ver os dados, o PDF e registrar o parecer.</p>
+            </section>
+          ) : (
+            <Detalhe
+              key={selecionado}
+              id={selecionado}
+              voltar={() => selecionar(null)}
+              aposDecidir={aposDecidir}
+              aposConflito={aposConflito}
+            />
+          )}
+        </div>
       </div>
     </div>
   );
