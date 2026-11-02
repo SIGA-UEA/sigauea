@@ -83,6 +83,7 @@ export default function PaginaAnalise() {
   const [analisados, setAnalisados] = useState<CadastroResumo[] | null>(null);
   const [contagem, setContagem] = useState({ fila: 0, analisados: 0 });
   const [selecionado, setSelecionado] = useState<number | null>(null);
+  const [aberto, setAberto] = useState<number | null>(null); // cadastro já analisado aberto para consulta
   const [aviso, setAviso] = useState<{ tipo: TipoAviso; texto: string } | null>(null);
   const [erroCarga, setErroCarga] = useState("");
 
@@ -153,7 +154,10 @@ export default function PaginaAnalise() {
             key={valor}
             role="tab"
             aria-selected={aba === valor}
-            onClick={() => setAba(valor)}
+            onClick={() => {
+              setAba(valor);
+              setAberto(null);
+            }}
             className={`-mb-px shrink-0 border-b-2 px-4 py-2 text-sm font-medium ${
               aba === valor ? "border-azul text-azul-forte" : "border-transparent text-suave hover:text-texto"
             }`}
@@ -223,7 +227,19 @@ export default function PaginaAnalise() {
           }}
         />
       ) : (
-        <JaAnalisados lista={analisados} filtrando={filtrando} />
+        aberto !== null ? (
+          // DS-FL02-A, cadastro já decidido: os dados, o PDF e a decisão registrada, sem os botões
+          <Detalhe
+            key={aberto}
+            id={aberto}
+            rotuloVoltar="Voltar aos já analisados"
+            voltar={() => setAberto(null)}
+            aposDecidir={aposDecidir}
+            aposConflito={(texto) => setAviso({ tipo: "erro", texto })}
+          />
+        ) : (
+          <JaAnalisados lista={analisados} filtrando={filtrando} abrir={setAberto} />
+        )
       )}
     </div>
   );
@@ -336,11 +352,13 @@ function Fila({
 
 function Detalhe({
   id,
+  rotuloVoltar = "Voltar à fila",
   voltar,
   aposDecidir,
   aposConflito,
 }: {
   id: number;
+  rotuloVoltar?: string;
   voltar: () => void;
   aposDecidir: (mensagem: string, decidido: number) => void;
   aposConflito: (texto: string) => void;
@@ -430,7 +448,7 @@ function Detalhe({
     <section aria-labelledby="titulo-cadastro" className="flex flex-col gap-4 rounded-xl border border-borda bg-superficie p-5">
       <div>
         <Botao variante="texto" pequeno onClick={voltar}>
-          <Icone nome="voltar" className="size-4" /> Voltar à fila
+          <Icone nome="voltar" className="size-4" /> {rotuloVoltar}
         </Botao>
       </div>
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -557,7 +575,15 @@ function Item({ k, children }: { k: string; children: React.ReactNode }) {
 
 // ---------------------------------------------------------------- aba "Já analisados"
 
-function JaAnalisados({ lista, filtrando }: { lista: CadastroResumo[] | null; filtrando: boolean }) {
+function JaAnalisados({
+  lista,
+  filtrando,
+  abrir,
+}: {
+  lista: CadastroResumo[] | null;
+  filtrando: boolean;
+  abrir: (id: number) => void;
+}) {
   if (!lista)
     return (
       <p role="status" className="text-sm text-suave">
@@ -579,28 +605,33 @@ function JaAnalisados({ lista, filtrando }: { lista: CadastroResumo[] | null; fi
       </div>
       <ul>
         {lista.map((c) => (
-          <li
-            key={c.id}
-            className="grid gap-1 border-b border-borda px-4 py-3 last:border-b-0 sm:grid-cols-[10rem_minmax(0,1fr)_minmax(0,18rem)] sm:gap-4"
-          >
-            <span className="font-mono text-sm">{c.protocolo}</span>
-            <div className="min-w-0">
-              <p className="font-medium break-words">{c.titulo}</p>
-              <p className="text-[13px] text-suave">
-                {c.aluno.nome} · {c.curso.sigla} · {c.periodo}
-              </p>
-            </div>
-            <div className="min-w-0">
-              <SeloSituacao situacao={c.situacao} />
-              {c.decisao?.parecer && (
-                <p className="mt-1 text-[13px] break-words text-suave">{c.decisao.parecer}</p>
-              )}
-              {c.decisao && (
-                <p className="text-[12px] text-suave">
-                  {c.decisao.coordenador.nome} · {dataHora(c.decisao.decidido_em)}
-                </p>
-              )}
-            </div>
+          <li key={c.id} className="border-b border-borda last:border-b-0">
+            <button
+              type="button"
+              onClick={() => abrir(c.id)}
+              aria-label={`Ver o cadastro ${c.protocolo}: ${c.titulo}`}
+              className="grid w-full gap-1 px-4 py-3 text-left hover:bg-fundo sm:grid-cols-[10rem_minmax(0,1fr)_minmax(0,18rem)] sm:gap-4"
+            >
+              <span className="font-mono text-sm">{c.protocolo}</span>
+              <span className="block min-w-0">
+                <span className="block font-medium break-words">{c.titulo}</span>
+                <span className="block text-[13px] text-suave">
+                  {c.aluno.nome} · {c.curso.sigla} · {c.periodo}
+                </span>
+                <span className="mt-1 block text-[13px] font-medium text-azul-forte">Ver cadastro e PDF</span>
+              </span>
+              <span className="block min-w-0">
+                <SeloSituacao situacao={c.situacao} />
+                {c.decisao?.parecer && (
+                  <span className="mt-1 block text-[13px] break-words text-suave">{c.decisao.parecer}</span>
+                )}
+                {c.decisao && (
+                  <span className="block text-[12px] text-suave">
+                    {c.decisao.coordenador.nome} · {dataHora(c.decisao.decidido_em)}
+                  </span>
+                )}
+              </span>
+            </button>
           </li>
         ))}
       </ul>
