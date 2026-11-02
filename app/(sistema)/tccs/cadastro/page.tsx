@@ -259,8 +259,15 @@ export default function PaginaCadastroTcc() {
 
       {devolvido && tcc?.protocolo && (
         <Aviso tipo="alerta">
-          <strong>Cadastro devolvido para correção.</strong> Ao reenviar, o protocolo{" "}
-          <span className="font-mono">{tcc.protocolo}</span> é mantido.
+          <strong>Cadastro devolvido para correção.</strong>
+          {tcc.decisoes.at(-1)?.parecer && (
+            <span className="mt-1 block whitespace-pre-wrap">
+              <strong>Parecer da Coordenação:</strong> {tcc.decisoes.at(-1)?.parecer}
+            </span>
+          )}
+          <span className="mt-1 block">
+            Ao reenviar, o protocolo <span className="font-mono">{tcc.protocolo}</span> é mantido.
+          </span>
         </Aviso>
       )}
       {erroGeral && <Aviso tipo="erro">{erroGeral}</Aviso>}
