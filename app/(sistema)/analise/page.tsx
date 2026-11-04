@@ -17,6 +17,7 @@ import { Icone } from "@/components/icone";
 import { Modal } from "@/components/modal";
 import { SeloSituacao } from "@/components/situacao-tcc";
 import { api, ErroApi } from "@/lib/api";
+import { useSessao } from "@/lib/sessao";
 import {
   dataHora,
   NOME_SITUACAO_TCC,
@@ -75,6 +76,8 @@ function consulta(situacao: string, f: Filtros) {
 }
 
 export default function PaginaAnalise() {
+  const { tem } = useSessao();
+  const coordenador = tem("coordenador"); // a API confere de novo (403 para os demais, RN06)
   const [aba, setAba] = useState<Aba>("fila");
   const [filtros, setFiltros] = useState<Filtros>({ curso: "", periodo: "", situacao: "" });
   const [cursos, setCursos] = useState<Curso[]>([]);
@@ -88,9 +91,10 @@ export default function PaginaAnalise() {
   const [erroCarga, setErroCarga] = useState("");
 
   useEffect(() => {
+    if (!coordenador) return;
     api<Curso[]>("/cursos").then(setCursos).catch(() => {});
     api<Periodo[]>("/periodos").then(setPeriodos).catch(() => {});
-  }, []);
+  }, [coordenador]);
 
   // Recarrega as duas listas: a decisão mais recente aparece antes de qualquer nova decisão (RBN04.01 CA-05).
   const carregar = useCallback(async (f: Filtros) => {
@@ -113,9 +117,14 @@ export default function PaginaAnalise() {
   }, []);
 
   useEffect(() => {
+    if (!coordenador) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- busca na API ao trocar os filtros
     carregar(filtros);
-  }, [carregar, filtros]);
+  }, [coordenador, carregar, filtros]);
+
+  if (!coordenador) {
+    return <Aviso tipo="alerta">Esta tela é exclusiva da coordenação.</Aviso>;
+  }
 
   const filtrando = Boolean(filtros.curso || filtros.periodo || (aba === "analisados" && filtros.situacao));
 
@@ -306,6 +315,7 @@ function Fila({
                     selecionado === c.id ? "border-azul ring-1 ring-azul" : "border-borda"
                   }`}
                 >
+                  <p className="font-mono text-[13px] text-suave">{c.protocolo}</p>
                   <p className="font-medium break-words">{c.titulo}</p>
                   <p className="text-[13px] text-suave">
                     {c.aluno.nome} · {c.curso.sigla} · {c.etapa}
