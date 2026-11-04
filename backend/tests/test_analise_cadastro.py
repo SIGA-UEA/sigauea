@@ -281,9 +281,12 @@ def test_ct_04_03_01_devolver_com_justificativa(cenario, coord, db):
 
 
 @pytest.mark.parametrize("resultado", ["DEVOLVIDO", "REPROVADO"])
-@pytest.mark.parametrize("parecer", ["", "    "])
+@pytest.mark.parametrize("parecer", ["", "    ", "Curto", "  123456789  "])
 def test_ct_04_03_02_03_e_04_04_02_03_parecer_obrigatorio(cenario, coord, db, resultado, parecer):
-    """CT-04.03-02, CT-04.03-03, CT-04.04-02, CT-04.04-03 (E1): 422 com o campo parecer; continua em análise."""
+    """CT-04.03-02, CT-04.03-03, CT-04.04-02, CT-04.04-03 (E1): 422 com o campo parecer; continua em análise.
+
+    Vazio, só espaços ou com menos de 10 caracteres (sem contar os espaços das pontas), igual à TEL07.
+    """
     tcc = _enviado(cenario)
     r = _decidir(coord, tcc["id"], resultado, parecer)
     assert r.status_code == 422 and "parecer" in r.json()["campos"]

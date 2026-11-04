@@ -32,6 +32,7 @@ from app.services.turmas import pessoa
 
 SITUACOES_ANALISE = (EM_ANALISE, *RESULTADOS_ANALISE)  # RN10: pendente, aprovado, devolvido, reprovado
 NAO_ENCONTRADO = "Cadastro de TCC não encontrado."
+MINIMO_PARECER = 10  # devolver e reprovar: o mesmo mínimo que a TEL07 confere (DS-FL02 passo 2)
 
 
 def _nucleo(coordenador: Usuario) -> int:
@@ -139,8 +140,12 @@ def decidir(
     tcc = _obter_no_nucleo(db, coordenador, tcc_id, travar=True)  # passo 5, com trava da linha
     if tcc.situacao != EM_ANALISE:  # passo 6 (E2): outra pessoa já decidiu, ou não está em análise
         raise _ja_decidido(tcc)
-    if dados.resultado != "APROVADO" and not dados.parecer:  # E1: devolver e reprovar exigem parecer
-        campo = "Explique o que o aluno precisa corrigir." if dados.resultado == "DEVOLVIDO" else "Justifique a reprovação."
+    if dados.resultado != "APROVADO" and len(dados.parecer) < MINIMO_PARECER:  # E1: devolver e reprovar exigem parecer
+        campo = (
+            "Explique o que o aluno precisa corrigir (mínimo de 10 caracteres)."
+            if dados.resultado == "DEVOLVIDO"
+            else "Justifique a reprovação (mínimo de 10 caracteres)."
+        )
         raise ErroAPI(422, "Informe o parecer.", campos={"parecer": campo})
 
     # Passo 8: só muda se ainda estiver em análise. Com duas decisões ao mesmo tempo, só a primeira passa (CA-05),
