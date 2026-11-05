@@ -1,7 +1,9 @@
 """Defesa e banca (Sprint S04): local da defesa, defesa, membros da banca, histórico da defesa
 e convidado externo (RBN09.01 a RBN09.09, RN12, RN14, RN20, RN22).
 
-Segue o modelo físico entregue (SIGA_UEA_fisico_completo_46_tabelas.sql, parte 2).
+Segue o modelo físico entregue (SIGA_UEA_fisico_completo_46_tabelas.sql, parte 2), com dois
+acréscimos: o índice único parcial uq_defesa_tcc_vigente (uma defesa não cancelada por TCC) e o
+evento BANCA_ALTERADA no histórico da defesa (troca de membro, CA-06 do RBN09.01).
 
 Revision ID: 0006
 Revises: 0005
@@ -77,6 +79,15 @@ def upgrade() -> None:
     op.create_index("ix_defesa_tcc_id", "defesa", ["tcc_id"])
     op.create_index("ix_defesa_local_id", "defesa", ["local_id"])
     op.create_index("ix_defesa_responsavel_id", "defesa", ["responsavel_id"])
+    # Uma defesa vigente por TCC (as canceladas não contam), também com pedidos simultâneos.
+    op.create_index(
+        "uq_defesa_tcc_vigente",
+        "defesa",
+        ["tcc_id"],
+        unique=True,
+        sqlite_where=sa.text("situacao <> 'CANCELADA'"),
+        postgresql_where=sa.text("situacao <> 'CANCELADA'"),
+    )
 
     op.create_table(
         "banca_membro",
@@ -118,7 +129,7 @@ def upgrade() -> None:
         sa.Column("usuario_id", sa.Integer(), nullable=False),
         sa.Column("registrado_em", sa.DateTime(), nullable=False),
         sa.CheckConstraint(
-            "evento IN ('AGENDAMENTO', 'REMARCACAO', 'CANCELAMENTO', 'SUPLENTE_CONVOCADO')",
+            "evento IN ('AGENDAMENTO', 'REMARCACAO', 'CANCELAMENTO', 'SUPLENTE_CONVOCADO', 'BANCA_ALTERADA')",
             name="ck_historico_defesa_evento",
         ),
         sa.ForeignKeyConstraint(["defesa_id"], ["defesa.id"], ondelete="RESTRICT"),

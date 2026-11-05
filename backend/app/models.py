@@ -20,6 +20,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -506,7 +507,9 @@ SITUACOES_DEFESA = (CONFIRMADA, REMARCADA, CANCELADA, "REALIZADA")
 
 PAPEL_AVALIADOR, PAPEL_SUPLENTE = "AVALIADOR", "SUPLENTE"
 PAPEIS_BANCA = (PAPEL_AVALIADOR, PAPEL_ORIENTADOR, PAPEL_COORIENTADOR, PAPEL_SUPLENTE)
-EVENTOS_DEFESA = ("AGENDAMENTO", "REMARCACAO", "CANCELAMENTO", "SUPLENTE_CONVOCADO")
+# BANCA_ALTERADA: troca de um membro antes da defesa (CA-06 do RBN09.01), com a pessoa anterior
+# em valores_anteriores. Não está no SQL físico entregue; ver CR da S04.
+EVENTOS_DEFESA = ("AGENDAMENTO", "REMARCACAO", "CANCELAMENTO", "SUPLENTE_CONVOCADO", "BANCA_ALTERADA")
 
 
 class UsuarioExterno(Base):
@@ -540,6 +543,15 @@ class Defesa(Base):
             " OR (formato = 'REMOTO' AND link IS NOT NULL)"
             " OR (formato = 'HIBRIDO' AND local_id IS NOT NULL AND link IS NOT NULL)",
             name="ck_defesa_formato_destino",
+        ),
+        # Uma defesa vigente por TCC, mesmo com dois pedidos ao mesmo tempo; as canceladas
+        # ficam de fora para o TCC poder ser agendado de novo. Não está no SQL físico entregue.
+        Index(
+            "uq_defesa_tcc_vigente",
+            "tcc_id",
+            unique=True,
+            sqlite_where=text("situacao <> 'CANCELADA'"),
+            postgresql_where=text("situacao <> 'CANCELADA'"),
         ),
     )
 

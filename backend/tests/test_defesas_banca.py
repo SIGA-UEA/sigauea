@@ -267,6 +267,26 @@ def test_tcc_com_defesa_agendada_nao_agenda_outra(banca):
     assert _agendar(banca).status_code == 409
 
 
+def test_dois_pedidos_simultaneos_gravam_uma_defesa_so(banca, db, monkeypatch):
+    """Os dois pedidos passam juntos pela checagem do serviço; o índice uq_defesa_tcc_vigente barra
+    o segundo no banco. A simultaneidade é simulada fazendo a checagem não ver a primeira defesa."""
+    from app.services import defesas
+
+    monkeypatch.setattr(defesas, "defesa_vigente", lambda tcc_id, db: None)
+    assert _agendar(banca).status_code == 201
+    segundo = _agendar(banca)
+    assert segundo.status_code == 409 and segundo.json()["detail"] == "Este TCC já tem uma defesa agendada."
+    assert len(db.scalars(select(Defesa).where(Defesa.tcc_id == banca["tcc"]["id"])).all()) == 1
+
+
+def test_defesa_cancelada_libera_novo_agendamento(banca, db):
+    """O índice só vale para as defesas não canceladas (a cancelada fica no histórico)."""
+    primeira = _agendar(banca).json()
+    db.get(Defesa, primeira["id"]).situacao = "CANCELADA"  # o cancelamento é a SCRUM-66
+    db.commit()
+    assert _agendar(banca).status_code == 201
+
+
 def test_formato_presencial_sem_local_e_bloqueado(banca):
     r = _agendar(banca, formato="PRESENCIAL", link=None)
     assert r.status_code == 400 and "local_id" in r.json()["campos"]
@@ -286,6 +306,14 @@ def test_ct_09_01_07_troca_de_avaliador_aceita_com_historico(banca, db):
     assert trocado["pessoa"]["id"] == banca["ids"]["ricardo"] and trocado["papel"] == "AVALIADOR"
     log = db.scalar(select(LogAuditoria).where(LogAuditoria.acao == "trocar_membro_banca"))
     assert (log.valor_anterior, log.valor_novo) == ("Otto Orientador", "Ricardo Alves")  # histórico preservado
+    historico = db.scalars(
+        select(HistoricoDefesa).where(HistoricoDefesa.defesa_id == defesa["id"]).order_by(HistoricoDefesa.id)
+    ).all()
+    assert [h.evento for h in historico] == ["AGENDAMENTO", "BANCA_ALTERADA"]  # CA-06 no histórico da defesa
+    anterior = historico[1].valores_anteriores
+    assert anterior["membro_id"] == otto["id"] and anterior["usuario_id"] == banca["ids"]["otto"]
+    assert anterior["nome"] == "Otto Orientador" and anterior["papel"] == "AVALIADOR"
+    assert historico[1].usuario_id == banca["ids"]["olga"]
 
     # as regras de composição valem de novo: não pode repetir quem já está na banca
     repetido = banca["olga"].put(url, json={"usuario_id": banca["ids"]["paulo"]})

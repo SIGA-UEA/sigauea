@@ -6,6 +6,12 @@ membro da banca pertence a uma defesa (banca_membro.defesa_id obrigatório).
 
 Ficam para as próximas histórias: conflitos de agenda (SCRUM-62), validações completas de data,
 link e duração (SCRUM-61), convites por e-mail (SCRUM-63) e a conta limitada do externo (SCRUM-32).
+
+Pendência: o DS-FL04 (passo 5) confere a versão do PDF para banca antes de agendar. A tabela
+documento_tcc ainda não existe; a conferência entra junto com o envio do PDF (SCRUM-55, RBN07.01).
+
+Quem agenda (RN14): professor da disciplina em SI, orientador nos demais cursos e a coordenação,
+como pedem o E4 e o CA-05 da ficha RBN09.01 e a planilha de requisitos (FL04).
 """
 
 from sqlalchemy import select
@@ -324,7 +330,13 @@ def agendar(db: Session, usuario: Usuario, tcc_id: int, dados: DefesaCriar) -> D
         responsavel_id=usuario.id,
     )
     db.add(defesa)
-    db.flush()
+    try:
+        # Dois pedidos ao mesmo tempo passam juntos pela checagem de defesa vigente acima; o índice
+        # uq_defesa_tcc_vigente barra o segundo aqui (no PostgreSQL, ele espera o primeiro gravar).
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        raise ErroAPI(409, "Este TCC já tem uma defesa agendada.") from None
     for m, pessoa_vaga, interno, _ in resolvidos:
         if pessoa_vaga is None:
             pessoa_vaga = _criar_externo(db, m.externo, usuario)
@@ -340,18 +352,21 @@ def agendar(db: Session, usuario: Usuario, tcc_id: int, dados: DefesaCriar) -> D
         db, ator_id=usuario.id, acao="agendar_defesa", entidade="defesa", entidade_id=defesa.id,
         novo=f"{dados.data.isoformat()} {dados.inicio.isoformat('minutes')}-{dados.fim.isoformat('minutes')} {dados.formato}",
     )
-    _confirmar(db)
+    _confirmar(db, "Este TCC já tem uma defesa agendada.")
     db.refresh(defesa)
     return defesa
 
 
-def _confirmar(db: Session) -> None:
-    """Dois pedidos iguais ao mesmo tempo: a restrição única da banca barra o segundo."""
+def _confirmar(db: Session, conflito: str) -> None:
+    """Grava a transação; se uma restrição única do banco barrar (pedido simultâneo), devolve 409.
+
+    No agendamento, o índice uq_defesa_tcc_vigente (uma defesa não cancelada por TCC). Na troca de
+    membro, uq_banca_membro_defesa_usuario (a mesma pessoa duas vezes na mesma banca)."""
     try:
         db.commit()
     except IntegrityError:
         db.rollback()
-        raise ErroAPI(409, "A banca mudou enquanto você editava. Abra a página de novo.") from None
+        raise ErroAPI(409, conflito) from None
 
 
 # =================================================================== CA-06 · trocar um membro
@@ -359,7 +374,7 @@ def _confirmar(db: Session) -> None:
 
 def trocar_membro(db: Session, usuario: Usuario, defesa_id: int, membro_id: int, dados: PessoaBanca) -> Defesa:
     """PUT /defesas/{id}/banca/{membro}: troca a pessoa de uma vaga e revalida a banca (RN12).
-    O valor anterior fica no log de auditoria (histórico preservado, RNF03)."""
+    A pessoa anterior fica no histórico da defesa (BANCA_ALTERADA, CA-06) e no log de auditoria."""
     defesa = db.get(Defesa, defesa_id)
     if defesa is None:
         raise ErroAPI(404, "Defesa não encontrada.")
@@ -382,6 +397,19 @@ def trocar_membro(db: Session, usuario: Usuario, defesa_id: int, membro_id: int,
         pessoa_vaga = _criar_externo(db, nova.externo, usuario)
 
     anterior = membro.usuario.nome
+    db.add(HistoricoDefesa(  # CA-06: histórico preservado
+        defesa_id=defesa.id,
+        evento="BANCA_ALTERADA",
+        usuario_id=usuario.id,
+        valores_anteriores={
+            "membro_id": membro.id,
+            "papel": membro.papel,
+            "usuario_id": membro.usuario_id,
+            "nome": anterior,
+            "interno": membro.interno,
+            "convite_enviado_em": membro.convite_enviado_em.isoformat() if membro.convite_enviado_em else None,
+        },
+    ))
     membro.usuario = pessoa_vaga
     membro.interno = interno
     membro.convite_enviado_em = None  # a pessoa nova ainda não foi convidada (SCRUM-63)
@@ -389,6 +417,6 @@ def trocar_membro(db: Session, usuario: Usuario, defesa_id: int, membro_id: int,
         db, ator_id=usuario.id, acao="trocar_membro_banca", entidade="banca_membro", entidade_id=membro.id,
         campo=membro.papel, anterior=anterior, novo=pessoa_vaga.nome,
     )
-    _confirmar(db)
+    _confirmar(db, "A banca mudou enquanto você editava. Abra a página de novo.")
     db.refresh(defesa)
     return defesa
