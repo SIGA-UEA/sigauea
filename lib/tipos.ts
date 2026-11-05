@@ -319,3 +319,21 @@ export function dataCurta(iso: string) {
   const [a, m, d] = iso.split("-");
   return `${d}/${m}/${a}`;
 }
+
+// ---------------------------------------------------------------- Sprint S04 · agenda de apresentações
+// Espelha backend/app/schemas/agenda.py.
+
+export type Apresentacao = {
+  id: number;
+  titulo: string;
+  autor: string;
+  orientador: string | null;
+  curso: { sigla: string; nome: string };
+  formato: FormatoDefesa;
+  data: string;
+  inicio: string;
+  fim: string;
+  local: string | null;
+  link: string | null;
+  remarcada: boolean;
+};

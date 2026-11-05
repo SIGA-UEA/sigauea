@@ -41,6 +41,7 @@ const CARTOES: Cartao[] = [
   {
     titulo: "Agenda de apresentações",
     descricao: "Programação das defesas divulgadas.",
+    href: "/agenda",
     cor: "bg-[#0e7490]",
     perfis: TODOS,
   },
