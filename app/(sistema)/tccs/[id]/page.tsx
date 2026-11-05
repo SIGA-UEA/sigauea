@@ -1,12 +1,14 @@
 "use client";
 
-// TEL06 · Acompanhamento do TCC: dados do cadastro, vínculos de orientação e histórico
-// de situações (RNF03). Quem pode ver é decidido pela API (403/404 para os demais).
+// TEL06 · Acompanhamento do TCC: dados do cadastro, vínculos de orientação, resultado da análise
+// da coordenação (DS-FL02-B) e histórico de situações (RNF03). Quem pode ver é decidido pela API
+// (404 para os demais, RN07).
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Aviso } from "@/components/aviso";
+import { Botao } from "@/components/botao";
 import { SeloOrientacao, SeloSituacao } from "@/components/situacao-tcc";
 import { api, ErroApi } from "@/lib/api";
 import { useSessao } from "@/lib/sessao";
@@ -15,6 +17,7 @@ import { dataHora, NOME_SITUACAO_EDITORIAL, NOME_SITUACAO_TCC, type SituacaoTcc,
 export default function PaginaTcc() {
   const { id } = useParams<{ id: string }>();
   const { tem } = useSessao();
+  const router = useRouter();
   const [tcc, setTcc] = useState<Tcc | null>(null);
   const [erro, setErro] = useState("");
 
@@ -30,7 +33,8 @@ export default function PaginaTcc() {
       </p>
     );
 
-  const editavel = tcc.situacao === "RASCUNHO" || tcc.situacao === "DEVOLVIDO";
+  const rascunho = tcc.situacao === "RASCUNHO";
+  const ultima = tcc.decisoes.at(-1);
   const nome = (s: string | null) => (s ? (NOME_SITUACAO_TCC[s as SituacaoTcc] ?? s) : "—");
 
   return (
@@ -47,12 +51,42 @@ export default function PaginaTcc() {
         <SeloSituacao situacao={tcc.situacao} />
       </header>
 
-      {tem("aluno") && editavel && (
-        <Aviso tipo={tcc.situacao === "DEVOLVIDO" ? "alerta" : "info"}>
-          {tcc.situacao === "DEVOLVIDO" ? "O cadastro foi devolvido para correção. " : "O cadastro ainda é um rascunho. "}
+      {tem("aluno") && rascunho && (
+        <Aviso tipo="info">
+          O cadastro ainda é um rascunho.{" "}
           <Link href="/tccs/cadastro" className="font-medium underline">
             Continuar cadastro
           </Link>
+        </Aviso>
+      )}
+
+      {/* DS-FL02-B: resultado da análise e o próximo passo (RBN04.05) */}
+      {tcc.situacao === "DEVOLVIDO" && (
+        <Aviso tipo="alerta">
+          <p className="font-semibold">Parecer da Coordenação</p>
+          {ultima?.parecer && <p className="mt-1 whitespace-pre-wrap">{ultima.parecer}</p>}
+          <p className="mt-2">A Coordenação devolveu o cadastro. Leia o parecer, corrija e reenvie; o protocolo é mantido.</p>
+          {tem("aluno") && (
+            <div className="mt-3">
+              <Botao pequeno onClick={() => router.push("/tccs/cadastro")}>
+                Corrigir cadastro
+              </Botao>
+            </div>
+          )}
+        </Aviso>
+      )}
+      {tcc.situacao === "APROVADO" && (
+        <Aviso tipo="sucesso">
+          <p className="font-semibold">Cadastro aprovado. O orientador vai compor a banca e agendar a defesa.</p>
+          {ultima?.parecer && <p className="mt-1 whitespace-pre-wrap">Parecer da Coordenação: {ultima.parecer}</p>}
+          <p className="mt-1">A aprovação do cadastro não aprova a defesa nem o artigo.</p>
+        </Aviso>
+      )}
+      {tcc.situacao === "REPROVADO" && (
+        <Aviso tipo="erro">
+          <p className="font-semibold">Parecer da Coordenação</p>
+          {ultima?.parecer && <p className="mt-1 whitespace-pre-wrap">{ultima.parecer}</p>}
+          <p className="mt-2">Cadastro reprovado. Procure a Coordenação para saber como proceder.</p>
         </Aviso>
       )}
 
@@ -92,6 +126,25 @@ export default function PaginaTcc() {
           </ul>
         )}
       </section>
+
+      {tcc.decisoes.length > 0 && (
+        <section className="rounded-xl border border-borda bg-superficie p-5">
+          <h2 className="mb-3 font-semibold">Análise da Coordenação</h2>
+          <ol className="flex flex-col gap-3 border-l-2 border-borda pl-4 text-sm">
+            {tcc.decisoes.map((d, i) => (
+              <li key={i}>
+                <p className="flex flex-wrap items-center gap-2 font-medium">
+                  <SeloSituacao situacao={d.resultado} />
+                </p>
+                {d.parecer && <p className="mt-1 break-words whitespace-pre-wrap">{d.parecer}</p>}
+                <p className="text-suave">
+                  {dataHora(d.decidido_em)} · {d.coordenador.nome}
+                </p>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
 
       <section className="rounded-xl border border-borda bg-superficie p-5">
         <h2 className="mb-3 font-semibold">Histórico</h2>

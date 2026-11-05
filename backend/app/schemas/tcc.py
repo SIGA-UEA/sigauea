@@ -190,6 +190,15 @@ class TurmaResumo(BaseModel):
     professor: PessoaOut
 
 
+class DecisaoOut(BaseModel):
+    """Uma decisão da coordenação sobre o cadastro (DS-FL02 e DS-FL02-B)."""
+
+    resultado: str
+    parecer: str
+    coordenador: PessoaOut
+    decidido_em: DataHora
+
+
 class TccOut(BaseModel):
     id: int
     protocolo: str | None
@@ -214,6 +223,8 @@ class TccOut(BaseModel):
     # O que ainda falta para poder submeter (vazio = pode submeter).
     pendencias: list[str]
     historico: list[HistoricoOut]
+    # Decisões da coordenação, da mais antiga para a mais nova (RBN04.05 CA-07).
+    decisoes: list[DecisaoOut]
 
 
 class SubmissaoOut(BaseModel):
@@ -264,3 +275,45 @@ class SolicitacaoOut(BaseModel):
 
 class SituacaoOut(BaseModel):
     status: str
+
+
+# ---------------------------------------------------------------- análise do cadastro (RAN04)
+
+ResultadoAnalise = Literal["APROVADO", "DEVOLVIDO", "REPROVADO"]
+
+
+class CadastroResumo(BaseModel):
+    """Um cadastro na fila ou na aba "Já analisados" (DS-FL02-A passos 3 e 14)."""
+
+    id: int
+    protocolo: str
+    titulo: str
+    aluno: PessoaOut
+    matricula: str
+    curso: CursoOut
+    etapa: Disciplina
+    modalidade: Modalidade
+    periodo: str
+    situacao: str
+    submetido_em: DataHora | None
+    dias_aguardando: int
+    decisao: DecisaoOut | None  # a última decisão, se houver
+
+
+class DocumentoOut(BaseModel):
+    nome: str
+
+
+class CadastroOut(BaseModel):
+    """GET /cadastros/{id} (DS-FL02-A passos 7 a 10): dados, PDF e a última decisão."""
+
+    tcc: TccOut
+    documento: DocumentoOut | None  # PDF preliminar vigente; vazio quando o aluno ainda não enviou
+    decisao: DecisaoOut | None
+
+
+class DecisaoEntrada(BaseModel):
+    """POST /cadastros/{id}/decisao (DS-FL02 passo 4). Parecer opcional só para aprovar."""
+
+    resultado: ResultadoAnalise
+    parecer: Annotated[str, StringConstraints(strip_whitespace=True, max_length=1000)] = ""

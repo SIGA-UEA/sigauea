@@ -27,6 +27,7 @@ from app.models import (
     PERFIL_PROFESSOR,
     RASCUNHO,
     RECUSADA,
+    AnaliseCadastro,
     AreaInteresse,
     Docente,
     HistoricoPublicacao,
@@ -45,6 +46,7 @@ from app.models import (
 )
 from app.schemas.tcc import (
     ArtigoOut,
+    DecisaoOut,
     FormularioOut,
     HistoricoOut,
     IndicarOrientador,
@@ -106,6 +108,14 @@ def pendencias(tcc: Tcc) -> list[str]:
     return faltam
 
 
+def decisao_out(a: AnaliseCadastro | None) -> DecisaoOut | None:
+    if a is None:
+        return None
+    return DecisaoOut(
+        resultado=a.resultado, parecer=a.parecer, coordenador=pessoa(a.coordenador.usuario), decidido_em=a.decidido_em
+    )
+
+
 def para_saida(tcc: Tcc) -> TccOut:
     pub = tcc.publicacoes[-1] if tcc.publicacoes else None
     return TccOut(
@@ -151,6 +161,7 @@ def para_saida(tcc: Tcc) -> TccOut:
             )
             for h in tcc.historico
         ],
+        decisoes=[decisao_out(a) for a in tcc.analises],  # DS-FL02-B passo 7
     )
 
 
@@ -347,6 +358,26 @@ def _mensagem_resposta(o: Orientacao) -> tuple[str, str]:
     return assunto, f"Olá, {aluno.nome}.\n\n{texto}\n\n{config.FRONTEND_URL}/tccs/{o.tcc_id}\n"
 
 
+NOME_RESULTADO = {"APROVADO": "aprovado", DEVOLVIDO: "devolvido para correção", "REPROVADO": "reprovado"}
+PROXIMO_PASSO = {
+    "APROVADO": "O orientador vai compor a banca e agendar a defesa. A aprovação do cadastro não aprova a defesa "
+    "nem o artigo.",
+    DEVOLVIDO: "Corrija o cadastro conforme o parecer e envie de novo. O protocolo é mantido.",
+    "REPROVADO": "Procure a Coordenação.",
+}
+
+
+def mensagem_resultado(destinatario: Usuario, tcc: Tcc, a: AnaliseCadastro) -> tuple[str, str]:
+    """DS-FL02 passo 13: resultado da análise com o parecer, para o aluno e o orientador (RBN04.05)."""
+    parecer = f"\n\nParecer da Coordenação:\n{a.parecer}" if a.parecer else ""
+    return (
+        f"SIGA UEA: cadastro de TCC {NOME_RESULTADO[a.resultado]} ({tcc.protocolo})",
+        f'Olá, {destinatario.nome}.\n\nA coordenação analisou o cadastro do TCC "{tcc.titulo}" '
+        f"(protocolo {tcc.protocolo}). Resultado: {NOME_RESULTADO[a.resultado]}.{parecer}\n\n"
+        f"{PROXIMO_PASSO[a.resultado]}\n\n{config.FRONTEND_URL}/tccs/{tcc.id}\n",
+    )
+
+
 def _reenviar_falhas(db: Session, tarefas: BackgroundTasks, tcc: Tcc) -> None:
     """RBN03.06 CA-03: o e-mail sobre o TCC que falhou volta para a fila na próxima ação sobre o TCC.
 
@@ -373,6 +404,9 @@ def _reenviar_falhas(db: Session, tarefas: BackgroundTasks, tcc: Tcc) -> None:
             status = ACEITA if n.tipo == "ORIENTACAO_ACEITA" else RECUSADA
             o = next((o for o in reversed(tcc.orientacoes) if o.status == status), None)
             mensagem = o and _mensagem_resposta(o)
+        elif n.tipo == "RESULTADO_ANALISE" and tcc.analises:  # DS-FL02 passo 16: fica para reenvio
+            destinatario = db.get(Usuario, n.usuario_id)
+            mensagem = mensagem_resultado(destinatario, tcc, tcc.analises[-1])
         if mensagem:
             n.status = "pendente"
             tarefas.add_task(email.processar, n.id, *mensagem)

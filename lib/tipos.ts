@@ -178,7 +178,28 @@ export type Tcc = {
   atualizado_em: string;
   pendencias: string[];
   historico: { situacao_anterior: string | null; situacao_nova: string; usuario: Pessoa; registrado_em: string }[];
+  decisoes: Decisao[]; // decisões da coordenação, da mais antiga para a mais nova (RBN04.05)
 };
+
+// Análise do cadastro pela coordenação (TEL07, DS-FL02-A e DS-FL02)
+export type ResultadoAnalise = "APROVADO" | "DEVOLVIDO" | "REPROVADO";
+export type Decisao = { resultado: ResultadoAnalise; parecer: string; coordenador: Pessoa; decidido_em: string };
+export type CadastroResumo = {
+  id: number;
+  protocolo: string;
+  titulo: string;
+  aluno: Pessoa;
+  matricula: string;
+  curso: Curso;
+  etapa: Disciplina;
+  modalidade: Modalidade;
+  periodo: string;
+  situacao: SituacaoTcc;
+  submetido_em: string | null;
+  dias_aguardando: number;
+  decisao: Decisao | null;
+};
+export type Cadastro = { tcc: Tcc; documento: { nome: string } | null; decisao: Decisao | null };
 
 export type Formulario = {
   turma: TurmaResumo;

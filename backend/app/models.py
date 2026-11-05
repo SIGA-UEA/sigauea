@@ -382,6 +382,7 @@ class Tcc(Base):
     )
     orientacoes: Mapped[list["Orientacao"]] = relationship(back_populates="tcc", order_by="Orientacao.id")
     historico: Mapped[list["HistoricoSituacao"]] = relationship(order_by="HistoricoSituacao.id")
+    analises: Mapped[list["AnaliseCadastro"]] = relationship(order_by="AnaliseCadastro.id")
     publicacoes: Mapped[list["PublicacaoArtigo"]] = relationship(order_by="PublicacaoArtigo.id")
 
 
@@ -406,6 +407,32 @@ class HistoricoSituacao(Base):
     registrado_em: Mapped[datetime] = mapped_column(default=agora)
 
     usuario: Mapped[Usuario] = relationship()
+
+
+# Resultados da análise do cadastro pela coordenação (RBN04.02 a RBN04.04, RN10)
+RESULTADOS_ANALISE = ("APROVADO", DEVOLVIDO, "REPROVADO")
+
+
+class AnaliseCadastro(Base):
+    """Decisão da coordenação sobre o cadastro (DS-FL02). Cada decisão é uma linha nova: o histórico fica todo."""
+
+    __tablename__ = "analise_cadastro"
+    __table_args__ = (
+        _dominio("analise_cadastro", "resultado", RESULTADOS_ANALISE),
+        # Devolver e reprovar exigem parecer (RBN04.03 CA-02, RBN04.04 CA-02)
+        CheckConstraint(
+            "resultado = 'APROVADO' OR length(trim(parecer)) > 0", name="ck_analise_cadastro_parecer"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tcc_id: Mapped[int] = _fk("tcc.id", index=True)
+    coordenador_id: Mapped[int] = _fk("docente.usuario_id", index=True)
+    resultado: Mapped[str] = mapped_column(String(10))
+    parecer: Mapped[str] = mapped_column(Text)
+    decidido_em: Mapped[datetime] = mapped_column(default=agora)
+
+    coordenador: Mapped[Docente] = relationship()
 
 
 class Orientacao(Base):
