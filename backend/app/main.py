@@ -1,7 +1,7 @@
 from fastapi import APIRouter, FastAPI
 
 from app.erros import registrar_tratadores
-from app.routes import areas, auth, cadastros, catalogo, defesas, health, perfil, tccs, turmas, usuarios
+from app.routes import areas, auth, cadastros, catalogo, defesas, health, instrumento, perfil, tccs, turmas, usuarios
 
 app = FastAPI(
     title="SIGA UEA API",
@@ -15,12 +15,16 @@ app.include_router(health.router)
 # Todas as rotas de negócio ficam sob /api/v1 (contrato das fichas das histórias).
 v1 = APIRouter(prefix="/api/v1")
 v1.include_router(auth.router)
-v1.include_router(perfil.router)  # antes de usuarios: /usuarios/me não é /usuarios/{id}
+# antes de usuarios: /usuarios/me não é /usuarios/{id}
+v1.include_router(perfil.router)
 v1.include_router(usuarios.router)
-v1.include_router(areas.router)  # antes de catalogo: /areas/gestao não é a lista simples
+# antes de catalogo: /areas/gestao não é a lista simples
+v1.include_router(areas.router)
 v1.include_router(catalogo.router)
 v1.include_router(turmas.router)
-v1.include_router(tccs.router)  # /tccs/formulario antes de /tccs/{id} (ordem no arquivo)
+# /tccs/formulario antes de /tccs/{id} (ordem no arquivo)
+v1.include_router(tccs.router)
 v1.include_router(cadastros.router)
 v1.include_router(defesas.router)  # banca e defesa (RAN09)
+v1.include_router(instrumento.router)  # instrumento de avaliação (RBN10.01)
 app.include_router(v1)
