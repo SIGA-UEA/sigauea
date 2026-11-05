@@ -66,7 +66,7 @@ export default function PaginaAgenda() {
       ) : (
         agruparPorDia(lista).map(([dia, itens]) => (
           <section key={dia} aria-labelledby={`dia-${dia}`} className="flex flex-col gap-3">
-            <h2 id={`dia-${dia}`} className="text-sm font-semibold text-suave capitalize">
+            <h2 id={`dia-${dia}`} className="text-sm font-semibold text-suave first-letter:uppercase">
               {diaPorExtenso(dia)}
             </h2>
             <ul className="flex flex-col gap-3">
