@@ -5,10 +5,11 @@ Usuário não tem exclusão física: é inativado; token e sessão expiram.
 Só a área de interesse (RBN01.02) e a foto de perfil podem ser apagadas.
 """
 
-from datetime import date, datetime
+from datetime import date, datetime, time
 
 from sqlalchemy import (
     CHAR,
+    JSON,
     CheckConstraint,
     ForeignKey,
     Index,
@@ -19,7 +20,9 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base, agora
@@ -491,3 +494,127 @@ class HistoricoPublicacao(Base):
     data: Mapped[date]
     usuario_id: Mapped[int | None] = _fk("usuario.id", nullable=True)  # nulo = sistema
     registrado_em: Mapped[datetime] = mapped_column(default=agora)
+
+
+# =====================================================================
+# Defesa e banca (Sprint S04 · RAN09, RBN09.01 a RBN09.09)
+# Nomes iguais aos do modelo lógico e às entidades do diagrama FL04 (Defesa, BancaMembro...).
+# =====================================================================
+
+FORMATOS_DEFESA = ("PRESENCIAL", "REMOTO", "HIBRIDO")
+CONFIRMADA, REMARCADA, CANCELADA = "CONFIRMADA", "REMARCADA", "CANCELADA"
+SITUACOES_DEFESA = (CONFIRMADA, REMARCADA, CANCELADA, "REALIZADA")
+
+PAPEL_AVALIADOR, PAPEL_SUPLENTE = "AVALIADOR", "SUPLENTE"
+PAPEIS_BANCA = (PAPEL_AVALIADOR, PAPEL_ORIENTADOR, PAPEL_COORIENTADOR, PAPEL_SUPLENTE)
+# BANCA_ALTERADA: troca de um membro antes da defesa (CA-06 do RBN09.01), com a pessoa anterior
+# em valores_anteriores. Não está no SQL físico entregue; ver CR da S04.
+EVENTOS_DEFESA = ("AGENDAMENTO", "REMARCACAO", "CANCELAMENTO", "SUPLENTE_CONVOCADO", "BANCA_ALTERADA")
+
+
+class UsuarioExterno(Base):
+    """Convidado de fora da UEA (RN12): só guarda a instituição; o acesso limitado é do SCRUM-32."""
+
+    __tablename__ = "usuario_externo"
+
+    usuario_id: Mapped[int] = _fk("usuario.id", primary_key=True)
+    instituicao: Mapped[str] = mapped_column(String(150))
+
+    usuario: Mapped[Usuario] = relationship()
+
+
+class LocalDefesa(Base):
+    __tablename__ = "local_defesa"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    nome: Mapped[str] = mapped_column(String(100), unique=True)
+    descricao: Mapped[str | None] = mapped_column(String(200))
+
+
+class Defesa(Base):
+    __tablename__ = "defesa"
+    __table_args__ = (
+        _dominio("defesa", "formato", FORMATOS_DEFESA),
+        _dominio("defesa", "situacao", SITUACOES_DEFESA),
+        CheckConstraint("fim > inicio", name="ck_defesa_horario"),
+        # RN14: presencial pede local, remoto pede link, híbrido pede os dois.
+        CheckConstraint(
+            "(formato = 'PRESENCIAL' AND local_id IS NOT NULL)"
+            " OR (formato = 'REMOTO' AND link IS NOT NULL)"
+            " OR (formato = 'HIBRIDO' AND local_id IS NOT NULL AND link IS NOT NULL)",
+            name="ck_defesa_formato_destino",
+        ),
+        # Uma defesa vigente por TCC, mesmo com dois pedidos ao mesmo tempo; as canceladas
+        # ficam de fora para o TCC poder ser agendado de novo. Não está no SQL físico entregue.
+        Index(
+            "uq_defesa_tcc_vigente",
+            "tcc_id",
+            unique=True,
+            sqlite_where=text("situacao <> 'CANCELADA'"),
+            postgresql_where=text("situacao <> 'CANCELADA'"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tcc_id: Mapped[int] = _fk("tcc.id", index=True)
+    formato: Mapped[str] = mapped_column(String(10))
+    data: Mapped[date]
+    inicio: Mapped[time]
+    fim: Mapped[time]
+    local_id: Mapped[int | None] = _fk("local_defesa.id", nullable=True, index=True)
+    link: Mapped[str | None] = mapped_column(String(500))
+    situacao: Mapped[str] = mapped_column(String(10), default=CONFIRMADA)
+    responsavel_id: Mapped[int] = _fk("docente.usuario_id", index=True)
+    publicada: Mapped[bool] = mapped_column(default=False)
+    publicada_em: Mapped[datetime | None]
+    divulgar_link: Mapped[bool] = mapped_column(default=False)
+    revisao_banca: Mapped[bool] = mapped_column(default=False)
+    lembrete_enviado_em: Mapped[datetime | None]
+    criado_em: Mapped[datetime] = mapped_column(default=agora)
+
+    tcc: Mapped[Tcc] = relationship()
+    local: Mapped[LocalDefesa | None] = relationship()
+    responsavel: Mapped[Docente] = relationship()
+    membros: Mapped[list["BancaMembro"]] = relationship(back_populates="defesa", order_by="BancaMembro.id")
+    historico: Mapped[list["HistoricoDefesa"]] = relationship(order_by="HistoricoDefesa.id")
+
+
+class BancaMembro(Base):
+    """Membro da banca de uma defesa (RN12). O suplente só avalia depois de convocado (RN20)."""
+
+    __tablename__ = "banca_membro"
+    __table_args__ = (
+        UniqueConstraint("defesa_id", "usuario_id", name="uq_banca_membro_defesa_usuario"),
+        _dominio("banca_membro", "papel", PAPEIS_BANCA),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    defesa_id: Mapped[int] = _fk("defesa.id", index=True)
+    usuario_id: Mapped[int] = _fk("usuario.id", index=True)
+    papel: Mapped[str] = mapped_column(String(12))
+    interno: Mapped[bool]
+    convite_enviado_em: Mapped[datetime | None]
+    presente: Mapped[bool | None]
+    convocado_em: Mapped[datetime | None]
+    substitui_membro_id: Mapped[int | None] = _fk("banca_membro.id", nullable=True, index=True)
+    motivo_convocacao: Mapped[str | None] = mapped_column(Text)
+
+    defesa: Mapped[Defesa] = relationship(back_populates="membros")
+    usuario: Mapped[Usuario] = relationship()
+
+
+class HistoricoDefesa(Base):
+    """Agendamento, remarcação, cancelamento e suplência; nada é apagado (RN14)."""
+
+    __tablename__ = "historico_defesa"
+    __table_args__ = (_dominio("historico_defesa", "evento", EVENTOS_DEFESA),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    defesa_id: Mapped[int] = _fk("defesa.id", index=True)
+    evento: Mapped[str] = mapped_column(String(20))
+    motivo: Mapped[str | None] = mapped_column(Text)
+    valores_anteriores: Mapped[dict | None] = mapped_column(JSON().with_variant(JSONB(), "postgresql"))
+    usuario_id: Mapped[int] = _fk("usuario.id", index=True)
+    registrado_em: Mapped[datetime] = mapped_column(default=agora)
+
+    usuario: Mapped[Usuario] = relationship()

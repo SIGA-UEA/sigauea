@@ -255,3 +255,67 @@ export function dataHora(iso: string | null) {
     timeStyle: "short",
   });
 }
+
+// ---------------------------------------------------------------- Sprint S04 · banca e defesa
+// Espelha backend/app/schemas/defesa.py.
+
+export type PapelBanca = "AVALIADOR" | "ORIENTADOR" | "COORIENTADOR" | "SUPLENTE";
+export type FormatoDefesa = "PRESENCIAL" | "REMOTO" | "HIBRIDO";
+export type ConvidadoExterno = { nome: string; email: string; instituicao: string };
+// Quem ocupa a vaga: um docente da UEA ou um convidado externo (nunca os dois).
+export type PessoaBanca = { usuario_id: number; externo?: undefined } | { usuario_id?: undefined; externo: ConvidadoExterno };
+export type MembroEntrada = PessoaBanca & { papel: PapelBanca };
+
+export type MembroBanca = {
+  id: number | null; // nulo enquanto a vaga só existe na tela
+  papel: PapelBanca;
+  pessoa: Pessoa;
+  email: string;
+  interno: boolean;
+  instituicao: string | null;
+  convite_enviado_em: string | null;
+};
+export type LocalDefesa = { id: number; nome: string; descricao: string | null };
+export type Defesa = {
+  id: number;
+  situacao: "CONFIRMADA" | "REMARCADA" | "CANCELADA" | "REALIZADA";
+  formato: FormatoDefesa;
+  data: string;
+  inicio: string;
+  fim: string;
+  local: LocalDefesa | null;
+  link: string | null;
+  publicada: boolean;
+  responsavel: Pessoa;
+  membros: MembroBanca[];
+  criado_em: string;
+};
+export type Banca = {
+  tcc_id: number;
+  etapa: Disciplina;
+  liberada: boolean;
+  pode_editar: boolean;
+  orientador: Pessoa | null;
+  coorientador: Pessoa | null;
+  docentes: Pessoa[];
+  locais: LocalDefesa[];
+  defesa: Defesa | null;
+};
+
+export const NOME_PAPEL_BANCA: Record<PapelBanca, string> = {
+  AVALIADOR: "Avaliador(a)",
+  ORIENTADOR: "Orientador(a)",
+  COORIENTADOR: "Coorientador(a)",
+  SUPLENTE: "Suplente",
+};
+export const NOME_FORMATO: Record<FormatoDefesa, string> = {
+  PRESENCIAL: "Presencial",
+  REMOTO: "Remoto",
+  HIBRIDO: "Híbrido",
+};
+
+// Data "AAAA-MM-DD" da API mostrada como dd/mm/aaaa, sem passar por fuso (é só um dia).
+export function dataCurta(iso: string) {
+  const [a, m, d] = iso.split("-");
+  return `${d}/${m}/${a}`;
+}
