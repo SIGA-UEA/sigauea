@@ -357,3 +357,37 @@ export type CriterioEntrada = Pick<CriterioAvaliacao, "nome" | "texto_exemplar" 
 };
 // 422 do PUT: os componentes cuja soma dos pesos não fecha os pontos (DS-FL06-G passo 7)
 export type SomaIncorreta = { id: number; nome: string; pontos: number; soma: number };
+// ---------------------------------------------------------------- TEL19 · ocorrências e ouvintes (RBN09.10)
+
+export type Ocorrencia = {
+  id: number;
+  texto: string;
+  autor: { id: number; nome: string };
+  criado_em: string;
+  alterada_em: string | null;
+};
+
+export type Declaracao = { id: number; ouvinte_id: number; versao: number; gerado_em: string };
+
+export type Ouvinte = {
+  id: number;
+  nome: string;
+  matricula: string | null;
+  pronto: boolean; // matrícula completa: pode emitir a declaração
+  declaracao: Declaracao | null;
+};
+
+export type Presenca = {
+  defesa_id: number;
+  situacao: Defesa["situacao"];
+  liberada: boolean; // a defesa já começou ou foi realizada
+  pode_emitir: boolean; // a defesa já terminou ou foi realizada (RN15)
+  ocorrencias: Ocorrencia[];
+  ouvintes: Ouvinte[];
+  prontos: number;
+};
+
+export type LoteOuvintes = {
+  adicionados: Ouvinte[];
+  linhas_com_problema: { linha: number; texto: string; motivo: string }[];
+};
