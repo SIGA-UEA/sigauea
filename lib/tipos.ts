@@ -337,3 +337,14 @@ export type Apresentacao = {
   link: string | null;
   remarcada: boolean;
 };
+
+// TEL18 · divulgação na agenda (DS-FL05): condições de RN09, prévia e se pode publicar.
+export type Divulgacao = {
+  defesa_id: number;
+  tcc_id: number;
+  situacao: Defesa["situacao"];
+  publicada: boolean;
+  pode_publicar: boolean;
+  condicoes: { descricao: string; atendida: boolean }[];
+  previa: Apresentacao | null;
+};

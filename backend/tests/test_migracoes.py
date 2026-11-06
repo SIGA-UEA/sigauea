@@ -135,3 +135,13 @@ def test_ct_ht08_01_carga_inicial_deixa_os_dados_presentes():
         assert db.scalar(select(func.count()).select_from(AreaInteresse)) == 6
         assert db.scalar(select(Usuario.email)) == "coord@exemplo.com"
     engine.dispose()
+
+
+def test_migracao_0007_aceita_os_eventos_de_publicacao_da_defesa():
+    """DS-FL05: o histórico da defesa aceita PUBLICACAO e RETIRADA depois de aplicar as migrações."""
+    url = _url()
+    atualizar_banco(url)
+    engine = create_engine(url)
+    restricoes = inspect(engine).get_check_constraints("historico_defesa")
+    engine.dispose()
+    assert any("PUBLICACAO" in r["sqltext"] and "RETIRADA" in r["sqltext"] for r in restricoes)

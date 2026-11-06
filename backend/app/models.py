@@ -509,7 +509,10 @@ PAPEL_AVALIADOR, PAPEL_SUPLENTE = "AVALIADOR", "SUPLENTE"
 PAPEIS_BANCA = (PAPEL_AVALIADOR, PAPEL_ORIENTADOR, PAPEL_COORIENTADOR, PAPEL_SUPLENTE)
 # BANCA_ALTERADA: troca de um membro antes da defesa (CA-06 do RBN09.01), com a pessoa anterior
 # em valores_anteriores. Não está no SQL físico entregue; ver CR da S04.
-EVENTOS_DEFESA = ("AGENDAMENTO", "REMARCACAO", "CANCELAMENTO", "SUPLENTE_CONVOCADO", "BANCA_ALTERADA")
+# PUBLICACAO e RETIRADA: publicar e retirar da agenda (DS-FL05 mensagens 10 e 16); também fora do SQL físico.
+EVENTOS_DEFESA = (
+    "AGENDAMENTO", "REMARCACAO", "CANCELAMENTO", "SUPLENTE_CONVOCADO", "BANCA_ALTERADA", "PUBLICACAO", "RETIRADA",
+)
 
 
 class UsuarioExterno(Base):

@@ -24,14 +24,20 @@ function agruparPorDia(lista: Apresentacao[]) {
 }
 
 function Local({ a }: { a: Apresentacao }) {
-  if (a.link) {
+  const link = a.link && (
+    <a href={a.link} target="_blank" rel="noreferrer" className="text-azul-forte underline">
+      Entrar na defesa
+    </a>
+  );
+  if (a.local) {
     return (
-      <a href={a.link} target="_blank" rel="noreferrer" className="text-azul-forte underline">
-        Entrar na defesa
-      </a>
+      <span>
+        {a.local}
+        {link && <> · {link}</>}
+      </span>
     );
   }
-  return <span>{a.local ?? (a.formato === "REMOTO" ? "Link enviado aos participantes" : "Local a confirmar")}</span>;
+  return link || <span>{a.formato === "REMOTO" ? "Link enviado aos participantes" : "Local a confirmar"}</span>;
 }
 
 export default function PaginaAgenda() {

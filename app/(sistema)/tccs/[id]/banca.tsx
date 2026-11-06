@@ -11,6 +11,7 @@ import { Aviso, Selo } from "@/components/aviso";
 import { Botao } from "@/components/botao";
 import { Campo, Entrada, Selecao } from "@/components/campo";
 import { Modal } from "@/components/modal";
+import { DivulgacaoNaAgenda } from "./divulgacao";
 import { api, ErroApi } from "@/lib/api";
 import {
   dataCurta,
@@ -545,6 +546,11 @@ function DefesaConfirmada({
           </li>
         ))}
       </ul>
+
+      <DivulgacaoNaAgenda
+        defesaId={defesa.id}
+        aoMudar={(publicada) => aoMudar({ ...banca, defesa: { ...defesa, publicada } })}
+      />
 
       {trocando && (
         <Modal titulo={`Trocar ${NOME_PAPEL_BANCA[trocando.papel].toLowerCase()}`} aoFechar={() => setTrocando(null)} largo>
