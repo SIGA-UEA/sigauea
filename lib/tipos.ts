@@ -320,6 +320,34 @@ export function dataCurta(iso: string) {
   return `${d}/${m}/${a}`;
 }
 
+// ---------------------------------------------------------------- Sprint S04 · agenda de apresentações
+// Espelha backend/app/schemas/agenda.py.
+
+export type Apresentacao = {
+  id: number;
+  titulo: string;
+  autor: string;
+  orientador: string | null;
+  curso: { sigla: string; nome: string };
+  formato: FormatoDefesa;
+  data: string;
+  inicio: string;
+  fim: string;
+  local: string | null;
+  link: string | null;
+  remarcada: boolean;
+};
+
+// TEL18 · divulgação na agenda (DS-FL05): condições de RN09, prévia e se pode publicar.
+export type Divulgacao = {
+  defesa_id: number;
+  tcc_id: number;
+  situacao: Defesa["situacao"];
+  publicada: boolean;
+  pode_publicar: boolean;
+  condicoes: { descricao: string; atendida: boolean }[];
+  previa: Apresentacao | null;
+};
 // ---------------------------------------------------------------- Sprint S04 · instrumento de avaliação
 // Espelha backend/app/schemas/instrumento.py (DS-FL06-G).
 
@@ -357,6 +385,7 @@ export type CriterioEntrada = Pick<CriterioAvaliacao, "nome" | "texto_exemplar" 
 };
 // 422 do PUT: os componentes cuja soma dos pesos não fecha os pontos (DS-FL06-G passo 7)
 export type SomaIncorreta = { id: number; nome: string; pontos: number; soma: number };
+
 // ---------------------------------------------------------------- TEL19 · ocorrências e ouvintes (RBN09.10)
 
 export type Ocorrencia = {

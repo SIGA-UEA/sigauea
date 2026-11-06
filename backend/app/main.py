@@ -2,6 +2,7 @@ from fastapi import APIRouter, FastAPI
 
 from app.erros import registrar_tratadores
 from app.routes import (
+    agenda,
     areas,
     auth,
     cadastros,
@@ -39,6 +40,7 @@ v1.include_router(turmas.router)
 v1.include_router(tccs.router)
 v1.include_router(cadastros.router)
 v1.include_router(defesas.router)  # banca e defesa (RAN09)
+v1.include_router(agenda.router)  # agenda de apresentações (RAN14)
 v1.include_router(instrumento.router)  # instrumento de avaliação (RBN10.01)
 v1.include_router(ocorrencias.router)  # ocorrências, ouvintes e declaração de horas (RBN09.10)
 app.include_router(v1)

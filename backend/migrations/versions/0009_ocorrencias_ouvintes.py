@@ -4,8 +4,8 @@ Tabelas ocorrencia_defesa, ouvinte_defesa e documento_oficial iguais às do mode
 acréscimo: a restrição única uq_ouvinte_defesa_matricula (CA-04 do RBN09.10, sem matrícula repetida
 na lista da mesma defesa).
 
-Revision ID: 0008
-Revises: 0007
+Revision ID: 0009
+Revises: 0008
 Create Date: 2026-11-06
 """
 
@@ -15,8 +15,8 @@ from alembic import op
 import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
-revision: str = "0008"
-down_revision: Union[str, Sequence[str], None] = "0007"
+revision: str = "0009"
+down_revision: Union[str, Sequence[str], None] = "0008"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
