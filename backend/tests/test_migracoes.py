@@ -13,7 +13,9 @@ from sqlalchemy import create_engine, func, inspect, select, text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from app.database import Base
-from app.migracoes import atualizar_banco
+from alembic.script import ScriptDirectory
+
+from app.migracoes import _config, atualizar_banco
 
 
 def _url() -> str:
@@ -137,7 +139,7 @@ def test_ct_ht08_01_carga_inicial_deixa_os_dados_presentes():
     engine.dispose()
 
 
-def test_migracao_0007_aceita_os_eventos_de_publicacao_da_defesa():
+def test_migracao_0008_aceita_os_eventos_de_publicacao_da_defesa():
     """DS-FL05: o histórico da defesa aceita PUBLICACAO e RETIRADA depois de aplicar as migrações."""
     url = _url()
     atualizar_banco(url)
@@ -145,3 +147,9 @@ def test_migracao_0007_aceita_os_eventos_de_publicacao_da_defesa():
     restricoes = inspect(engine).get_check_constraints("historico_defesa")
     engine.dispose()
     assert any("PUBLICACAO" in r["sqltext"] and "RETIRADA" in r["sqltext"] for r in restricoes)
+
+
+def test_migracoes_tem_uma_unica_cabeca():
+    """Duas migrações sobre a mesma anterior deixam o Alembic com duas cabeças e impedem a subida da API."""
+    cabecas = ScriptDirectory.from_config(_config(_url())).get_heads()
+    assert len(cabecas) == 1, f"mais de uma cabeça de migração: {cabecas}"

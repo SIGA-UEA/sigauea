@@ -621,3 +621,69 @@ class HistoricoDefesa(Base):
     registrado_em: Mapped[datetime] = mapped_column(default=agora)
 
     usuario: Mapped[Usuario] = relationship()
+
+
+# =====================================================================
+# MOD04 · Instrumento de avaliação (Sprint S04, RBN10.01, RN19)
+# Nomes iguais aos do modelo físico (instrumento_avaliacao, componente_avaliacao,
+# criterio_avaliacao) e às entidades do DS-FL06-G (InstrumentoAvaliacao, CriterioAvaliacao).
+# =====================================================================
+
+# Conceitos de cada critério e a faixa de nota de cada um (RBN10.01, RBN10.03)
+EXEMPLAR, COMPETENTE, NECESSITA = "EXEMPLAR", "COMPETENTE", "NECESSITA"
+CONCEITOS = (EXEMPLAR, COMPETENTE, NECESSITA)
+FAIXAS_CONCEITO = {EXEMPLAR: (8.0, 10.0), COMPETENTE: (6.0, 7.9), NECESSITA: (0.0, 5.9)}
+
+# Pontos de cada componente: os pesos dos critérios precisam fechar esses totais (DS-FL06-G passo 7)
+PONTOS_ESCRITA, PONTOS_ORAL = 7.0, 3.0
+
+
+class InstrumentoAvaliacao(Base):
+    """Uma versão do instrumento. Só uma é vigente; as anteriores ficam como histórico (RN19)."""
+
+    __tablename__ = "instrumento_avaliacao"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    versao: Mapped[int] = mapped_column(unique=True)
+    vigente: Mapped[bool]
+    criado_por: Mapped[int] = _fk("usuario.id", index=True)
+    criado_em: Mapped[datetime] = mapped_column(default=agora)
+
+    autor: Mapped[Usuario] = relationship()
+    componentes: Mapped[list["ComponenteAvaliacao"]] = relationship(
+        order_by="ComponenteAvaliacao.ordem", back_populates="instrumento"
+    )
+
+
+class ComponenteAvaliacao(Base):
+    """Parte escrita (7,0) e parte oral (3,0)."""
+
+    __tablename__ = "componente_avaliacao"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    instrumento_id: Mapped[int] = _fk("instrumento_avaliacao.id", index=True)
+    nome: Mapped[str] = mapped_column(String(60))
+    pontos: Mapped[float] = mapped_column(Numeric(3, 1))
+    ordem: Mapped[int] = mapped_column(SmallInteger)
+
+    instrumento: Mapped[InstrumentoAvaliacao] = relationship(back_populates="componentes")
+    criterios: Mapped[list["CriterioAvaliacao"]] = relationship(
+        order_by="CriterioAvaliacao.ordem", back_populates="componente"
+    )
+
+
+class CriterioAvaliacao(Base):
+    """Critério com peso e o texto descritivo dos três conceitos (RBN10.01, RBN10.03)."""
+
+    __tablename__ = "criterio_avaliacao"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    componente_id: Mapped[int] = _fk("componente_avaliacao.id", index=True)
+    nome: Mapped[str] = mapped_column(String(120))
+    peso: Mapped[float] = mapped_column(Numeric(4, 2))
+    texto_exemplar: Mapped[str] = mapped_column(Text)
+    texto_competente: Mapped[str] = mapped_column(Text)
+    texto_necessita: Mapped[str] = mapped_column(Text)
+    ordem: Mapped[int] = mapped_column(SmallInteger)
+
+    componente: Mapped[ComponenteAvaliacao] = relationship(back_populates="criterios")

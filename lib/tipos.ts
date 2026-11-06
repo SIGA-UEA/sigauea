@@ -348,3 +348,40 @@ export type Divulgacao = {
   condicoes: { descricao: string; atendida: boolean }[];
   previa: Apresentacao | null;
 };
+// ---------------------------------------------------------------- Sprint S04 · instrumento de avaliação
+// Espelha backend/app/schemas/instrumento.py (DS-FL06-G).
+
+export type Conceito = "EXEMPLAR" | "COMPETENTE" | "NECESSITA";
+export type FaixaConceito = { conceito: Conceito; rotulo: string; minimo: number; maximo: number };
+export type CriterioAvaliacao = {
+  id: number;
+  nome: string;
+  peso: number;
+  texto_exemplar: string;
+  texto_competente: string;
+  texto_necessita: string;
+  ordem: number;
+};
+export type ComponenteAvaliacao = {
+  id: number;
+  nome: string;
+  pontos: number;
+  ordem: number;
+  criterios: CriterioAvaliacao[];
+};
+export type InstrumentoAvaliacao = {
+  id: number;
+  versao: number;
+  vigente: boolean;
+  criado_em: string;
+  autor: Pessoa;
+  componentes: ComponenteAvaliacao[];
+  conceitos: FaixaConceito[];
+};
+export type VersaoInstrumento = { id: number; versao: number; vigente: boolean; criado_em: string; autor: Pessoa };
+export type ConsultaInstrumento = { instrumento: InstrumentoAvaliacao; versoes: VersaoInstrumento[] };
+export type CriterioEntrada = Pick<CriterioAvaliacao, "nome" | "texto_exemplar" | "texto_competente" | "texto_necessita"> & {
+  peso: string; // vai como texto ("0.5") para a API somar em decimal exato
+};
+// 422 do PUT: os componentes cuja soma dos pesos não fecha os pontos (DS-FL06-G passo 7)
+export type SomaIncorreta = { id: number; nome: string; pontos: number; soma: number };

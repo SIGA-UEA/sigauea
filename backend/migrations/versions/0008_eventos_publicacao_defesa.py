@@ -3,8 +3,8 @@
 Publicar e retirar a defesa da agenda ficam no histórico (mensagens 10 e 16 do DS-FL05). O SQL
 físico entregue não tem esses eventos; entram na mesma lista do BANCA_ALTERADA (ver CR da S04).
 
-Revision ID: 0007
-Revises: 0006
+Revision ID: 0008
+Revises: 0007
 Create Date: 2026-11-05
 """
 
@@ -12,8 +12,8 @@ from typing import Sequence, Union
 
 from alembic import op
 
-revision: str = "0007"
-down_revision: Union[str, Sequence[str], None] = "0006"
+revision: str = "0008"
+down_revision: Union[str, Sequence[str], None] = "0007"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
