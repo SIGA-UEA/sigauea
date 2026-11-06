@@ -5,26 +5,27 @@ aponte TEST_DATABASE_URL para um banco vazio (ele é apagado a cada teste):
     TEST_DATABASE_URL=postgresql+psycopg://usuario:senha@localhost:5432/siga_teste
 """
 
+from app.services import email
+from app.seed import carregar_base, carregar_instrumento, criar_coordenador
+from app.security import gerar_hash_senha
+from app.main import app
+from app.database import Base, SessionLocal, engine
+from fastapi.testclient import TestClient
+import pytest
 import os
 import re
 import tempfile
 
 # Precisa vir antes de importar a aplicação, que lê a configuração ao ser importada.
 os.environ["DATABASE_URL"] = (
-    os.environ.get("TEST_DATABASE_URL") or f"sqlite:///{tempfile.mkdtemp()}/teste.db"
+    os.environ.get(
+        "TEST_DATABASE_URL") or f"sqlite:///{tempfile.mkdtemp()}/teste.db"
 )
 os.environ["BCRYPT_CUSTO"] = "10"
-os.environ["SMTP_HOST"] = ""  # testes nunca enviam e-mail de verdade, mesmo com backend/.env
+# testes nunca enviam e-mail de verdade, mesmo com backend/.env
+os.environ["SMTP_HOST"] = ""
 os.environ["BREVO_API_KEY"] = ""
 
-import pytest
-from fastapi.testclient import TestClient
-
-from app.database import Base, SessionLocal, engine
-from app.main import app
-from app.security import gerar_hash_senha
-from app.seed import carregar_base, criar_coordenador
-from app.services import email
 
 SENHA = "Senha@2026"
 COORD = "coord@uea.edu.br"
@@ -38,9 +39,11 @@ def banco():
     Base.metadata.create_all(engine)
     with SessionLocal() as db:
         nucleo = carregar_base(db)
-        coordenador = criar_coordenador(db, nucleo, "Coordenadora Teste", COORD)
+        coordenador = criar_coordenador(
+            db, nucleo, "Coordenadora Teste", COORD)
         coordenador.senha_hash = _HASH
         coordenador.ativo = True
+        carregar_instrumento(db, coordenador)
         db.commit()
     yield
 
@@ -58,7 +61,8 @@ def caixa(monkeypatch):
 
     def entregar(destinatario, assunto, corpo):
         token = re.search(r"token=(\S+)", corpo)
-        enviados.append({"para": destinatario, "assunto": assunto, "token": token and token[1]})
+        enviados.append(
+            {"para": destinatario, "assunto": assunto, "token": token and token[1]})
 
     monkeypatch.setattr(email, "entregar", entregar)
     return enviados
@@ -73,7 +77,8 @@ def anonimo():
 def coord():
     """Cliente já autenticado como coordenador."""
     cliente = TestClient(app)
-    resposta = cliente.post("/api/v1/auth/login", json={"email": COORD, "senha": SENHA})
+    resposta = cliente.post("/api/v1/auth/login",
+                            json={"email": COORD, "senha": SENHA})
     assert resposta.status_code == 200
     return cliente
 
@@ -85,13 +90,17 @@ DOCENTE = {
     "curso_id": 1,
     "perfis": ["orientador"],
 }
-ALUNO = {"nome": "Ana Ribeiro", "email": "ana@uea.edu.br", "matricula": "24150001", "curso_id": 1}
+ALUNO = {"nome": "Ana Ribeiro", "email": "ana@uea.edu.br",
+         "matricula": "24150001", "curso_id": 1}
 
 
 def ativar(caixa, email_destino: str, senha: str = SENHA) -> TestClient:
     """Ativa a conta pelo link recebido e devolve um cliente logado como essa pessoa."""
-    token = next(m["token"] for m in reversed(caixa) if m["para"] == email_destino)
+    token = next(m["token"]
+                 for m in reversed(caixa) if m["para"] == email_destino)
     cliente = TestClient(app)
-    assert cliente.post("/api/v1/auth/ativar", json={"token": token, "senha": senha}).status_code == 200
-    assert cliente.post("/api/v1/auth/login", json={"email": email_destino, "senha": senha}).status_code == 200
+    assert cliente.post("/api/v1/auth/ativar",
+                        json={"token": token, "senha": senha}).status_code == 200
+    assert cliente.post(
+        "/api/v1/auth/login", json={"email": email_destino, "senha": senha}).status_code == 200
     return cliente
