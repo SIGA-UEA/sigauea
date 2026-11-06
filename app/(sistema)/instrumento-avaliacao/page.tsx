@@ -52,6 +52,10 @@ function lerPeso(texto: string) {
   return /^\d+(\.\d{1,2})?$/.test(limpo) ? Number(limpo) : NaN;
 }
 
+function somaDe(criterios: Rascunho[]) {
+  return criterios.reduce((total, k) => total + lerPeso(k.peso), 0);
+}
+
 function paraRascunho(c: ComponenteAvaliacao): Rascunho[] {
   return c.criterios.map((k) => ({
     chave: novaChave(),
@@ -195,16 +199,28 @@ function Consulta({ dados }: { dados: ConsultaInstrumento }) {
   );
 }
 
+// Soma dos pesos de uma parte e quanto falta ou sobra para fechar os pontos dela (passo 7)
+function situacaoSoma(soma: number, pontos: number) {
+  if (Number.isNaN(soma)) return { fecha: false, texto: "—", diferenca: "confira os pesos" };
+  const diferenca = Math.round((pontos - soma) * 100) / 100;
+  if (diferenca === 0) return { fecha: true, texto: numero(soma), diferenca: "fecha" };
+  return {
+    fecha: false,
+    texto: numero(soma),
+    diferenca: diferenca > 0 ? `faltam ${numero(diferenca)}` : `sobram ${numero(-diferenca)}`,
+  };
+}
+
 function TituloComponente({ componente, soma }: { componente: ComponenteAvaliacao; soma?: number }) {
-  const fecha = soma === undefined || Math.abs(soma - componente.pontos) < 0.001;
+  const situacao = soma === undefined ? null : situacaoSoma(soma, componente.pontos);
   return (
     <div className="flex flex-wrap items-baseline justify-between gap-2">
       <h2 className="text-lg font-semibold">
         {componente.nome} <span className="font-normal text-suave">· {numero(componente.pontos)} pontos</span>
       </h2>
-      {soma !== undefined && (
-        <span className={`text-sm font-medium ${fecha ? "text-verde" : "text-vermelho"}`}>
-          Soma dos pesos: {Number.isNaN(soma) ? "—" : numero(soma)} de {numero(componente.pontos)}
+      {situacao && (
+        <span className={`text-sm font-medium ${situacao.fecha ? "text-verde" : "text-vermelho"}`}>
+          Soma dos pesos: {situacao.texto} de {numero(componente.pontos)} · {situacao.diferenca}
         </span>
       )}
     </div>
@@ -388,7 +404,7 @@ function Edicao({
 
       {instrumento.componentes.map((c) => {
         const lista = rascunho[c.id];
-        const soma = lista.reduce((t, k) => t + lerPeso(k.peso), 0);
+        const soma = somaDe(lista);
         const incorreto = somasIncorretas.some((s) => s.id === c.id);
         return (
           <section
@@ -487,7 +503,18 @@ function Edicao({
         );
       })}
 
-      <div className="sticky bottom-0 -mx-1 flex flex-wrap justify-end gap-2 border-t border-borda bg-fundo/95 px-1 py-3 backdrop-blur">
+      <div className="sticky bottom-0 -mx-1 flex flex-wrap items-center justify-end gap-x-4 gap-y-2 border-t border-borda bg-fundo/95 px-1 py-3 backdrop-blur">
+        {/* A soma de cada parte fica visível enquanto se rola a lista de critérios */}
+        <ul aria-label="Soma dos pesos por parte" className="mr-auto flex flex-wrap gap-x-4 gap-y-1 text-sm">
+          {instrumento.componentes.map((c) => {
+            const situacao = situacaoSoma(somaDe(rascunho[c.id]), c.pontos);
+            return (
+              <li key={c.id} className={`font-medium ${situacao.fecha ? "text-verde" : "text-vermelho"}`}>
+                {c.nome}: {situacao.texto} de {numero(c.pontos)} · {situacao.diferenca}
+              </li>
+            );
+          })}
+        </ul>
         <Botao variante="contorno" onClick={cancelar} disabled={salvando}>
           Cancelar
         </Botao>
