@@ -59,10 +59,12 @@ def test_sem_vinculo_com_o_tcc_a_defesa_nao_aparece(banca):
     d = _nova_defesa(banca)
     assert banca["otto"].get(_url(d)).status_code == 404
     assert banca["otto"].post(_url(d, "publicacao")).status_code == 404
+    assert banca["otto"].post(_url(d, "retirada")).status_code == 404
 
 
 def test_defesa_inexistente_da_404(banca):
     assert banca["olga"].get(_url(999)).status_code == 404
+    assert banca["olga"].post(_url(999, "retirada")).status_code == 404
 
 
 def test_e1_defesa_cancelada(banca, db):
@@ -73,6 +75,13 @@ def test_e1_defesa_cancelada(banca, db):
     corpo = banca["olga"].get(_url(d)).json()
     assert corpo["situacao"] == "CANCELADA" and corpo["pode_publicar"] is False and corpo["previa"] is None
     assert banca["olga"].post(_url(d, "publicacao")).status_code == 409
+
+
+def test_e1_retirar_defesa_cancelada_da_409(banca, db):
+    d = _nova_defesa(banca)
+    db.get(Defesa, d).situacao = "CANCELADA"
+    db.commit()
+    assert banca["olga"].post(_url(d, "retirada")).status_code == 409
 
 
 # ---------------------------------------------------------------- mensagens 8 a 11 · publicar
