@@ -92,7 +92,25 @@ function PainelPresenca({ defesaId }: { defesaId: number }) {
           Carregando…
         </p>
       ) : dados.situacao === "CANCELADA" ? (
-        <Aviso tipo="info">Esta defesa foi cancelada.</Aviso>
+        // Defesa cancelada: o que já foi registrado continua visível, só para consulta.
+        <div className="flex flex-col gap-6">
+          <Aviso tipo="info">
+            Esta defesa foi cancelada. As ocorrências e os ouvintes registrados
+            ficam só para consulta.
+          </Aviso>
+          <Ocorrencias
+            defesaId={defesaId}
+            lista={dados.ocorrencias}
+            aoMudar={carregar}
+            leitura
+          />
+          <Ouvintes
+            defesaId={defesaId}
+            dados={dados}
+            aoMudar={carregar}
+            leitura
+          />
+        </div>
       ) : !dados.liberada ? (
         <Aviso tipo="info">
           Etapa ainda não liberada: presença e ocorrências são registradas
@@ -118,10 +136,12 @@ function Ocorrencias({
   defesaId,
   lista,
   aoMudar,
+  leitura = false,
 }: {
   defesaId: number;
   lista: Ocorrencia[];
   aoMudar: () => void;
+  leitura?: boolean;
 }) {
   const [texto, setTexto] = useState("");
   const [erro, setErro] = useState("");
@@ -172,32 +192,34 @@ function Ocorrencias({
   return (
     <div className="flex flex-col gap-3">
       <h3 className="font-medium">Ocorrências da sessão</h3>
-      <form onSubmit={registrar} noValidate className="flex flex-col gap-2">
-        <Campo
-          rotulo="Registrar ocorrência"
-          dica="texto livre: atraso, problema técnico, intercorrência"
-          erro={erro}
-        >
-          <textarea
-            value={texto}
-            rows={3}
-            maxLength={800}
-            aria-invalid={erro ? true : undefined}
-            onChange={(e) => setTexto(e.target.value)}
-            className={`${AREA_TEXTO} ${erro ? "border-vermelho" : "border-borda"}`}
-          />
-        </Campo>
-        <div>
-          <Botao
-            type="submit"
-            variante="contorno"
-            pequeno
-            carregando={enviando}
+      {!leitura && (
+        <form onSubmit={registrar} noValidate className="flex flex-col gap-2">
+          <Campo
+            rotulo="Registrar ocorrência"
+            dica="texto livre: atraso, problema técnico, intercorrência"
+            erro={erro}
           >
-            <Icone nome="mais" className="size-4" /> Registrar ocorrência
-          </Botao>
-        </div>
-      </form>
+            <textarea
+              value={texto}
+              rows={3}
+              maxLength={800}
+              aria-invalid={erro ? true : undefined}
+              onChange={(e) => setTexto(e.target.value)}
+              className={`${AREA_TEXTO} ${erro ? "border-vermelho" : "border-borda"}`}
+            />
+          </Campo>
+          <div>
+            <Botao
+              type="submit"
+              variante="contorno"
+              pequeno
+              carregando={enviando}
+            >
+              <Icone nome="mais" className="size-4" /> Registrar ocorrência
+            </Botao>
+          </div>
+        </form>
+      )}
 
       {lista.length === 0 ? (
         <p className="text-sm text-suave">Nenhuma ocorrência registrada.</p>
@@ -243,17 +265,19 @@ function Ocorrencias({
                         ` · corrigido em ${dataHora(o.alterada_em)}`}
                     </p>
                   </div>
-                  <Botao
-                    variante="texto"
-                    pequeno
-                    onClick={() => {
-                      setEditando(o.id);
-                      setTextoEdicao(o.texto);
-                      setErroEdicao("");
-                    }}
-                  >
-                    <Icone nome="lapis" className="size-4" /> Corrigir
-                  </Botao>
+                  {!leitura && (
+                    <Botao
+                      variante="texto"
+                      pequeno
+                      onClick={() => {
+                        setEditando(o.id);
+                        setTextoEdicao(o.texto);
+                        setErroEdicao("");
+                      }}
+                    >
+                      <Icone nome="lapis" className="size-4" /> Corrigir
+                    </Botao>
+                  )}
                 </div>
               )}
             </li>
@@ -270,10 +294,12 @@ function Ouvintes({
   defesaId,
   dados,
   aoMudar,
+  leitura = false,
 }: {
   defesaId: number;
   dados: Presenca;
   aoMudar: () => void;
+  leitura?: boolean;
 }) {
   const [novo, setNovo] = useState({ nome: "", matricula: "" });
   const [erros, setErros] = useState<{ nome?: string; matricula?: string }>({});
@@ -289,9 +315,13 @@ function Ouvintes({
     const faltas: typeof erros = {};
     if (!nomeCompleto(novo.nome))
       faltas.nome = "Informe o nome completo (nome e sobrenome).";
-    if (!matriculaOk(novo.matricula))
+    // Matrícula opcional (visitante de fora da UEA); quando informada, precisa ser válida e única.
+    if (novo.matricula.trim() && !matriculaOk(novo.matricula))
       faltas.matricula = "A matrícula deve ter só números (de 6 a 20 dígitos).";
-    else if (ouvintes.some((o) => o.matricula === novo.matricula.trim()))
+    else if (
+      novo.matricula.trim() &&
+      ouvintes.some((o) => o.matricula === novo.matricula.trim())
+    )
       faltas.matricula = "Esta matrícula já está na lista."; // CA-04
     setErros(faltas);
     setGeral("");
@@ -300,7 +330,10 @@ function Ouvintes({
     try {
       await api<Ouvinte>(`/defesas/${defesaId}/ouvintes`, {
         metodo: "POST",
-        corpo: { nome: novo.nome.trim(), matricula: novo.matricula.trim() },
+        corpo: {
+          nome: novo.nome.trim(),
+          matricula: novo.matricula.trim() || null,
+        },
       });
       setNovo({ nome: "", matricula: "" });
       setDesfazer(null);
@@ -357,7 +390,7 @@ function Ouvintes({
     try {
       await api<Ouvinte>(`/defesas/${defesaId}/ouvintes`, {
         metodo: "POST",
-        corpo: { nome: o.nome, matricula: o.matricula ?? "" },
+        corpo: { nome: o.nome, matricula: o.matricula },
       });
       setDesfazer(null);
       aoMudar();
@@ -376,83 +409,96 @@ function Ouvintes({
         </span>
       </div>
 
-      <form
-        onSubmit={adicionar}
-        noValidate
-        className="grid items-start gap-3 sm:grid-cols-[1fr_12rem_auto]"
-      >
-        <Campo rotulo="Nome completo" obrigatorio erro={erros.nome}>
-          <Entrada
-            id="ouvinte-nome"
-            value={novo.nome}
-            erro={erros.nome}
-            onChange={(e) => {
-              setNovo({ ...novo, nome: e.target.value });
-              setErros((x) => ({ ...x, nome: undefined }));
-            }}
-          />
-        </Campo>
-        <Campo rotulo="Matrícula" obrigatorio erro={erros.matricula}>
-          <Entrada
-            value={novo.matricula}
-            inputMode="numeric"
-            erro={erros.matricula}
-            onChange={(e) => {
-              setNovo({ ...novo, matricula: e.target.value });
-              setErros((x) => ({ ...x, matricula: undefined }));
-            }}
-          />
-        </Campo>
-        <div className="sm:pt-6">
-          <Botao type="submit" carregando={enviando}>
-            <Icone nome="mais" className="size-4" /> Adicionar ouvinte
-          </Botao>
-        </div>
-      </form>
-      <p className="text-[13px] text-suave">
-        A declaração de horas sai com o nome completo e a matrícula exatamente
-        como estão aqui; confira antes de emitir.
-      </p>
-
-      <details className="text-sm">
-        <summary className="cursor-pointer py-1 text-azul-forte">
-          Colar uma lista (um por linha: nome; matrícula)
-        </summary>
-        <div className="mt-2 flex flex-col gap-2">
-          <Campo rotulo="Lista de ouvintes">
-            <textarea
-              value={lote}
-              rows={4}
-              placeholder={"Maria Souza; 2026000011\nJoão Lima; 2026000012"}
-              onChange={(e) => setLote(e.target.value)}
-              className={`${AREA_TEXTO} border-borda`}
-            />
-          </Campo>
-          {resultadoLote && (
-            <Aviso
-              tipo={
-                resultadoLote.linhas_com_problema.length ? "alerta" : "sucesso"
-              }
+      {!leitura && (
+        <>
+          <form
+            onSubmit={adicionar}
+            noValidate
+            className="grid items-start gap-3 sm:grid-cols-[1fr_12rem_auto]"
+          >
+            <Campo rotulo="Nome completo" obrigatorio erro={erros.nome}>
+              <Entrada
+                id="ouvinte-nome"
+                value={novo.nome}
+                erro={erros.nome}
+                onChange={(e) => {
+                  setNovo({ ...novo, nome: e.target.value });
+                  setErros((x) => ({ ...x, nome: undefined }));
+                }}
+              />
+            </Campo>
+            <Campo
+              rotulo="Matrícula"
+              dica="se for aluno da UEA"
+              erro={erros.matricula}
             >
-              {resultadoLote.adicionados.length} ouvinte(s) adicionado(s).
-              {resultadoLote.linhas_com_problema.length > 0 && (
-                <ul className="mt-1 list-disc pl-5">
-                  {resultadoLote.linhas_com_problema.map((l) => (
-                    <li key={l.linha}>
-                      Linha {l.linha} ({l.texto}): {l.motivo}
-                    </li>
-                  ))}
-                </ul>
+              <Entrada
+                value={novo.matricula}
+                inputMode="numeric"
+                erro={erros.matricula}
+                onChange={(e) => {
+                  setNovo({ ...novo, matricula: e.target.value });
+                  setErros((x) => ({ ...x, matricula: undefined }));
+                }}
+              />
+            </Campo>
+            <div className="sm:pt-6">
+              <Botao type="submit" carregando={enviando}>
+                <Icone nome="mais" className="size-4" /> Adicionar ouvinte
+              </Botao>
+            </div>
+          </form>
+          <p className="text-[13px] text-suave">
+            A declaração de horas sai com o nome completo e a matrícula
+            exatamente como estão aqui; confira antes de emitir. Visitante de
+            fora da UEA entra sem matrícula, mas não recebe declaração.
+          </p>
+
+          <details className="text-sm">
+            <summary className="cursor-pointer py-1 text-azul-forte">
+              Colar uma lista (um por linha: nome; matrícula, ou só o nome)
+            </summary>
+            <div className="mt-2 flex flex-col gap-2">
+              <Campo rotulo="Lista de ouvintes">
+                <textarea
+                  value={lote}
+                  rows={4}
+                  placeholder={
+                    "Maria Souza; 2026000011\nJoão Lima; 2026000012\nVisitante Externo"
+                  }
+                  onChange={(e) => setLote(e.target.value)}
+                  className={`${AREA_TEXTO} border-borda`}
+                />
+              </Campo>
+              {resultadoLote && (
+                <Aviso
+                  tipo={
+                    resultadoLote.linhas_com_problema.length
+                      ? "alerta"
+                      : "sucesso"
+                  }
+                >
+                  {resultadoLote.adicionados.length} ouvinte(s) adicionado(s).
+                  {resultadoLote.linhas_com_problema.length > 0 && (
+                    <ul className="mt-1 list-disc pl-5">
+                      {resultadoLote.linhas_com_problema.map((l) => (
+                        <li key={l.linha}>
+                          Linha {l.linha} ({l.texto}): {l.motivo}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </Aviso>
               )}
-            </Aviso>
-          )}
-          <div>
-            <Botao variante="contorno" pequeno onClick={adicionarLista}>
-              Adicionar da lista
-            </Botao>
-          </div>
-        </div>
-      </details>
+              <div>
+                <Botao variante="contorno" pequeno onClick={adicionarLista}>
+                  Adicionar da lista
+                </Botao>
+              </div>
+            </div>
+          </details>
+        </>
+      )}
 
       {geral && <Aviso tipo="erro">{geral}</Aviso>}
       {desfazer && (
@@ -467,7 +513,7 @@ function Ouvintes({
           </button>
         </Aviso>
       )}
-      {!dados.pode_emitir && ouvintes.length > 0 && (
+      {!leitura && !dados.pode_emitir && ouvintes.length > 0 && (
         <p className="text-[13px] text-suave">
           A declaração de horas pode ser emitida depois do horário de término da
           defesa.
@@ -476,8 +522,9 @@ function Ouvintes({
 
       {ouvintes.length === 0 ? (
         <p className="text-sm text-suave">
-          Nenhum ouvinte registrado. Adicione nome e matrícula de quem assistiu
-          à defesa; a lista alimenta a declaração de horas complementares.
+          {leitura
+            ? "Nenhum ouvinte registrado."
+            : "Nenhum ouvinte registrado. Adicione nome e matrícula de quem assistiu à defesa; a lista alimenta a declaração de horas complementares."}
         </p>
       ) : (
         <ul className="divide-y divide-borda rounded-lg border border-borda">
@@ -487,6 +534,7 @@ function Ouvintes({
               defesaId={defesaId}
               ouvinte={o}
               podeEmitir={dados.pode_emitir}
+              leitura={leitura}
               outras={ouvintes
                 .filter((x) => x.id !== o.id)
                 .map((x) => x.matricula)}
@@ -500,8 +548,11 @@ function Ouvintes({
       {confirmar && (
         <Modal titulo="Remover ouvinte?" aoFechar={() => setConfirmar(null)}>
           <p className="text-sm">
-            {confirmar.nome} (matrícula {confirmar.matricula ?? "não informada"}
-            ) sai da lista de ouvintes desta defesa e não recebe a declaração de
+            {confirmar.nome}{" "}
+            {confirmar.matricula
+              ? `(matrícula ${confirmar.matricula})`
+              : "(sem matrícula)"}{" "}
+            sai da lista de ouvintes desta defesa e não recebe a declaração de
             horas.
           </p>
           <div className="mt-4 flex flex-wrap justify-end gap-2">
@@ -530,6 +581,7 @@ function LinhaOuvinte({
   defesaId,
   ouvinte,
   podeEmitir,
+  leitura,
   outras,
   aoMudar,
   aoRemover,
@@ -537,6 +589,7 @@ function LinhaOuvinte({
   defesaId: number;
   ouvinte: Ouvinte;
   podeEmitir: boolean;
+  leitura: boolean;
   outras: (string | null)[];
   aoMudar: () => void;
   aoRemover: () => void;
@@ -600,10 +653,14 @@ function LinhaOuvinte({
           </div>
         ) : (
           <p className="flex flex-wrap items-center gap-2 text-suave">
-            <span className="font-mono">
-              {ouvinte.matricula || "sem matrícula"}
-            </span>
-            {!ouvinte.pronto && <Selo cor="ambar">Incompleta</Selo>}
+            {ouvinte.matricula ? (
+              <span className="font-mono">{ouvinte.matricula}</span>
+            ) : (
+              <Selo cor="cinza">Sem matrícula</Selo>
+            )}
+            {ouvinte.matricula && !ouvinte.pronto && (
+              <Selo cor="ambar">Incompleta</Selo>
+            )}
           </p>
         )}
       </div>
@@ -624,7 +681,9 @@ function LinhaOuvinte({
           <Selo cor="cinza">Pronta para emitir</Selo>
         ) : (
           <span className="text-[13px] text-suave">
-            Corrija a matrícula para emitir
+            {ouvinte.matricula
+              ? "Corrija a matrícula para emitir"
+              : "Sem declaração: informe a matrícula se for aluno da UEA"}
           </span>
         )}
         {editando ? (
@@ -645,14 +704,18 @@ function LinhaOuvinte({
             </Botao>
           </>
         ) : (
-          !emitida && (
+          !emitida &&
+          !leitura && (
             <>
               <Botao
                 variante="contorno"
                 pequeno
                 onClick={() => setEditando(true)}
               >
-                <Icone nome="lapis" className="size-4" /> Corrigir matrícula
+                <Icone nome="lapis" className="size-4" />{" "}
+                {ouvinte.matricula
+                  ? "Corrigir matrícula"
+                  : "Informar matrícula"}
               </Botao>
               {ouvinte.pronto && podeEmitir && (
                 <Botao
