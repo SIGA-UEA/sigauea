@@ -1,8 +1,9 @@
-"""Ocorrências, ouvintes e documentos oficiais da defesa (Sprint S04): RBN09.10, RN15, RN23.
+"""Ocorrências, ouvintes e documentos oficiais da defesa: RBN09.10, RN15, RN23.
 
-Tabelas ocorrencia_defesa, ouvinte_defesa e documento_oficial iguais às do modelo físico, com um
-acréscimo: a restrição única uq_ouvinte_defesa_matricula (CA-04 do RBN09.10, sem matrícula repetida
-na lista da mesma defesa).
+Tabelas ocorrencia_defesa, ouvinte_defesa e documento_oficial iguais às do modelo físico, com dois
+acréscimos: a restrição única uq_ouvinte_defesa_matricula (CA-04 do RBN09.10, sem matrícula repetida
+na lista da mesma defesa) e o índice único parcial uq_documento_oficial_declaracao_vigente (uma declaração
+vigente por ouvinte, mesmo com dois pedidos ao mesmo tempo).
 
 Revision ID: 0009
 Revises: 0008
@@ -78,9 +79,18 @@ def upgrade() -> None:
         batch_op.create_index(batch_op.f("ix_documento_oficial_defesa_id"), ["defesa_id"], unique=False)
         batch_op.create_index(batch_op.f("ix_documento_oficial_membro_id"), ["membro_id"], unique=False)
         batch_op.create_index(batch_op.f("ix_documento_oficial_ouvinte_id"), ["ouvinte_id"], unique=False)
+    op.create_index(
+        "uq_documento_oficial_declaracao_vigente",
+        "documento_oficial",
+        ["ouvinte_id"],
+        unique=True,
+        sqlite_where=sa.text("tipo = 'DECLARACAO_HORAS' AND vigente"),
+        postgresql_where=sa.text("tipo = 'DECLARACAO_HORAS' AND vigente"),
+    )
 
 
 def downgrade() -> None:
+    op.drop_index("uq_documento_oficial_declaracao_vigente", table_name="documento_oficial")
     with op.batch_alter_table("documento_oficial", schema=None) as batch_op:
         batch_op.drop_index(batch_op.f("ix_documento_oficial_ouvinte_id"))
         batch_op.drop_index(batch_op.f("ix_documento_oficial_membro_id"))

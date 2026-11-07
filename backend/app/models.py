@@ -624,7 +624,7 @@ class HistoricoDefesa(Base):
 
 
 # =====================================================================
-# Ocorrências, ouvintes e documentos oficiais (Sprint S04 · RBN09.10, RN15, RN23)
+# Ocorrências, ouvintes e documentos oficiais (RBN09.10, RN15, RN23)
 # Tabelas iguais às do modelo físico (ocorrencia_defesa, ouvinte_defesa, documento_oficial) e
 # entidades do DS-FL09 (OcorrenciaDefesa, OuvinteDefesa, DocumentoOficial).
 # =====================================================================
@@ -670,7 +670,18 @@ class DocumentoOficial(Base):
     marca a anterior como substituída (RN15). O arquivo fica em caminho, conferido pelo sha256 (RNF06)."""
 
     __tablename__ = "documento_oficial"
-    __table_args__ = (_dominio("documento_oficial", "tipo", TIPOS_DOCUMENTO),)
+    __table_args__ = (
+        _dominio("documento_oficial", "tipo", TIPOS_DOCUMENTO),
+        # Uma declaração vigente por ouvinte, também com dois cliques ao mesmo tempo. Não está no SQL
+        # físico entregue (ver PR do SCRUM-68).
+        Index(
+            "uq_documento_oficial_declaracao_vigente",
+            "ouvinte_id",
+            unique=True,
+            sqlite_where=text("tipo = 'DECLARACAO_HORAS' AND vigente"),
+            postgresql_where=text("tipo = 'DECLARACAO_HORAS' AND vigente"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     defesa_id: Mapped[int] = _fk("defesa.id", index=True)

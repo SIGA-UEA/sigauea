@@ -1,4 +1,4 @@
-"""Sprint S04 · SCRUM-68 (RBN09.10): ocorrências da defesa, lista de ouvintes e declaração de horas.
+"""SCRUM-68 (RBN09.10): ocorrências da defesa, lista de ouvintes e declaração de horas.
 
 Cada teste cita o caso de teste da ficha (CT-09.10-xx), o critério de aceite ou o fluxo de exceção
 dos diagramas DS-FL09, DS-FL09-A e DS-FL09-B. A defesa do cenário é em 01/12/2026, das 14:00 às 14:20;
@@ -129,12 +129,66 @@ def test_e1_dado_invalido_marca_o_campo(defesa, nome, matricula, campo):
 def test_colar_lista_grava_validas_e_devolve_as_linhas_com_problema(defesa):
     """DS-FL09 msgs 16 a 18: {adicionados, linhas com problema[]}."""
     _ouvinte(defesa, matricula="2026000011")
-    linhas = ["João Lima; 2026000012", "Ana Paz, 2026000013", "", "Sem matrícula",
-              "Repetido; 2026000011", "Duplicado na lista; 2026000012", "Rui Costa\t2026000014"]
+    linhas = ["João Lima; 2026000012", "Ana Paz, 2026000013", "", "Visitante Externo",
+              "Repetido; 2026000011", "Duplicado na lista; 2026000012", "Rui Costa\t2026000014", "a; b; c",
+              "Sozinho"]
     r = defesa["olga"].post(f"{defesa['url']}/ouvintes/lote", json={"linhas": linhas})
     assert r.status_code == 200
-    assert [o["nome"] for o in r.json()["adicionados"]] == ["João Lima", "Ana Paz", "Rui Costa"]
-    assert [p["linha"] for p in r.json()["linhas_com_problema"]] == [4, 5, 6]
+    adicionados = r.json()["adicionados"]
+    assert [o["nome"] for o in adicionados] == ["João Lima", "Ana Paz", "Visitante Externo", "Rui Costa"]
+    assert adicionados[2]["matricula"] is None and adicionados[2]["pronto"] is False  # sem matrícula entra
+    assert [p["linha"] for p in r.json()["linhas_com_problema"]] == [5, 6, 8, 9]
+
+
+def test_lote_com_conflito_simultaneo_perde_so_a_linha_repetida(defesa, monkeypatch):
+    """Outra pessoa grava a mesma matrícula entre a conferência e a gravação: só aquela linha volta como
+    problema, e as outras entram (antes o lote inteiro era desfeito)."""
+    _ouvinte(defesa, matricula="2026000011")
+    original = ocorrencias._conferir_ouvinte
+
+    def sem_conferir_repeticao(db, defesa_id, nome, matricula, **kw):
+        if matricula == "2026000011":  # a conferência não viu a gravação da outra pessoa
+            return nome, matricula
+        return original(db, defesa_id, nome, matricula, **kw)
+
+    monkeypatch.setattr(ocorrencias, "_conferir_ouvinte", sem_conferir_repeticao)
+    linhas = ["João Lima; 2026000012", "Corrida Simultânea; 2026000011", "Ana Paz; 2026000013"]
+    r = defesa["olga"].post(f"{defesa['url']}/ouvintes/lote", json={"linhas": linhas})
+    assert r.status_code == 200
+    assert [o["nome"] for o in r.json()["adicionados"]] == ["João Lima", "Ana Paz"]
+    assert r.json()["linhas_com_problema"] == [
+        {"linha": 2, "texto": "Corrida Simultânea; 2026000011", "motivo": "Esta matrícula já está na lista."}]
+
+
+def test_visitante_sem_matricula_entra_e_so_fica_sem_declaracao(defesa, relogio):
+    """Dicionário de dados: matrícula só "se for aluno da UEA". FL09: a falta dela impede só a declaração (E5)."""
+    r = defesa["olga"].post(f"{defesa['url']}/ouvintes", json={"nome": "Visitante Externo"})
+    assert r.status_code == 201 and r.json()["matricula"] is None and r.json()["pronto"] is False
+    assert _ouvinte(defesa, nome="Outro Visitante", matricula="").json()["matricula"] is None
+    relogio(DEPOIS)
+    e = defesa["olga"].post(f"{defesa['url']}/declaracoes", json={"ouvinte_id": r.json()["id"]})
+    assert e.status_code == 422 and e.json()["campo"] == "matricula"
+    # informar a matrícula depois libera a declaração (DS-FL09-A)
+    c = defesa["olga"].put(f"{defesa['url']}/ouvintes/{r.json()['id']}", json={"matricula": "2026000077"})
+    assert c.status_code == 200 and c.json()["pronto"]
+    assert defesa["olga"].post(f"{defesa['url']}/declaracoes", json={"ouvinte_id": r.json()["id"]}).status_code == 200
+
+
+def test_rnf03_adicionar_lote_remover_e_emitir_ficam_no_log(defesa, relogio, db):
+    um = _ouvinte(defesa).json()
+    defesa["olga"].post(f"{defesa['url']}/ouvintes/lote", json={"linhas": ["João Lima; 2026000012"]})
+    dois = _ouvinte(defesa, nome="Ana Paz", matricula="2026000013").json()
+    defesa["olga"].delete(f"{defesa['url']}/ouvintes/{dois['id']}")
+    relogio(DEPOIS)
+    declaracao = defesa["olga"].post(f"{defesa['url']}/declaracoes", json={"ouvinte_id": um["id"]}).json()
+    acoes = {(l.acao, l.entidade_id): l for l in db.scalars(select(LogAuditoria))}
+    assert ("registrar_ouvinte", um["id"]) in acoes and acoes[("registrar_ouvinte", um["id"])].valor_novo == \
+        "Maria Souza (2026000011)"
+    assert sum(1 for a, _ in acoes if a == "registrar_ouvinte") == 3  # avulso, lote e o removido
+    removido = acoes[("remover_ouvinte", dois["id"])]
+    assert removido.valor_anterior == "Ana Paz (2026000013)" and removido.usuario_id == defesa["ids"]["olga"]
+    emissao = acoes[("emitir_declaracao", declaracao["id"])]
+    assert emissao.entidade == "documento_oficial" and "Maria Souza (2026000011)" in emissao.valor_novo
 
 
 def test_ds_fl09_a_corrigir_matricula_registra_no_log(defesa, db):
@@ -256,6 +310,21 @@ def test_e5_matricula_incompleta_pede_correcao(defesa, relogio, db):
     relogio(DEPOIS)
     r = defesa["olga"].post(f"{defesa['url']}/declaracoes", json={"ouvinte_id": ouvinte["id"]})
     assert r.status_code == 422 and r.json()["campo"] == "matricula"
+
+
+def test_dois_cliques_ao_mesmo_tempo_geram_uma_declaracao_so(defesa, relogio, monkeypatch, db):
+    """O índice único parcial barra a segunda declaração vigente mesmo quando a conferência não a vê."""
+    ouvinte = _ouvinte(defesa).json()
+    relogio(DEPOIS)
+    url = f"{defesa['url']}/declaracoes"
+    assert defesa["olga"].post(url, json={"ouvinte_id": ouvinte["id"]}).status_code == 200
+    monkeypatch.setattr(ocorrencias, "_declaracao", lambda db, ouvinte_id: None)  # o segundo clique não viu o primeiro
+    r = defesa["olga"].post(url, json={"ouvinte_id": ouvinte["id"]})
+    assert r.status_code == 409
+    vigentes = db.scalars(select(DocumentoOficial).where(DocumentoOficial.ouvinte_id == ouvinte["id"])).all()
+    assert len(vigentes) == 1
+    arquivos = list((Path(config.ARQUIVOS_DIR) / "declaracoes").rglob("*.pdf"))
+    assert [a.name for a in arquivos if f"defesa-{defesa['defesa']['id']}" in str(a)] == [Path(vigentes[0].caminho).name]
 
 
 def test_declaracao_emitida_trava_segunda_emissao_correcao_e_remocao(defesa, relogio):

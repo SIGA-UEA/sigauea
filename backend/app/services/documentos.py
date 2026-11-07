@@ -122,9 +122,9 @@ def declaracao_horas(*, numero: int, ouvinte, defesa, tcc, gerado_em: datetime) 
     local = f", em {defesa.local.nome}" if defesa.local else ""
     texto = (
         f"{_negrito('DECLARAMOS')}, para fins de direito e todos os efeitos, que {_negrito(ouvinte.nome)}, "
-        f"nº {_negrito(ouvinte.matricula)}, assistiu como ouvinte à sessão pública de defesa do Trabalho de "
+        f"matrícula nº {_negrito(ouvinte.matricula)}, assistiu como ouvinte à sessão pública de defesa do Trabalho de "
         f"Conclusão de Curso ({_negrito(tcc.etapa)}) intitulado {_negrito(tcc.titulo)}, de autoria de "
-        f"{tcc.aluno.usuario.nome}, do curso de {_negrito(tcc.aluno.curso.nome)}, vinculado à "
+        f"{_negrito(tcc.aluno.usuario.nome)}, do curso de {_negrito(tcc.aluno.curso.nome)}, vinculado à "
         f"{_negrito('EST - Escola Superior de Tecnologia')}, realizada de forma {NOME_FORMATO[defesa.formato]}"
         f"{local}, em {_negrito(_data(defesa.data))}, das {_hora(defesa.inicio)} às {_hora(defesa.fim)}, "
         f"totalizando {_negrito(carga_horaria(defesa.inicio, defesa.fim))} de atividade complementar."

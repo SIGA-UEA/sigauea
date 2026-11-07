@@ -1,4 +1,4 @@
-"""Formato de entrada e saída das ocorrências, dos ouvintes e da declaração de horas (Sprint S04 · RBN09.10).
+"""Formato de entrada e saída das ocorrências, dos ouvintes e da declaração de horas (RBN09.10).
 
 Rotas dos diagramas DS-FL09 (GET e POST /defesas/{id}/ocorrencias, POST /defesas/{id}/ouvintes e
 /ouvintes/lote), DS-FL09-A (PUT /ocorrencias/{id}, PUT e DELETE /ouvintes/{id}) e DS-FL09-B
@@ -24,8 +24,10 @@ class OcorrenciaEntrada(BaseModel):
 
 
 class OuvinteEntrada(BaseModel):
+    """A matrícula é opcional: o visitante de fora da UEA entra na lista, mas fica sem declaração (E5)."""
+
     nome: str = Field(max_length=300)
-    matricula: str = Field(max_length=100)
+    matricula: str | None = Field(default=None, max_length=100)
 
 
 class MatriculaEntrada(BaseModel):
