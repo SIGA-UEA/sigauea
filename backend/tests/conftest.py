@@ -5,6 +5,7 @@ aponte TEST_DATABASE_URL para um banco vazio (ele é apagado a cada teste):
     TEST_DATABASE_URL=postgresql+psycopg://usuario:senha@localhost:5432/siga_teste
 """
 
+from app import config
 from app.services import email
 from app.seed import carregar_base, carregar_instrumento, criar_coordenador
 from app.security import gerar_hash_senha
@@ -25,6 +26,8 @@ os.environ["BCRYPT_CUSTO"] = "10"
 # testes nunca enviam e-mail de verdade, mesmo com backend/.env
 os.environ["SMTP_HOST"] = ""
 os.environ["BREVO_API_KEY"] = ""
+# PDFs gerados nos testes (declarações) vão para uma pasta temporária, nunca para backend/arquivos
+config.ARQUIVOS_DIR = tempfile.mkdtemp()
 
 
 SENHA = "Senha@2026"
