@@ -16,6 +16,7 @@ from app.database import agora
 from app.erros import ErroAPI
 from app.models import (
     ACEITA,
+    CANCELADA,
     DEVOLVIDO,
     EM_ANALISE,
     MATRICULADO,
@@ -29,6 +30,8 @@ from app.models import (
     RECUSADA,
     AnaliseCadastro,
     AreaInteresse,
+    BancaMembro,
+    Defesa,
     Docente,
     HistoricoPublicacao,
     HistoricoSituacao,
@@ -642,13 +645,24 @@ def submeter(db: Session, tarefas: BackgroundTasks, aluno: Usuario, tcc_id: int)
 
 # =================================================================== consulta (RN07)
 
+def _tccs_da_banca(usuario: Usuario):
+    """Ids dos TCCs em que a pessoa está na banca de uma defesa não cancelada. O membro da banca vê o TCC
+    para avaliá-lo, inclusive antes da defesa (decisão da equipe na SCRUM-77, opção (a), D4)."""
+    return (
+        select(Defesa.tcc_id)
+        .join(BancaMembro, BancaMembro.defesa_id == Defesa.id)
+        .where(BancaMembro.usuario_id == usuario.id, Defesa.situacao != CANCELADA)
+    )
+
 
 def _pode_ver(db: Session, usuario: Usuario, tcc: Tcc) -> bool:
     if tcc.aluno_id == usuario.id or PERFIL_COORDENADOR in usuario.perfis:
         return True
     if any(o.professor_id == usuario.id for o in tcc.orientacoes):
         return True
-    return tcc.turma.professor_id == usuario.id  # professor responsável pela turma (RN24)
+    if tcc.turma.professor_id == usuario.id:  # professor responsável pela turma (RN24)
+        return True
+    return tcc.id in set(db.scalars(_tccs_da_banca(usuario)))  # membro da banca (SCRUM-77, D4)
 
 
 def obter_para(db: Session, usuario: Usuario, tcc_id: int) -> Tcc:
@@ -659,7 +673,8 @@ def obter_para(db: Session, usuario: Usuario, tcc_id: int) -> Tcc:
 
 
 def listar_para(db: Session, usuario: Usuario) -> list[Tcc]:
-    """RBN05.01: aluno vê os seus; orientador, os que orienta; professor, os da turma; coordenação, todos."""
+    """RBN05.01: aluno vê os seus; orientador, os que orienta; professor, os da turma; coordenação, todos.
+    O membro da banca vê os TCCs que avalia (SCRUM-77, D4)."""
     consulta = select(Tcc).order_by(Tcc.atualizado_em.desc())
     if PERFIL_COORDENADOR not in usuario.perfis:
         consulta = (
@@ -670,6 +685,7 @@ def listar_para(db: Session, usuario: Usuario) -> list[Tcc]:
                     Tcc.aluno_id == usuario.id,
                     Orientacao.professor_id == usuario.id,
                     Turma.professor_id == usuario.id,
+                    Tcc.id.in_(_tccs_da_banca(usuario)),
                 )
             )
             .distinct()
