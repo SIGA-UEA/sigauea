@@ -10,9 +10,9 @@ from datetime import date, datetime, time, timedelta
 import pytest
 from sqlalchemy import func, select
 
-from app.models import BancaMembro, Defesa, LocalDefesa
+from app.models import BancaMembro, Defesa, LocalDefesa, LogAuditoria, Orientacao, Tcc
 from tests.test_agenda import _outro_tcc
-from tests.test_defesas_banca import DIA, _agendar, _membros, banca  # noqa: F401  (banca é fixture)
+from tests.test_defesas_banca import AGENDA, DIA, _agendar, _membros, banca  # noqa: F401  (banca é fixture)
 from tests.test_tcc import cenario  # noqa: F401  (fixture usada por banca)
 
 
@@ -90,10 +90,13 @@ def test_ct_09_02_04_um_avaliador_so_e_bloqueado_com_o_que_falta(banca):
     assert r.json()["pendencias"] == ["Faltam 1 avaliador(es): a banca precisa de 2."]
 
 
-def test_ct_09_02_05_orientador_e_suplente_nao_contam_como_avaliadores(banca):
+def test_ct_09_02_05_orientador_coorientador_e_suplente_nao_contam_como_avaliadores(banca, db):
     """CA-04 (RN12, RN20): sem avaliadores a banca está incompleta, mesmo com 3 pessoas."""
+    db.add(Orientacao(tcc_id=banca["tcc"]["id"], professor_id=banca["ids"]["otto"], papel="COORIENTADOR", status="ACEITA"))
+    db.commit()
     membros = [{"papel": "ORIENTADOR", "usuario_id": banca["ids"]["olga"]},
-               {"papel": "SUPLENTE", "usuario_id": banca["ids"]["otto"]}]
+               {"papel": "COORIENTADOR", "usuario_id": banca["ids"]["otto"]},
+               {"papel": "SUPLENTE", "usuario_id": banca["ids"]["paulo"]}]
     r = _agendar(banca, membros=membros)
     assert r.status_code == 422
     assert "Faltam 2 avaliador(es): a banca precisa de 2." in r.json()["pendencias"]
@@ -152,7 +155,10 @@ def test_ct_09_03_05_banca_informa_a_etapa_para_a_duracao_sugerida(banca):
     assert banca["olga"].get(f"/api/v1/tccs/{banca['tcc']['id']}/banca").json()["etapa"] == "TCC1"
 
 
-def test_ct_09_03_06_defesa_mais_longa_e_aceita(banca):
+def test_ct_09_03_06_defesa_mais_longa_e_aceita(banca, db):
+    """CA-04 (RN22): o TCC2 dura 20 min, mas 30 min são aceitos sem bloqueio."""
+    db.get(Tcc, banca["tcc"]["id"]).etapa = "TCC2"
+    db.commit()
     assert _agendar(banca, inicio="14:00", fim="14:30").status_code == 201
 
 
@@ -245,11 +251,16 @@ def test_ct_09_04_05_a_propria_defesa_nao_conflita_na_remarcacao(banca, coord, d
 
 
 def test_ct_09_04_06_segunda_defesa_sobreposta_e_bloqueada_e_a_primeira_fica(banca, coord, db):
-    """TI-08: a outra defesa, já gravada, continua; a nova não é criada."""
-    outra = _outra_defesa(db, banca, coord, "14:00", "15:00", pessoas=("paulo",))
-    assert _agendar(banca, inicio="14:50", fim="15:10").status_code == 409
+    """TI-08: a primeira defesa continua e fica na auditoria; a segunda não é criada nem auditada."""
+    primeira = _agendar(banca, inicio="14:00", fim="15:00").json()["id"]
+    outro_tcc = _outro_tcc(banca, db, coord, 1, "Outro trabalho")
+    db.add(Orientacao(tcc_id=outro_tcc, professor_id=banca["ids"]["olga"], papel="ORIENTADOR", status="ACEITA"))
+    db.commit()
+    corpo = {**AGENDA, "inicio": "14:50", "fim": "15:10", "banca": _membros(banca)}
+    assert banca["olga"].post(f"/api/v1/tccs/{outro_tcc}/defesa", json=corpo).status_code == 409
     db.expire_all()
-    assert [d.id for d in db.scalars(select(Defesa))] == [outra]
+    assert [d.id for d in db.scalars(select(Defesa))] == [primeira]
+    assert db.scalars(select(LogAuditoria.entidade_id).where(LogAuditoria.acao == "agendar_defesa")).all() == [primeira]
 
 
 def test_ca_06_resposta_avisa_que_compromissos_externos_nao_sao_verificados(banca):
