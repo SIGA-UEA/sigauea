@@ -55,11 +55,12 @@ def test_e2_quem_nao_e_responsavel_ve_somente_leitura(banca):
 
 
 def test_sem_vinculo_com_o_tcc_a_defesa_nao_aparece(banca):
-    """RN07: quem não enxerga o TCC recebe 404 na divulgação."""
+    """RN07: quem não enxerga o TCC recebe 404 na divulgação. O Ricardo não está nesta banca; o Otto, sim,
+    e o membro da banca passou a ver o TCC (SCRUM-77, D4)."""
     d = _nova_defesa(banca)
-    assert banca["otto"].get(_url(d)).status_code == 404
-    assert banca["otto"].post(_url(d, "publicacao")).status_code == 404
-    assert banca["otto"].post(_url(d, "retirada")).status_code == 404
+    assert banca["ricardo"].get(_url(d)).status_code == 404
+    assert banca["ricardo"].post(_url(d, "publicacao")).status_code == 404
+    assert banca["ricardo"].post(_url(d, "retirada")).status_code == 404
 
 
 def test_defesa_inexistente_da_404(banca):
