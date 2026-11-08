@@ -49,7 +49,7 @@ def _faixas() -> list[FaixaOut]:
     ]
 
 
-def _instrumento_out(instrumento: InstrumentoAvaliacao) -> InstrumentoOut:
+def instrumento_out(instrumento: InstrumentoAvaliacao) -> InstrumentoOut:
     return InstrumentoOut(
         id=instrumento.id,
         versao=instrumento.versao,
@@ -110,7 +110,7 @@ def consultar_instrumento(db: Session) -> InstrumentoConsulta:
     versoes = db.scalars(select(InstrumentoAvaliacao).order_by(
         InstrumentoAvaliacao.versao.desc())).all()
     # Passo 4: componentes e critérios vêm pelas relações, já na ordem (ordem do componente e do critério)
-    return InstrumentoConsulta(instrumento=_instrumento_out(vigente), versoes=[_versao_out(v) for v in versoes])
+    return InstrumentoConsulta(instrumento=instrumento_out(vigente), versoes=[_versao_out(v) for v in versoes])
 
 
 # =================================================================== DS-FL06-G · salvar
@@ -220,4 +220,4 @@ def salvar_instrumento(db: Session, autor: Usuario, dados: InstrumentoEntrada) -
     )
     db.commit()
     db.expire_all()  # recarrega componentes e critérios do banco (a sessão não expira no commit)
-    return _instrumento_out(instrumento)
+    return instrumento_out(instrumento)
