@@ -480,7 +480,7 @@ function FormularioAgendamento({
     <form onSubmit={conferir} className="flex flex-col gap-3 rounded-lg border border-borda p-4" noValidate>
       <h3 className="font-semibold">Quando e onde será a defesa?</h3>
       <p className="text-[13px] text-suave">
-        Duração prevista: {banca.etapa === "TCC1" ? "15" : "20"} minutos de apresentação (pode ser maior, RN22).
+        Duração prevista: {banca.etapa === "TCC1" ? "15" : "20"} minutos no total (pode ser maior, RN22).
       </p>
       <div className="grid gap-3 sm:grid-cols-3">
         <Campo rotulo="Data" obrigatorio erro={erros.data}>
