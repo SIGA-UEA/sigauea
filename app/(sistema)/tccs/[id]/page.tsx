@@ -2,7 +2,8 @@
 
 // TEL06 · Acompanhamento do TCC: dados do cadastro, vínculos de orientação, resultado da análise
 // da coordenação (DS-FL02-B), banca e defesa (TEL10/TEL11, ver banca.tsx) e histórico de situações
-// (RNF03). Quem pode ver é decidido pela API (404 para os demais, RN07).
+// (RNF03). Quem pode ver é decidido pela API (404 para os demais, RN07). Para quem está na banca, a seção
+// "Minha avaliação" (TEL12, ver avaliacao.tsx).
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -12,6 +13,7 @@ import { Botao } from "@/components/botao";
 import { SeloOrientacao, SeloSituacao } from "@/components/situacao-tcc";
 import { api, ErroApi } from "@/lib/api";
 import { useSessao } from "@/lib/sessao";
+import { SecaoAvaliacao } from "./avaliacao";
 import { SecaoBanca } from "./banca";
 import { dataHora, NOME_SITUACAO_EDITORIAL, NOME_SITUACAO_TCC, type SituacaoTcc, type Tcc } from "@/lib/tipos";
 
@@ -149,6 +151,8 @@ export default function PaginaTcc() {
 
       <SecaoBanca tccId={id} />
 
+      <SecaoAvaliacao tccId={id} />
+      
       <section className="rounded-xl border border-borda bg-superficie p-5">
         <h2 className="mb-3 font-semibold">Histórico</h2>
         {tcc.historico.length === 0 ? (

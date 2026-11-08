@@ -3,9 +3,8 @@
 Cada teste cita o caso de teste da ficha (CT-10.01-xx) ou o passo do diagrama DS-FL06-G que
 confere. O cenário é montado pela API; a versão 1 vem da carga base (conftest → seed).
 
-Até o SCRUM-77 (RBN10.02) não existe a tabela avaliacao, então nenhuma versão pode ter sido usada
-(passo 8 responde sempre "não"). Para cobrir o ramo "já usado" (passos 9 e 10), os testes trocam
-existe_avaliacao por uma versão que responde "sim"; no SCRUM-77 eles passam a usar uma avaliação real.
+Para cobrir o ramo "já usado" (passos 8 a 10), a versão vigente é usada de verdade: uma defesa é agendada e
+a orientadora salva o rascunho da avaliação (SCRUM-77, RBN10.02), o que fixa a versão nela (RN19).
 """
 
 from decimal import Decimal
@@ -14,11 +13,13 @@ import pytest
 from sqlalchemy import func, select
 
 from app.erros import ErroAPI
-from app.models import CriterioAvaliacao, InstrumentoAvaliacao, LogAuditoria
+from app.models import Avaliacao, CriterioAvaliacao, Defesa, InstrumentoAvaliacao, LogAuditoria
 from app.schemas.instrumento import InstrumentoEntrada
 from app.seed import carregar_instrumento
 from app.services import instrumento as servico
 from tests.conftest import DOCENTE, ativar
+from tests.test_defesas_banca import _agendar, banca  # noqa: F401  (banca é fixture)
+from tests.test_tcc import cenario  # noqa: F401  (fixture usada por banca)
 
 URL = "/api/v1/instrumento-avaliacao"
 CAMPOS = ("nome", "peso", "texto_exemplar", "texto_competente", "texto_necessita")
@@ -35,9 +36,29 @@ def _corpo(consulta: dict) -> dict:
 
 
 @pytest.fixture
-def ja_usado(monkeypatch):
-    """Passo 8 respondendo "sim": a versão vigente já foi usada em avaliações (ver docstring do módulo)."""
-    monkeypatch.setattr(servico, "existe_avaliacao", lambda db, instrumento_id: True)
+def usar_vigente(banca, db):
+    """Usa a versão vigente numa avaliação: cancela a defesa anterior do TCC (se houver), agenda outra e a
+    orientadora salva o rascunho com o primeiro critério. Devolve o id da avaliação criada."""
+
+    def usar() -> int:
+        for defesa in db.scalars(select(Defesa).where(Defesa.situacao != "CANCELADA")):
+            defesa.situacao = "CANCELADA"  # o cancelamento é a SCRUM-66
+        db.commit()
+        defesa = _agendar(banca).json()
+        url = f"/api/v1/defesas/{defesa['id']}/avaliacao"
+        primeiro = banca["olga"].get(url).json()["instrumento"]["componentes"][0]["criterios"][0]
+        r = banca["olga"].put(
+            url, json={"criterios": [{"criterio_id": primeiro["id"], "conceito": "EXEMPLAR", "nota": "9.0"}]})
+        assert r.status_code == 200, r.json()
+        return r.json()["id"]
+
+    return usar
+
+
+@pytest.fixture
+def ja_usado(usar_vigente):
+    """Passo 8 respondendo "sim": a versão vigente já tem uma avaliação."""
+    return usar_vigente()
 
 
 # ---------------------------------------------------------------- casos de teste da ficha
@@ -106,15 +127,21 @@ def test_ct_10_01_03_instrumento_usado_gera_nova_versao_e_a_original_fica_intact
     assert [(v["versao"], v["vigente"]) for v in consulta["versoes"]] == [(2, True), (1, False)]
 
 
-@pytest.mark.skip(reason="A fixação da versão acontece ao iniciar a primeira avaliação (DS-FL06-A), que chega com o SCRUM-77 (RBN10.02).")
-def test_ct_10_01_04_primeira_avaliacao_fixa_a_versao_vigente():
-    """CT-10.01-04 (CA-04): nova defesa, iniciar avaliação -> versão vigente fixada na avaliação."""
+def test_ct_10_01_04_primeira_avaliacao_fixa_a_versao_vigente(coord, db, usar_vigente):
+    """CT-10.01-04 (CA-04): nova defesa, iniciar avaliação -> versão vigente fixada na avaliação (DS-FL06-A passo 13).
+    A defesa avaliada antes continua na versão em que começou."""
+    antiga = usar_vigente()  # avaliação na versão 1
+    assert coord.put(URL, json=_corpo(coord.get(URL).json())).json()["versao"] == 2
+    nova = usar_vigente()  # nova defesa: a primeira avaliação fixa a versão 2, a vigente
+    assert db.get(Avaliacao, nova).instrumento.versao == 2
+    assert db.get(Avaliacao, antiga).instrumento.versao == 1
 
 
-def test_ct_10_01_05_historico_mostra_as_3_versoes_com_data_e_autor(coord, ja_usado):
+def test_ct_10_01_05_historico_mostra_as_3_versoes_com_data_e_autor(coord, ja_usado, usar_vigente):
     """CT-10.01-05 (CA-05): com 3 versões, o histórico mostra as 3 com data e autor (passo 3)."""
     for _ in range(2):
         assert coord.put(URL, json=_corpo(coord.get(URL).json())).status_code == 200
+        usar_vigente()  # a versão nova também é usada, para o próximo salvamento criar outra
 
     versoes = coord.get(URL).json()["versoes"]
     assert [v["versao"] for v in versoes] == [3, 2, 1]

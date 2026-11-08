@@ -6,6 +6,7 @@ Só a área de interesse (RBN01.02) e a foto de perfil podem ser apagadas.
 """
 
 from datetime import date, datetime, time
+from decimal import Decimal
 
 from sqlalchemy import (
     CHAR,
@@ -687,3 +688,69 @@ class CriterioAvaliacao(Base):
     ordem: Mapped[int] = mapped_column(SmallInteger)
 
     componente: Mapped[ComponenteAvaliacao] = relationship(back_populates="criterios")
+
+
+# =====================================================================
+# MOD04 · Avaliação da defesa (Sprint S04, RBN10.02 a RBN10.05, RN13, RN19)
+# Tabelas avaliacao e avaliacao_criterio iguais às do modelo físico e entidades do DS-FL06-A
+# (Avaliacao, AvaliacaoCriterio). A avaliação é do membro da banca (banca_membro), como no DDL.
+# =====================================================================
+
+# Situação da avaliação: o membro edita o rascunho até enviar; enviada, não muda mais (RBN10.02)
+ENVIADA = "ENVIADA"
+STATUS_AVALIACAO = (RASCUNHO, ENVIADA)
+
+# A nota acompanha o conceito (RBN10.03): mesma regra do CHECK do modelo físico, montada das faixas
+_FAIXA_NOTA = " OR ".join(
+    f"(conceito = '{c}' AND nota BETWEEN {minimo:g} AND {maximo:g})" for c, (minimo, maximo) in FAIXAS_CONCEITO.items()
+)
+
+
+class Avaliacao(Base):
+    """Avaliação de um membro da banca numa defesa (RBN10.02). Aponta para a versão do instrumento
+    usada: a primeira avaliação da defesa fixa nela a versão vigente (RN19, DS-FL06-G)."""
+
+    __tablename__ = "avaliacao"
+    __table_args__ = (
+        UniqueConstraint("defesa_id", "membro_id", name="uq_avaliacao_defesa_membro"),
+        _dominio("avaliacao", "status", STATUS_AVALIACAO),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    defesa_id: Mapped[int] = _fk("defesa.id", index=True)
+    membro_id: Mapped[int] = _fk("banca_membro.id", index=True)
+    instrumento_id: Mapped[int] = _fk("instrumento_avaliacao.id", index=True)
+    status: Mapped[str] = mapped_column(String(10), default=RASCUNHO)
+    parecer: Mapped[str | None] = mapped_column(Text)
+    nota_total: Mapped[Decimal | None] = mapped_column(Numeric(3, 1))
+    enviada_em: Mapped[datetime | None]
+
+    defesa: Mapped[Defesa] = relationship()
+    membro: Mapped[BancaMembro] = relationship()
+    instrumento: Mapped[InstrumentoAvaliacao] = relationship()
+    criterios: Mapped[list["AvaliacaoCriterio"]] = relationship(
+        back_populates="avaliacao", order_by="AvaliacaoCriterio.criterio_id"
+    )
+
+
+class AvaliacaoCriterio(Base):
+    """Conceito e nota de um critério (RBN10.03) e a nota ponderada = nota × peso ÷ 10 (RBN10.04)."""
+
+    __tablename__ = "avaliacao_criterio"
+    __table_args__ = (
+        _dominio("avaliacao_criterio", "conceito", CONCEITOS),
+        CheckConstraint(_FAIXA_NOTA, name="ck_avaliacao_criterio_nota"),
+    )
+
+    avaliacao_id: Mapped[int] = mapped_column(
+        ForeignKey("avaliacao.id", ondelete="RESTRICT"), primary_key=True, index=True
+    )
+    criterio_id: Mapped[int] = mapped_column(
+        ForeignKey("criterio_avaliacao.id", ondelete="RESTRICT"), primary_key=True, index=True
+    )
+    conceito: Mapped[str] = mapped_column(String(12))
+    nota: Mapped[Decimal] = mapped_column(Numeric(3, 1))
+    nota_ponderada: Mapped[Decimal] = mapped_column(Numeric(4, 2))
+
+    avaliacao: Mapped[Avaliacao] = relationship(back_populates="criterios")
+    criterio: Mapped[CriterioAvaliacao] = relationship()

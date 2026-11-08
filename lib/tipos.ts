@@ -385,3 +385,29 @@ export type CriterioEntrada = Pick<CriterioAvaliacao, "nome" | "texto_exemplar" 
 };
 // 422 do PUT: os componentes cuja soma dos pesos não fecha os pontos (DS-FL06-G passo 7)
 export type SomaIncorreta = { id: number; nome: string; pontos: number; soma: number };
+
+
+// ---------------------------------------------------------------- Sprint S04 · avaliação da defesa
+// Espelha backend/app/schemas/avaliacao.py (DS-FL06-A).
+
+export type CriterioAvaliado = { criterio_id: number; conceito: Conceito; nota: number; nota_ponderada: number };
+export type MinhaAvaliacao = {
+  id: number;
+  status: "RASCUNHO" | "ENVIADA";
+  parecer: string | null;
+  criterios: CriterioAvaliado[];
+  pendentes: number[]; // critérios ainda sem conceito e nota
+  nota_total: number | null; // só com todos os critérios preenchidos
+  enviada_em: string | null;
+};
+export type ConsultaAvaliacao = {
+  defesa_id: number;
+  envio_liberado: boolean; // a defesa já foi realizada
+  instrumento: InstrumentoAvaliacao;
+  minha_avaliacao: MinhaAvaliacao | null;
+  envios: { enviadas: number; esperadas: number };
+};
+// O que vai no PUT e no POST: a nota vai como texto ("7.5") para a API conferir a faixa em decimal exato
+export type CriterioLancado = { criterio_id: number; conceito: Conceito; nota: string };
+// 422: critérios com problema (faltando ou fora da faixa), destacados na tela
+export type CriterioComProblema = { id: number; nome: string; motivo: string };

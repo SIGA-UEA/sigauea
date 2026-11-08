@@ -7,7 +7,7 @@ correspondente em DS-FL06-G.
 
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session
 
 from app.erros import ErroAPI
@@ -16,6 +16,7 @@ from app.models import (
     EXEMPLAR,
     FAIXAS_CONCEITO,
     NECESSITA,
+    Avaliacao,
     ComponenteAvaliacao,
     CriterioAvaliacao,
     InstrumentoAvaliacao,
@@ -48,7 +49,7 @@ def _faixas() -> list[FaixaOut]:
     ]
 
 
-def _instrumento_out(instrumento: InstrumentoAvaliacao) -> InstrumentoOut:
+def instrumento_out(instrumento: InstrumentoAvaliacao) -> InstrumentoOut:
     return InstrumentoOut(
         id=instrumento.id,
         versao=instrumento.versao,
@@ -109,7 +110,7 @@ def consultar_instrumento(db: Session) -> InstrumentoConsulta:
     versoes = db.scalars(select(InstrumentoAvaliacao).order_by(
         InstrumentoAvaliacao.versao.desc())).all()
     # Passo 4: componentes e critérios vêm pelas relações, já na ordem (ordem do componente e do critério)
-    return InstrumentoConsulta(instrumento=_instrumento_out(vigente), versoes=[_versao_out(v) for v in versoes])
+    return InstrumentoConsulta(instrumento=instrumento_out(vigente), versoes=[_versao_out(v) for v in versoes])
 
 
 # =================================================================== DS-FL06-G · salvar
@@ -136,10 +137,10 @@ def validar_pesos(componentes: list[ComponenteAvaliacao], dados: InstrumentoEntr
 def existe_avaliacao(db: Session, instrumento_id: int) -> bool:
     """Passo 8: a versão vigente já foi usada em alguma avaliação?
 
-    A tabela avaliacao (Avaliacao no DS-FL06-G) chega com o SCRUM-77 (RBN10.02). Até lá nenhuma
-    avaliação pode existir, então a resposta é sempre "não" e salvar atualiza a versão (passo 11).
+    Conta o rascunho e a enviada: o rascunho já aponta para os critérios desta versão, que o
+    passo 11 apagaria (avaliacao_criterio → criterio_avaliacao é RESTRICT).
     """
-    return False
+    return db.scalar(select(exists().where(Avaliacao.instrumento_id == instrumento_id))) is True
 
 
 def _criar_criterios(db: Session, componente: ComponenteAvaliacao, criterios: list[CriterioEntrada]) -> None:
@@ -219,4 +220,4 @@ def salvar_instrumento(db: Session, autor: Usuario, dados: InstrumentoEntrada) -
     )
     db.commit()
     db.expire_all()  # recarrega componentes e critérios do banco (a sessão não expira no commit)
-    return _instrumento_out(instrumento)
+    return instrumento_out(instrumento)
