@@ -5,7 +5,7 @@ ficha (CT-09.0x-yy) ou o critério de aceite. A banca e o agendamento reaproveit
 SCRUM-59 (TCC de EC aprovado, orientado pela Olga; Otto, Paulo e Ricardo disponíveis para a banca).
 """
 
-from datetime import date, time, timedelta
+from datetime import date, datetime, time, timedelta
 
 import pytest
 from sqlalchemy import func, select
@@ -171,6 +171,22 @@ def test_link_sem_https_e_rejeitado(banca):
     """DS-FL04 mensagem 10: link https:// para remoto e híbrido."""
     r = _agendar(banca, link="http://meet.exemplo.com/defesa")
     assert r.status_code == 400 and r.json()["campos"]["link"] == "O link da sala virtual deve começar com https://."
+
+
+def test_link_sem_endereco_e_rejeitado(banca):
+    """Só "https://" começa certo, mas não leva a lugar nenhum."""
+    r = _agendar(banca, link="https://")
+    assert r.status_code == 400 and r.json()["campos"]["link"] == "Informe o link completo da sala virtual."
+
+
+def test_hoje_com_inicio_ja_passado_e_rejeitado(banca, monkeypatch):
+    """Hoje vale, desde que o início ainda não tenha passado (horário de Manaus)."""
+    from app.services import defesas
+
+    monkeypatch.setattr(defesas, "agora_manaus", lambda: datetime.combine(date.fromisoformat(DIA), time(15, 0)))
+    r = _agendar(banca, inicio="14:00", fim="14:20")
+    assert r.status_code == 400 and r.json()["campos"]["inicio"] == "O início da defesa não pode estar no passado."
+    assert _agendar(banca, inicio="15:00", fim="15:20").status_code == 201
 
 
 # ================================================================ SCRUM-62 · RBN09.04 · conflitos

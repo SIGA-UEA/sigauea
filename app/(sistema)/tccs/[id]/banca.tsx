@@ -349,6 +349,21 @@ function hojeISO() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+// Hora atual no formato do campo time (HH:MM).
+function agoraHHMM() {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+// O link traz um endereço depois do https:// (só "https://" não leva a lugar nenhum).
+function temEndereco(link: string) {
+  try {
+    return Boolean(new URL(link).hostname);
+  } catch {
+    return false;
+  }
+}
+
 const hora = (h: string) => h.slice(0, 5);
 
 // RBN09.04 · CA-01/CA-02: quem ou que local já está ocupado, e em que horário.
@@ -394,12 +409,14 @@ function FormularioAgendamento({
     if (!dados.data) faltas.data = "Informe a data.";
     else if (dados.data < hojeISO()) faltas.data = "A data da defesa não pode estar no passado.";
     if (!dados.inicio) faltas.inicio = "Informe o início.";
+    else if (dados.data === hojeISO() && dados.inicio < agoraHHMM()) faltas.inicio = "O início da defesa não pode estar no passado.";
     if (!dados.fim) faltas.fim = "Informe o término.";
     else if (dados.inicio && dados.fim <= dados.inicio) faltas.fim = "O término deve ser depois do início.";
     if (precisaLocal && !dados.local_id) faltas.local_id = "Escolha o local da defesa.";
     if (precisaLink && !dados.link.trim()) faltas.link = "Informe o link da sala virtual.";
     else if (precisaLink && !dados.link.trim().toLowerCase().startsWith("https://"))
       faltas.link = "O link da sala virtual deve começar com https://.";
+    else if (precisaLink && !temEndereco(dados.link.trim())) faltas.link = "Informe o link completo da sala virtual.";
     setErros(faltas);
     setGeral("");
     if (Object.keys(faltas).length) return;

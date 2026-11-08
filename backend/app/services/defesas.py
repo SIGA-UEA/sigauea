@@ -20,6 +20,7 @@ como pedem o E4 e o CA-05 da ficha RBN09.01 e a planilha de requisitos (FL04).
 """
 
 from datetime import date, datetime, time, timedelta
+from urllib.parse import urlsplit
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -310,12 +311,24 @@ def _criar_externo(db: Session, dados, ator: Usuario) -> Usuario:
     return usuario
 
 
+def _tem_endereco(link: str) -> bool:
+    """O link traz um endereço depois do https:// (só "https://" não leva a lugar nenhum)."""
+    try:
+        return bool(urlsplit(link).hostname)
+    except ValueError:
+        return False
+
+
 def _conferir_agenda(db: Session, dados: DefesaCriar) -> LocalDefesa | None:
     """RBN09.03 / RN14: data não passada, término depois do início (CA-03) e, conforme o formato,
     local e/ou link https:// (CA-02; DS-FL04 mensagens 8 e 10). A duração não é limitada (RN22, CA-04)."""
     campos = {}
-    if dados.data < agora_manaus().date():
+    agora_local = agora_manaus()
+    if dados.data < agora_local.date():
         campos["data"] = "A data da defesa não pode estar no passado."
+    elif dados.data == agora_local.date() and dados.inicio < agora_local.time():
+        # A avaliação libera o envio quando o horário passa (RBN10.02): a defesa nasceria já realizada.
+        campos["inicio"] = "O início da defesa não pode estar no passado."
     if dados.fim <= dados.inicio:
         campos["fim"] = "O término deve ser depois do início."
     precisa_local = dados.formato in ("PRESENCIAL", "HIBRIDO")
@@ -327,6 +340,8 @@ def _conferir_agenda(db: Session, dados: DefesaCriar) -> LocalDefesa | None:
         campos["link"] = "Informe o link da sala virtual."
     elif precisa_link and not dados.link.lower().startswith("https://"):
         campos["link"] = "O link da sala virtual deve começar com https://."
+    elif precisa_link and not _tem_endereco(dados.link):
+        campos["link"] = "Informe o link completo da sala virtual."
     if campos:
         raise ErroAPI(400, "Confira os campos destacados.", campos=campos)
     return local if precisa_local else None
