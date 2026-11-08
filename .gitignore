@@ -59,3 +59,5 @@ backend/.next/
 /*.docx
 /*.pdf
 /*.drawio
+
+/.claude
