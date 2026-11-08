@@ -645,6 +645,7 @@ def submeter(db: Session, tarefas: BackgroundTasks, aluno: Usuario, tcc_id: int)
 
 # =================================================================== consulta (RN07)
 
+
 def _tccs_da_banca(usuario: Usuario):
     """Ids dos TCCs em que a pessoa está na banca de uma defesa não cancelada. O membro da banca vê o TCC
     para avaliá-lo, inclusive antes da defesa (decisão da equipe na SCRUM-77, opção (a), D4)."""

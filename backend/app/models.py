@@ -43,8 +43,7 @@ PERFIS = {
     PERFIL_BANCA: "Membro da banca",
 }
 # Perfis que um docente pode receber (o perfil aluno vem do cadastro de aluno).
-PERFIS_DOCENTE = [PERFIL_ORIENTADOR, PERFIL_PROFESSOR,
-                  PERFIL_COORDENADOR, PERFIL_BANCA]
+PERFIS_DOCENTE = [PERFIL_ORIENTADOR, PERFIL_PROFESSOR, PERFIL_COORDENADOR, PERFIL_BANCA]
 
 TOKEN_ATIVACAO = "ativacao"
 TOKEN_RECUPERACAO = "recuperacao"
@@ -111,8 +110,7 @@ class Usuario(Base):
     notificacoes: Mapped[list["NotificacaoEmail"]] = relationship(
         order_by="NotificacaoEmail.id"
     )
-    foto: Mapped["FotoUsuario | None"] = relationship(
-        cascade="all, delete-orphan")
+    foto: Mapped["FotoUsuario | None"] = relationship(cascade="all, delete-orphan")
 
     @property
     def perfis(self) -> list[str]:
@@ -150,8 +148,7 @@ class Docente(Base):
     __tablename__ = "docente"
 
     usuario_id: Mapped[int] = _fk("usuario.id", primary_key=True)
-    # coordenador, professor ou orientador
-    cargo: Mapped[str] = mapped_column(String(20))
+    cargo: Mapped[str] = mapped_column(String(20))  # coordenador, professor ou orientador
     nucleo_id: Mapped[int] = _fk("nucleo.id")
     # Nulo para coordenador, que acessa todos os cursos do núcleo (HU01.01 R5).
     curso_id: Mapped[int | None] = _fk("curso.id", nullable=True)
@@ -189,8 +186,7 @@ class FotoUsuario(Base):
     usuario_id: Mapped[int] = mapped_column(
         ForeignKey("usuario.id", ondelete="CASCADE"), primary_key=True
     )
-    # image/jpeg, image/png ou image/webp
-    tipo: Mapped[str] = mapped_column(String(20))
+    tipo: Mapped[str] = mapped_column(String(20))  # image/jpeg, image/png ou image/webp
     # deferred: listar usuários não carrega os bytes da imagem.
     conteudo: Mapped[bytes] = mapped_column(LargeBinary, deferred=True)
     sha256: Mapped[str] = mapped_column(CHAR(64))  # RNF06
@@ -222,8 +218,7 @@ class NotificacaoEmail(Base):
     usuario_id: Mapped[int] = _fk("usuario.id", index=True)
     tipo: Mapped[str] = mapped_column(String(30))
     destinatario: Mapped[str] = mapped_column(String(254))
-    status: Mapped[str] = mapped_column(
-        String(10), default="pendente")  # pendente, enviado, falha
+    status: Mapped[str] = mapped_column(String(10), default="pendente")  # pendente, enviado, falha
     tentativas: Mapped[int] = mapped_column(default=0)
     erro: Mapped[str | None] = mapped_column(Text)
     # A que o e-mail se refere (ex.: entidade="tcc", entidade_id=12). Nulo nos e-mails de conta.
@@ -254,8 +249,7 @@ class LogAuditoria(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     # Quem fez a ação. Nulo quando não há usuário identificado (ex.: login com e-mail inexistente).
-    usuario_id: Mapped[int | None] = _fk(
-        "usuario.id", nullable=True, index=True)
+    usuario_id: Mapped[int | None] = _fk("usuario.id", nullable=True, index=True)
     acao: Mapped[str] = mapped_column(String(40))
     entidade: Mapped[str] = mapped_column(String(40))
     entidade_id: Mapped[int | None]
@@ -278,16 +272,14 @@ MODALIDADES = ("ARTIGO", "MONOGRAFIA")
 
 # Situações acadêmicas do cadastro (RN10)
 RASCUNHO, EM_ANALISE, DEVOLVIDO = "RASCUNHO", "EM_ANALISE", "DEVOLVIDO"
-SITUACOES_TCC = (RASCUNHO, EM_ANALISE, "APROVADO", DEVOLVIDO,
-                 "REPROVADO", "CONCLUIDO", "DESISTENCIA")
+SITUACOES_TCC = (RASCUNHO, EM_ANALISE, "APROVADO", DEVOLVIDO, "REPROVADO", "CONCLUIDO", "DESISTENCIA")
 
 PAPEL_ORIENTADOR, PAPEL_COORIENTADOR = "ORIENTADOR", "COORIENTADOR"
 PENDENTE, ACEITA, RECUSADA = "PENDENTE", "ACEITA", "RECUSADA"
 STATUS_ORIENTACAO = (PENDENTE, ACEITA, RECUSADA, "SUBSTITUIDA")
 
 # Situações editoriais do artigo (RN03), separadas da situação acadêmica
-SITUACOES_EDITORIAIS = ("SUBMETIDO", "EM_REVISAO",
-                        "ACEITO", "RECUSADO", "PUBLICADO")
+SITUACOES_EDITORIAIS = ("SUBMETIDO", "EM_REVISAO", "ACEITO", "RECUSADO", "PUBLICADO")
 TIPOS_VEICULO = ("PERIODICO", "CONGRESSO")
 
 
@@ -298,12 +290,10 @@ def _dominio(tabela: str, coluna: str, valores) -> CheckConstraint:
 
 class PeriodoLetivo(Base):
     __tablename__ = "periodo_letivo"
-    __table_args__ = (CheckConstraint(
-        "fim > inicio", name="ck_periodo_letivo_datas"),)
+    __table_args__ = (CheckConstraint("fim > inicio", name="ck_periodo_letivo_datas"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    codigo: Mapped[str] = mapped_column(
-        String(6), unique=True)  # AAAA/N, ex.: 2026/2
+    codigo: Mapped[str] = mapped_column(String(6), unique=True)  # AAAA/N, ex.: 2026/2
     inicio: Mapped[date]
     fim: Mapped[date]
     prazo_versao_final: Mapped[date | None]
@@ -312,8 +302,7 @@ class PeriodoLetivo(Base):
 class Turma(Base):
     __tablename__ = "turma"
     __table_args__ = (
-        UniqueConstraint("curso_id", "disciplina", "periodo_id",
-                         "professor_id", name="uq_turma"),
+        UniqueConstraint("curso_id", "disciplina", "periodo_id", "professor_id", name="uq_turma"),
         _dominio("turma", "disciplina", DISCIPLINAS),
     )
 
@@ -342,8 +331,7 @@ class MatriculaTurma(Base):
     __table_args__ = (
         UniqueConstraint("turma_id", "aluno_id", name="uq_matricula_turma"),
         _dominio("matricula_turma", "situacao", SITUACOES_MATRICULA),
-        CheckConstraint("nota_final IS NULL OR nota_final BETWEEN 0 AND 10",
-                        name="ck_matricula_turma_nota"),
+        CheckConstraint("nota_final IS NULL OR nota_final BETWEEN 0 AND 10", name="ck_matricula_turma_nota"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -363,8 +351,7 @@ class Tcc(Base):
     __tablename__ = "tcc"
     __table_args__ = (
         # RN04: um aluno não mantém dois cadastros no mesmo período letivo.
-        UniqueConstraint("aluno_id", "periodo_id",
-                         name="uq_tcc_aluno_periodo"),
+        UniqueConstraint("aluno_id", "periodo_id", name="uq_tcc_aluno_periodo"),
         _dominio("tcc", "etapa", DISCIPLINAS),
         _dominio("tcc", "modalidade", MODALIDADES),
         _dominio("tcc", "situacao", SITUACOES_TCC),
@@ -386,8 +373,7 @@ class Tcc(Base):
     submetido_em: Mapped[datetime | None]
     concluido_em: Mapped[datetime | None]
     desistencia_motivo: Mapped[str | None] = mapped_column(Text)
-    tcc_origem_id: Mapped[int | None] = _fk(
-        "tcc.id", nullable=True)  # TCC1 que originou o TCC2
+    tcc_origem_id: Mapped[int | None] = _fk("tcc.id", nullable=True)  # TCC1 que originou o TCC2
     criado_em: Mapped[datetime] = mapped_column(default=agora)
     atualizado_em: Mapped[datetime] = mapped_column(default=agora)
 
@@ -398,20 +384,15 @@ class Tcc(Base):
     palavras: Mapped[list["TccPalavraChave"]] = relationship(
         order_by="TccPalavraChave.ordem", cascade="all, delete-orphan"
     )
-    orientacoes: Mapped[list["Orientacao"]] = relationship(
-        back_populates="tcc", order_by="Orientacao.id")
-    historico: Mapped[list["HistoricoSituacao"]] = relationship(
-        order_by="HistoricoSituacao.id")
-    analises: Mapped[list["AnaliseCadastro"]] = relationship(
-        order_by="AnaliseCadastro.id")
-    publicacoes: Mapped[list["PublicacaoArtigo"]] = relationship(
-        order_by="PublicacaoArtigo.id")
+    orientacoes: Mapped[list["Orientacao"]] = relationship(back_populates="tcc", order_by="Orientacao.id")
+    historico: Mapped[list["HistoricoSituacao"]] = relationship(order_by="HistoricoSituacao.id")
+    analises: Mapped[list["AnaliseCadastro"]] = relationship(order_by="AnaliseCadastro.id")
+    publicacoes: Mapped[list["PublicacaoArtigo"]] = relationship(order_by="PublicacaoArtigo.id")
 
 
 class TccPalavraChave(Base):
     __tablename__ = "tcc_palavra_chave"
-    __table_args__ = (CheckConstraint(
-        "ordem BETWEEN 1 AND 10", name="ck_tcc_palavra_chave_ordem"),)
+    __table_args__ = (CheckConstraint("ordem BETWEEN 1 AND 10", name="ck_tcc_palavra_chave_ordem"),)
 
     tcc_id: Mapped[int] = _fk("tcc.id", primary_key=True)
     ordem: Mapped[int] = mapped_column(SmallInteger, primary_key=True)
@@ -463,8 +444,7 @@ class Orientacao(Base):
 
     __tablename__ = "orientacao"
     __table_args__ = (
-        _dominio("orientacao", "papel",
-                 (PAPEL_ORIENTADOR, PAPEL_COORIENTADOR)),
+        _dominio("orientacao", "papel", (PAPEL_ORIENTADOR, PAPEL_COORIENTADOR)),
         _dominio("orientacao", "status", STATUS_ORIENTACAO),
     )
 
@@ -507,15 +487,13 @@ class PublicacaoArtigo(Base):
 
 class HistoricoPublicacao(Base):
     __tablename__ = "historico_publicacao"
-    __table_args__ = (_dominio("historico_publicacao",
-                      "situacao", SITUACOES_EDITORIAIS),)
+    __table_args__ = (_dominio("historico_publicacao", "situacao", SITUACOES_EDITORIAIS),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     publicacao_id: Mapped[int] = _fk("publicacao_artigo.id", index=True)
     situacao: Mapped[str] = mapped_column(String(12))
     data: Mapped[date]
-    usuario_id: Mapped[int | None] = _fk(
-        "usuario.id", nullable=True)  # nulo = sistema
+    usuario_id: Mapped[int | None] = _fk("usuario.id", nullable=True)  # nulo = sistema
     registrado_em: Mapped[datetime] = mapped_column(default=agora)
 
 
@@ -529,8 +507,7 @@ CONFIRMADA, REMARCADA, CANCELADA = "CONFIRMADA", "REMARCADA", "CANCELADA"
 SITUACOES_DEFESA = (CONFIRMADA, REMARCADA, CANCELADA, "REALIZADA")
 
 PAPEL_AVALIADOR, PAPEL_SUPLENTE = "AVALIADOR", "SUPLENTE"
-PAPEIS_BANCA = (PAPEL_AVALIADOR, PAPEL_ORIENTADOR,
-                PAPEL_COORIENTADOR, PAPEL_SUPLENTE)
+PAPEIS_BANCA = (PAPEL_AVALIADOR, PAPEL_ORIENTADOR, PAPEL_COORIENTADOR, PAPEL_SUPLENTE)
 # BANCA_ALTERADA: troca de um membro antes da defesa (CA-06 do RBN09.01), com a pessoa anterior
 # em valores_anteriores. Não está no SQL físico entregue; ver CR da S04.
 # PUBLICACAO e RETIRADA: publicar e retirar da agenda (DS-FL05 mensagens 10 e 16); também fora do SQL físico.
@@ -588,8 +565,7 @@ class Defesa(Base):
     data: Mapped[date]
     inicio: Mapped[time]
     fim: Mapped[time]
-    local_id: Mapped[int | None] = _fk(
-        "local_defesa.id", nullable=True, index=True)
+    local_id: Mapped[int | None] = _fk("local_defesa.id", nullable=True, index=True)
     link: Mapped[str | None] = mapped_column(String(500))
     situacao: Mapped[str] = mapped_column(String(10), default=CONFIRMADA)
     responsavel_id: Mapped[int] = _fk("docente.usuario_id", index=True)
@@ -603,10 +579,8 @@ class Defesa(Base):
     tcc: Mapped[Tcc] = relationship()
     local: Mapped[LocalDefesa | None] = relationship()
     responsavel: Mapped[Docente] = relationship()
-    membros: Mapped[list["BancaMembro"]] = relationship(
-        back_populates="defesa", order_by="BancaMembro.id")
-    historico: Mapped[list["HistoricoDefesa"]] = relationship(
-        order_by="HistoricoDefesa.id")
+    membros: Mapped[list["BancaMembro"]] = relationship(back_populates="defesa", order_by="BancaMembro.id")
+    historico: Mapped[list["HistoricoDefesa"]] = relationship(order_by="HistoricoDefesa.id")
 
 
 class BancaMembro(Base):
@@ -614,8 +588,7 @@ class BancaMembro(Base):
 
     __tablename__ = "banca_membro"
     __table_args__ = (
-        UniqueConstraint("defesa_id", "usuario_id",
-                         name="uq_banca_membro_defesa_usuario"),
+        UniqueConstraint("defesa_id", "usuario_id", name="uq_banca_membro_defesa_usuario"),
         _dominio("banca_membro", "papel", PAPEIS_BANCA),
     )
 
@@ -627,8 +600,7 @@ class BancaMembro(Base):
     convite_enviado_em: Mapped[datetime | None]
     presente: Mapped[bool | None]
     convocado_em: Mapped[datetime | None]
-    substitui_membro_id: Mapped[int | None] = _fk(
-        "banca_membro.id", nullable=True, index=True)
+    substitui_membro_id: Mapped[int | None] = _fk("banca_membro.id", nullable=True, index=True)
     motivo_convocacao: Mapped[str | None] = mapped_column(Text)
 
     defesa: Mapped[Defesa] = relationship(back_populates="membros")
@@ -645,8 +617,7 @@ class HistoricoDefesa(Base):
     defesa_id: Mapped[int] = _fk("defesa.id", index=True)
     evento: Mapped[str] = mapped_column(String(20))
     motivo: Mapped[str | None] = mapped_column(Text)
-    valores_anteriores: Mapped[dict | None] = mapped_column(
-        JSON().with_variant(JSONB(), "postgresql"))
+    valores_anteriores: Mapped[dict | None] = mapped_column(JSON().with_variant(JSONB(), "postgresql"))
     usuario_id: Mapped[int] = _fk("usuario.id", index=True)
     registrado_em: Mapped[datetime] = mapped_column(default=agora)
 
@@ -662,8 +633,7 @@ class HistoricoDefesa(Base):
 # Conceitos de cada critério e a faixa de nota de cada um (RBN10.01, RBN10.03)
 EXEMPLAR, COMPETENTE, NECESSITA = "EXEMPLAR", "COMPETENTE", "NECESSITA"
 CONCEITOS = (EXEMPLAR, COMPETENTE, NECESSITA)
-FAIXAS_CONCEITO = {EXEMPLAR: (8.0, 10.0), COMPETENTE: (
-    6.0, 7.9), NECESSITA: (0.0, 5.9)}
+FAIXAS_CONCEITO = {EXEMPLAR: (8.0, 10.0), COMPETENTE: (6.0, 7.9), NECESSITA: (0.0, 5.9)}
 
 # Pontos de cada componente: os pesos dos critérios precisam fechar esses totais (DS-FL06-G passo 7)
 PONTOS_ESCRITA, PONTOS_ORAL = 7.0, 3.0
@@ -697,8 +667,7 @@ class ComponenteAvaliacao(Base):
     pontos: Mapped[float] = mapped_column(Numeric(3, 1))
     ordem: Mapped[int] = mapped_column(SmallInteger)
 
-    instrumento: Mapped[InstrumentoAvaliacao] = relationship(
-        back_populates="componentes")
+    instrumento: Mapped[InstrumentoAvaliacao] = relationship(back_populates="componentes")
     criterios: Mapped[list["CriterioAvaliacao"]] = relationship(
         order_by="CriterioAvaliacao.ordem", back_populates="componente"
     )
@@ -718,9 +687,8 @@ class CriterioAvaliacao(Base):
     texto_necessita: Mapped[str] = mapped_column(Text)
     ordem: Mapped[int] = mapped_column(SmallInteger)
 
-    componente: Mapped[ComponenteAvaliacao] = relationship(
-        back_populates="criterios")
-    
+    componente: Mapped[ComponenteAvaliacao] = relationship(back_populates="criterios")
+
 
 # =====================================================================
 # MOD04 · Avaliação da defesa (Sprint S04, RBN10.02 a RBN10.05, RN13, RN19)
@@ -786,4 +754,3 @@ class AvaliacaoCriterio(Base):
 
     avaliacao: Mapped[Avaliacao] = relationship(back_populates="criterios")
     criterio: Mapped[CriterioAvaliacao] = relationship()
-    

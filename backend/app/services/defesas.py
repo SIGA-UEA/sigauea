@@ -373,6 +373,7 @@ def _confirmar(db: Session, conflito: str) -> None:
 
 # =================================================================== CA-06 · trocar um membro
 
+
 def _descartar_rascunho(db: Session, ator: Usuario, avaliacao: Avaliacao, nome: str) -> None:
     """A avaliação pertence à vaga (avaliacao.membro_id). Na troca, o rascunho de quem sai é descartado
     e o substituto começa em branco (decisão da equipe na SCRUM-77, D15); fica registrado no log."""
