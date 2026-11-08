@@ -23,6 +23,7 @@ from app.models import (
     ACEITA,
     CANCELADA,
     CONFIRMADA,
+    ENVIADA,
     PAPEL_AVALIADOR,
     PAPEL_COORIENTADOR,
     PAPEL_ORIENTADOR,
@@ -31,6 +32,7 @@ from app.models import (
     PERFIL_COORDENADOR,
     PERFIL_PROFESSOR,
     REMARCADA,
+    Avaliacao,
     BancaMembro,
     Defesa,
     HistoricoDefesa,
@@ -371,10 +373,24 @@ def _confirmar(db: Session, conflito: str) -> None:
 
 # =================================================================== CA-06 · trocar um membro
 
+def _descartar_rascunho(db: Session, ator: Usuario, avaliacao: Avaliacao, nome: str) -> None:
+    """A avaliação pertence à vaga (avaliacao.membro_id). Na troca, o rascunho de quem sai é descartado
+    e o substituto começa em branco (decisão da equipe na SCRUM-77, D15); fica registrado no log."""
+    auditoria.registrar(
+        db, ator_id=ator.id, acao="descartar_avaliacao", entidade="avaliacao", entidade_id=avaliacao.id,
+        campo="status", anterior=f"RASCUNHO de {nome} com {len(avaliacao.criterios)} critério(s)",
+    )
+    for linha in list(avaliacao.criterios):
+        db.delete(linha)
+    db.flush()
+    db.expire(avaliacao, ["criterios"])  # as linhas já saíram do banco; a lista em memória não vale mais
+    db.delete(avaliacao)
+
 
 def trocar_membro(db: Session, usuario: Usuario, defesa_id: int, membro_id: int, dados: PessoaBanca) -> Defesa:
     """PUT /defesas/{id}/banca/{membro}: troca a pessoa de uma vaga e revalida a banca (RN12).
-    A pessoa anterior fica no histórico da defesa (BANCA_ALTERADA, CA-06) e no log de auditoria."""
+    A pessoa anterior fica no histórico da defesa (BANCA_ALTERADA, CA-06) e no log de auditoria.
+    Com a avaliação já enviada a troca é recusada (409); um rascunho é descartado (SCRUM-77, D15)."""
     defesa = db.get(Defesa, defesa_id)
     if defesa is None:
         raise ErroAPI(404, "Defesa não encontrada.")
@@ -387,6 +403,9 @@ def trocar_membro(db: Session, usuario: Usuario, defesa_id: int, membro_id: int,
         raise ErroAPI(404, "Membro da banca não encontrado.")
     if membro.papel in (PAPEL_ORIENTADOR, PAPEL_COORIENTADOR):
         raise ErroAPI(422, "O orientador e o coorientador da banca são os vinculados ao TCC.", campo="papel")
+    avaliacao = db.scalar(select(Avaliacao).where(Avaliacao.membro_id == membro.id))
+    if avaliacao is not None and avaliacao.status == ENVIADA:  # RBN10.02: a avaliação enviada não muda mais
+        raise ErroAPI(409, "Este membro já enviou a avaliação; ele não pode mais ser trocado.")
 
     nova = MembroEntrada(papel=membro.papel, usuario_id=dados.usuario_id, externo=dados.externo)
     outros = [m for m in defesa.membros if m.id != membro.id]
@@ -397,6 +416,8 @@ def trocar_membro(db: Session, usuario: Usuario, defesa_id: int, membro_id: int,
         pessoa_vaga = _criar_externo(db, nova.externo, usuario)
 
     anterior = membro.usuario.nome
+    if avaliacao is not None:
+        _descartar_rascunho(db, usuario, avaliacao, anterior)
     db.add(HistoricoDefesa(  # CA-06: histórico preservado
         defesa_id=defesa.id,
         evento="BANCA_ALTERADA",
