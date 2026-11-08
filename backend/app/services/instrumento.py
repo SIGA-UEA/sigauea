@@ -7,7 +7,7 @@ correspondente em DS-FL06-G.
 
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session
 
 from app.erros import ErroAPI
@@ -16,6 +16,7 @@ from app.models import (
     EXEMPLAR,
     FAIXAS_CONCEITO,
     NECESSITA,
+    Avaliacao,
     ComponenteAvaliacao,
     CriterioAvaliacao,
     InstrumentoAvaliacao,
@@ -136,10 +137,10 @@ def validar_pesos(componentes: list[ComponenteAvaliacao], dados: InstrumentoEntr
 def existe_avaliacao(db: Session, instrumento_id: int) -> bool:
     """Passo 8: a versão vigente já foi usada em alguma avaliação?
 
-    A tabela avaliacao (Avaliacao no DS-FL06-G) chega com o SCRUM-77 (RBN10.02). Até lá nenhuma
-    avaliação pode existir, então a resposta é sempre "não" e salvar atualiza a versão (passo 11).
+    Conta o rascunho e a enviada: o rascunho já aponta para os critérios desta versão, que o
+    passo 11 apagaria (avaliacao_criterio → criterio_avaliacao é RESTRICT).
     """
-    return False
+    return db.scalar(select(exists().where(Avaliacao.instrumento_id == instrumento_id))) is True
 
 
 def _criar_criterios(db: Session, componente: ComponenteAvaliacao, criterios: list[CriterioEntrada]) -> None:
