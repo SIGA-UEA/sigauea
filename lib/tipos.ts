@@ -491,4 +491,36 @@ export type ConsultaResultado = {
   defesa_id: number;
   pendentes: { membro_id: number; papel: PapelAvaliador; pessoa: { id: number; nome: string } }[];
   consolidacao: { notas: NotaDoMembro[]; media: number; regra: RegraExcecao; nota_final: number } | null;
+  resultado: ResultadoDefesa | null; // [resultado já confirmado] (RBN09.12)
+};
+
+// ---------------------------------------------------------------- SCRUM-70 · resultado da defesa (RBN09.12)
+// Espelha ResultadoOut e RetificacaoOut de backend/app/schemas/resultado.py.
+
+export type ValorResultado = "APROVADO" | "APROVADO_COM_CORRECOES" | "REPROVADO";
+
+export const NOME_RESULTADO: Record<ValorResultado, string> = {
+  APROVADO: "Aprovado",
+  APROVADO_COM_CORRECOES: "Aprovado com correções",
+  REPROVADO: "Reprovado",
+};
+
+export type Retificacao = {
+  de: ValorResultado;
+  para: ValorResultado;
+  motivo: string;
+  por: { id: number; nome: string };
+  em: string;
+};
+
+export type ResultadoDefesa = {
+  versao: number;
+  resultado: ValorResultado;
+  parecer: string;
+  media: number;
+  nota_final: number;
+  regra_qualis: boolean;
+  confirmado_por: { id: number; nome: string };
+  confirmado_em: string;
+  retificacoes: Retificacao[];
 };

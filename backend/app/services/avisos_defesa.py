@@ -200,3 +200,54 @@ def avisar_convocacao(
         return "Suplente convocado para a banca de defesa de TCC", corpo
 
     avisar(db, tarefas, defesa, TIPO_SUPLENTE, pessoas, texto)
+
+
+# =================================================================== RBN09.12 · resultado da defesa
+
+TIPO_RESULTADO = "RESULTADO_DEFESA"
+TIPO_RETIFICADO = "RESULTADO_RETIFICADO"
+NOME_RESULTADO = {"APROVADO": "Aprovado", "APROVADO_COM_CORRECOES": "Aprovado com correções",
+                  "REPROVADO": "Reprovado"}
+
+
+def _nota(valor) -> str:
+    return f"{float(valor):.2f}".replace(".", ",")
+
+
+def _trabalho(defesa: Defesa) -> str:
+    return (f"Trabalho: {defesa.tcc.titulo}\nAutor(a): {defesa.tcc.aluno.usuario.nome}\n"
+            f"Defesa em {defesa.data.strftime('%d/%m/%Y')}")
+
+
+def _detalhes(defesa: Defesa, interno: bool) -> str:
+    """Só quem é da UEA recebe o link do sistema; o convidado externo não tem a tela do resultado."""
+    return f"\n\n{_rodape(defesa, True)}" if interno else ""
+
+
+def avisar_resultado(db: Session, tarefas: BackgroundTasks, defesa: Defesa, registro) -> None:
+    """DS-FL06 mensagens 8 a 15: o aluno e a banca recebem o resultado e a nota final. O parecer e as notas
+    de cada avaliador ficam no sistema, para quem tem acesso (RNF02)."""
+    def texto(pessoa: Usuario, interno: bool) -> tuple[str, str]:
+        corpo = (
+            f"Olá, {pessoa.nome}.\n\n"
+            f"O resultado da defesa de TCC abaixo foi confirmado pelo(a) orientador(a): "
+            f"{NOME_RESULTADO[registro.resultado]}, com nota final {_nota(registro.nota_final)}.\n\n"
+            f"{_trabalho(defesa)}{_detalhes(defesa, interno)}"
+        )
+        return f"Resultado da defesa de TCC: {NOME_RESULTADO[registro.resultado]}", corpo
+
+    avisar(db, tarefas, defesa, TIPO_RESULTADO, participantes(defesa), texto)
+
+
+def avisar_retificacao(db: Session, tarefas: BackgroundTasks, defesa: Defesa, anterior: str, nova) -> None:
+    """DS-FL06-D mensagens 3 a 11: o aluno e a banca recebem o resultado anterior, o novo e o motivo."""
+    def texto(pessoa: Usuario, interno: bool) -> tuple[str, str]:
+        corpo = (
+            f"Olá, {pessoa.nome}.\n\n"
+            f"O resultado da defesa de TCC abaixo foi retificado de {NOME_RESULTADO[anterior]} para "
+            f"{NOME_RESULTADO[nova.resultado]}.\nMotivo: {nova.motivo_retificacao}\n\n"
+            f"{_trabalho(defesa)}{_detalhes(defesa, interno)}"
+        )
+        return f"Resultado da defesa de TCC retificado: {NOME_RESULTADO[nova.resultado]}", corpo
+
+    avisar(db, tarefas, defesa, TIPO_RETIFICADO, participantes(defesa), texto)

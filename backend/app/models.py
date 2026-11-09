@@ -827,3 +827,51 @@ class AvaliacaoCriterio(Base):
 
     avaliacao: Mapped[Avaliacao] = relationship(back_populates="criterios")
     criterio: Mapped[CriterioAvaliacao] = relationship()
+
+
+# =====================================================================
+# MOD04 · resultado da defesa (RBN09.12 · RN13, RN15)
+# =====================================================================
+
+APROVADO_DEFESA, APROVADO_COM_CORRECOES, REPROVADO_DEFESA = "APROVADO", "APROVADO_COM_CORRECOES", "REPROVADO"
+RESULTADOS_DEFESA = (APROVADO_DEFESA, APROVADO_COM_CORRECOES, REPROVADO_DEFESA)
+
+
+class ResultadoDefesa(Base):
+    """Resultado confirmado pelo orientador (RBN09.12). Cada retificação grava uma nova versão e a anterior
+    deixa de ser vigente, com quem confirmou, quando e o motivo (RN13). Média e nota final ficam com duas
+    casas, o mesmo valor da consolidação (CA-06 do RBN09.11); o modelo físico entregue tem NUMERIC(3,1).
+
+    As colunas da versão final, do prazo, da anuência e do atraso (RBN11.01 a RBN11.04) entram com as
+    histórias das correções."""
+
+    __tablename__ = "resultado_defesa"
+    __table_args__ = (
+        UniqueConstraint("defesa_id", "versao", name="uq_resultado_defesa_defesa_versao"),
+        _dominio("resultado_defesa", "resultado", RESULTADOS_DEFESA),
+        # Um resultado vigente por defesa, também com duas confirmações ao mesmo tempo (E2 do DS-FL06).
+        # Não está no SQL físico entregue.
+        Index(
+            "uq_resultado_defesa_vigente",
+            "defesa_id",
+            unique=True,
+            sqlite_where=text("vigente"),
+            postgresql_where=text("vigente"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    defesa_id: Mapped[int] = _fk("defesa.id", index=True)
+    versao: Mapped[int]
+    vigente: Mapped[bool]
+    media: Mapped[Decimal] = mapped_column(Numeric(4, 2))
+    nota_final: Mapped[Decimal] = mapped_column(Numeric(4, 2))
+    regra_qualis: Mapped[bool]
+    resultado: Mapped[str] = mapped_column(String(24))
+    parecer: Mapped[str] = mapped_column(Text)
+    confirmado_por: Mapped[int] = _fk("usuario.id", index=True)
+    confirmado_em: Mapped[datetime] = mapped_column(default=agora)
+    motivo_retificacao: Mapped[str | None] = mapped_column(Text)
+
+    defesa: Mapped[Defesa] = relationship()
+    autor: Mapped["Usuario"] = relationship()
