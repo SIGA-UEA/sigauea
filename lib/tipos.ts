@@ -276,8 +276,13 @@ export type MembroBanca = {
   convite_enviado_em: string | null;
 };
 export type LocalDefesa = { id: number; nome: string; descricao: string | null };
+// RBN09.04: outra defesa no mesmo horário com o mesmo local ou alguém desta banca.
+export type Conflito = { tipo: "PARTICIPANTE" | "LOCAL"; nome: string; data: string; inicio: string; fim: string };
+export type Conflitos = { conflitos: Conflito[]; aviso: string };
 export type Defesa = {
   id: number;
+  titulo: string; // herdado do TCC (RBN09.03 CA-01)
+  autor: Pessoa;
   situacao: "CONFIRMADA" | "REMARCADA" | "CANCELADA" | "REALIZADA";
   formato: FormatoDefesa;
   data: string;

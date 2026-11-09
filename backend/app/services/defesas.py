@@ -4,8 +4,13 @@ ControladorAgendamentoDefesa dos diagramas FL04. A banca é montada na tela (DS-
 gravada junto com a defesa na confirmação (DS-FL04 passo 16), porque no modelo de dados todo
 membro da banca pertence a uma defesa (banca_membro.defesa_id obrigatório).
 
-Ficam para as próximas histórias: conflitos de agenda (SCRUM-62), validações completas de data,
-link e duração (SCRUM-61), convites por e-mail (SCRUM-63) e a conta limitada do externo (SCRUM-32).
+Composição da banca (SCRUM-60, RBN09.02): pessoa repetida, composição mínima e papéis, conferidos
+aqui e não só na tela (CA-05). Agendamento (SCRUM-61, RBN09.03): data não passada, término depois do
+início, local e/ou link https:// conforme o formato; a duração de 15/20 min (RN22) é só sugerida.
+Conflitos de agenda (SCRUM-62, RBN09.04): mesmo participante ou mesmo local em horários que se
+sobrepõem, sem contar as defesas canceladas nem a própria defesa (remarcação).
+
+Ficam para as próximas histórias: convites por e-mail (SCRUM-63) e a conta limitada do externo (SCRUM-32).
 
 Pendência: o DS-FL04 (passo 5) confere a versão do PDF para banca antes de agendar. A tabela
 documento_tcc ainda não existe; a conferência entra junto com o envio do PDF (SCRUM-55, RBN07.01).
@@ -14,10 +19,14 @@ Quem agenda (RN14): professor da disciplina em SI, orientador nos demais cursos 
 como pedem o E4 e o CA-05 da ficha RBN09.01 e a planilha de requisitos (FL04).
 """
 
+from datetime import date, datetime, time, timedelta
+from urllib.parse import urlsplit
+
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.database import agora
 from app.erros import ErroAPI
 from app.models import (
     ACEITA,
@@ -46,6 +55,8 @@ from app.models import (
 )
 from app.schemas.defesa import (
     BancaOut,
+    ConflitoOut,
+    ConflitosOut,
     DefesaCriar,
     DefesaOut,
     LocalOut,
@@ -63,6 +74,11 @@ from app.services.usuarios import buscar_por_email
 APROVADO = "APROVADO"
 CURSO_PROFESSOR_AGENDA = "SI"  # RN14: em SI quem agenda é o professor da disciplina
 ALTERAVEIS = (CONFIRMADA, REMARCADA)  # CA-06: a banca pode mudar antes da defesa acontecer
+FUSO_MANAUS = timedelta(hours=-4)  # America/Manaus não tem horário de verão (mesma regra da SCRUM-68)
+
+
+def agora_manaus() -> datetime:
+    return agora() + FUSO_MANAUS
 
 
 # =================================================================== RN14 · quem compõe e agenda
@@ -133,6 +149,8 @@ ORDEM_PAPEIS = {p: i for i, p in enumerate((PAPEL_ORIENTADOR, PAPEL_COORIENTADOR
 def defesa_out(db: Session, d: Defesa) -> DefesaOut:
     return DefesaOut(
         id=d.id,
+        titulo=d.tcc.titulo,
+        autor=pessoa(d.tcc.aluno.usuario),
         situacao=d.situacao,
         formato=d.formato,
         data=d.data,
@@ -293,10 +311,24 @@ def _criar_externo(db: Session, dados, ator: Usuario) -> Usuario:
     return usuario
 
 
+def _tem_endereco(link: str) -> bool:
+    """O link traz um endereço depois do https:// (só "https://" não leva a lugar nenhum)."""
+    try:
+        return bool(urlsplit(link).hostname)
+    except ValueError:
+        return False
+
+
 def _conferir_agenda(db: Session, dados: DefesaCriar) -> LocalDefesa | None:
-    """O mínimo para gravar (RN14 e restrições do banco). Data passada, link https e duração
-    mínima (RN22) entram no SCRUM-61; conflitos de agenda, no SCRUM-62."""
+    """RBN09.03 / RN14: data não passada, término depois do início (CA-03) e, conforme o formato,
+    local e/ou link https:// (CA-02; DS-FL04 mensagens 8 e 10). A duração não é limitada (RN22, CA-04)."""
     campos = {}
+    agora_local = agora_manaus()
+    if dados.data < agora_local.date():
+        campos["data"] = "A data da defesa não pode estar no passado."
+    elif dados.data == agora_local.date() and dados.inicio < agora_local.time():
+        # A avaliação libera o envio quando o horário passa (RBN10.02): a defesa nasceria já realizada.
+        campos["inicio"] = "O início da defesa não pode estar no passado."
     if dados.fim <= dados.inicio:
         campos["fim"] = "O término deve ser depois do início."
     precisa_local = dados.formato in ("PRESENCIAL", "HIBRIDO")
@@ -306,9 +338,92 @@ def _conferir_agenda(db: Session, dados: DefesaCriar) -> LocalDefesa | None:
         campos["local_id"] = "Escolha o local da defesa."
     if precisa_link and not dados.link:
         campos["link"] = "Informe o link da sala virtual."
+    elif precisa_link and not dados.link.lower().startswith("https://"):
+        campos["link"] = "O link da sala virtual deve começar com https://."
+    elif precisa_link and not _tem_endereco(dados.link):
+        campos["link"] = "Informe o link completo da sala virtual."
     if campos:
         raise ErroAPI(400, "Confira os campos destacados.", campos=campos)
     return local if precisa_local else None
+
+
+# =================================================================== RBN09.04 · conflitos de agenda
+# (fica entre a conferência da agenda e o agendamento, que usa as duas)
+
+
+def _horario(h: time) -> str:
+    return h.isoformat("minutes")
+
+
+def conflitos(
+    db: Session,
+    data: date,
+    inicio: time,
+    fim: time,
+    local_id: int | None,
+    pessoas_ids: set[int],
+    ignorar_defesa_id: int | None = None,
+) -> list[ConflitoOut]:
+    """DS-FL04 mensagens 12 e 13: outra defesa no mesmo dia cujo intervalo se sobrepõe a este e que
+    usa o mesmo local ou tem alguém desta banca. Intervalos que só se encostam (14h–15h e 15h–15h20)
+    não conflitam (CA-03); canceladas não contam (CA-04); a própria defesa fica de fora (CA-05)."""
+    consulta = select(Defesa).where(
+        Defesa.data == data,
+        Defesa.situacao != CANCELADA,
+        Defesa.inicio < fim,  # comparação de intervalos completos
+        Defesa.fim > inicio,
+    )
+    if ignorar_defesa_id is not None:
+        consulta = consulta.where(Defesa.id != ignorar_defesa_id)
+    achados: list[ConflitoOut] = []
+    for outra in db.scalars(consulta.order_by(Defesa.inicio, Defesa.id)):
+        if local_id is not None and outra.local_id == local_id:
+            achados.append(ConflitoOut(tipo="LOCAL", nome=outra.local.nome, data=outra.data,
+                                       inicio=outra.inicio, fim=outra.fim))
+        for m in sorted(outra.membros, key=lambda m: m.usuario.nome):
+            if m.usuario_id in pessoas_ids:
+                achados.append(ConflitoOut(tipo="PARTICIPANTE", nome=m.usuario.nome, data=outra.data,
+                                           inicio=outra.inicio, fim=outra.fim))
+    return achados
+
+
+def _mensagem_conflito(achados: list[ConflitoOut]) -> str:
+    c = achados[0]
+    quem = f"O local {c.nome}" if c.tipo == "LOCAL" else c.nome
+    return f"Há conflito neste horário: {quem} já está em outra defesa das {_horario(c.inicio)} às {_horario(c.fim)}."
+
+
+def _exigir_sem_conflito(achados: list[ConflitoOut]) -> None:
+    """E4 do DS-FL04: o conflito surgiu ou não foi visto na tela; a confirmação é recusada (409)."""
+    if achados:
+        raise ErroAPI(409, _mensagem_conflito(achados), conflitos=[c.model_dump(mode="json") for c in achados])
+
+
+def verificar_conflitos(
+    db: Session,
+    usuario: Usuario,
+    tcc_id: int,
+    data: date,
+    inicio: time,
+    fim: time,
+    local_id: int | None,
+    pessoas_ids: list[int],
+) -> ConflitosOut:
+    """GET /defesas/conflitos (DS-FL04 mensagem 11; DS-FL05-B mensagem 4).
+
+    Antes da confirmação a banca só existe na tela, então a tela manda os ids das pessoas já
+    cadastradas (pessoa=1&pessoa=2...); o convidado externo novo ainda não tem agenda. Sem pessoas,
+    vale a banca da defesa vigente do TCC (remarcação). A defesa vigente do próprio TCC nunca
+    conflita com ela mesma (CA-05). Só quem agenda vê a agenda dos outros (RN14)."""
+    tcc = obter_para(db, usuario, tcc_id)
+    _exigir_responsavel(usuario, tcc)
+    if fim <= inicio:
+        raise ErroAPI(400, "Confira os campos destacados.", campos={"fim": "O término deve ser depois do início."})
+    vigente = defesa_vigente(tcc.id, db)
+    ids = set(pessoas_ids) if pessoas_ids else {m.usuario_id for m in vigente.membros} if vigente else set()
+    return ConflitosOut(conflitos=conflitos(
+        db, data, inicio, fim, local_id, ids, ignorar_defesa_id=vigente.id if vigente else None,
+    ))
 
 
 def agendar(db: Session, usuario: Usuario, tcc_id: int, dados: DefesaCriar) -> Defesa:
@@ -319,6 +434,8 @@ def agendar(db: Session, usuario: Usuario, tcc_id: int, dados: DefesaCriar) -> D
         raise ErroAPI(409, "Este TCC já tem uma defesa agendada.")
     resolvidos = _conferir_banca(db, tcc, dados.banca)
     local = _conferir_agenda(db, dados)
+    pessoas_ids = {p.id for _, p, _, _ in resolvidos if p is not None}  # externo novo não tem agenda
+    _exigir_sem_conflito(conflitos(db, dados.data, dados.inicio, dados.fim, local.id if local else None, pessoas_ids))
 
     defesa = Defesa(  # passo 18: CONFIRMADA e não publicada
         tcc_id=tcc.id,
@@ -413,7 +530,10 @@ def trocar_membro(db: Session, usuario: Usuario, defesa_id: int, membro_id: int,
     if any(_chave_usuario(o.usuario) == _chave(nova) for o in outros):  # RBN09.02
         raise ErroAPI(422, "Esta pessoa já faz parte da banca.", campo="usuario_id")
     pessoa_vaga, interno, _ = _conferir_vaga(db, tcc, nova)
-    if pessoa_vaga is None:
+    if pessoa_vaga is not None:  # RBN09.04: a pessoa nova não pode estar em outra defesa no horário
+        _exigir_sem_conflito(conflitos(db, defesa.data, defesa.inicio, defesa.fim, None, {pessoa_vaga.id},
+                                       ignorar_defesa_id=defesa.id))
+    else:
         pessoa_vaga = _criar_externo(db, nova.externo, usuario)
 
     anterior = membro.usuario.nome

@@ -14,7 +14,7 @@ Ficam em skip, até as histórias de que dependem entrarem:
   usar já é conferida aqui.
 """
 
-from datetime import datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 
 import pytest
@@ -22,7 +22,7 @@ from sqlalchemy import func, select
 
 from app.models import Avaliacao, AvaliacaoCriterio, BancaMembro, Defesa, LogAuditoria
 from app.services import avaliacao as servico
-from tests.test_defesas_banca import _agendar, _membros, banca  # noqa: F401  (banca é fixture)
+from tests.test_defesas_banca import DIA, _agendar, _membros, banca  # noqa: F401  (banca é fixture)
 from tests.test_tcc import cenario  # noqa: F401  (fixture usada por banca)
 
 PARECER = "Trabalho bem estruturado e apresentado com clareza."
@@ -31,7 +31,7 @@ CAMPOS = ("nome", "peso", "texto_exemplar", "texto_competente", "texto_necessita
 
 @pytest.fixture
 def defesa(banca):
-    """Defesa agendada (2026-12-01, 14:00 às 14:20) com a banca padrão e o Ricardo de suplente."""
+    """Defesa agendada (DIA, 14:00 às 14:20) com a banca padrão e o Ricardo de suplente."""
     r = _agendar(banca, membros=_membros(banca, suplente="ricardo"))
     assert r.status_code == 201, r.json()
     return {**banca, "defesa": r.json()}
@@ -40,7 +40,7 @@ def defesa(banca):
 @pytest.fixture
 def depois_da_defesa(monkeypatch):
     """Relógio do serviço depois do término da defesa (passo 4: realizada)."""
-    monkeypatch.setattr(servico, "_agora_manaus", lambda: datetime(2026, 12, 1, 15, 0))
+    monkeypatch.setattr(servico, "_agora_manaus", lambda: datetime.combine(date.fromisoformat(DIA), time(15, 0)))
 
 
 def _url(d, envio=False) -> str:

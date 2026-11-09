@@ -18,6 +18,8 @@ import {
   NOME_FORMATO,
   NOME_PAPEL_BANCA,
   type Banca,
+  type Conflito,
+  type Conflitos,
   type Defesa,
   type FormatoDefesa,
   type MembroBanca,
@@ -341,6 +343,42 @@ function FormularioVaga({
 
 // ---------------------------------------------------------------- DS-FL04 · agendar e confirmar
 
+// Data de hoje no fuso do navegador, no formato do campo date (AAAA-MM-DD).
+function hojeISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// Hora atual no formato do campo time (HH:MM).
+function agoraHHMM() {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+// O link traz um endereço depois do https:// (só "https://" não leva a lugar nenhum).
+function temEndereco(link: string) {
+  try {
+    return Boolean(new URL(link).hostname);
+  } catch {
+    return false;
+  }
+}
+
+const hora = (h: string) => h.slice(0, 5);
+
+// RBN09.04 · CA-01/CA-02: quem ou que local já está ocupado, e em que horário.
+function ListaConflitos({ conflitos }: { conflitos: Conflito[] }) {
+  return (
+    <ul className="mt-1 list-disc pl-5">
+      {conflitos.map((c, i) => (
+        <li key={i}>
+          {c.tipo === "LOCAL" ? `Local ${c.nome}` : c.nome}: outra defesa das {hora(c.inicio)} às {hora(c.fim)}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function FormularioAgendamento({
   banca,
   membros,
@@ -358,21 +396,48 @@ function FormularioAgendamento({
   const [geral, setGeral] = useState("");
   const [confirmando, setConfirmando] = useState(false);
   const [enviando, setEnviando] = useState(false);
+  const [verificando, setVerificando] = useState(false);
+  // Resultado da verificação de conflitos (DS-FL04 mensagens 11 a 13), mostrado na janela de confirmação.
+  const [verificacao, setVerificacao] = useState<Conflitos | null>(null);
   const precisaLocal = dados.formato !== "REMOTO";
   const precisaLink = dados.formato !== "PRESENCIAL";
 
-  function conferir(e: React.FormEvent) {
+  async function conferir(e: React.FormEvent) {
     e.preventDefault();
+    // DS-FL04 mensagens 8 e 10: a API confere de novo na confirmação.
     const faltas: Record<string, string> = {};
     if (!dados.data) faltas.data = "Informe a data.";
+    else if (dados.data < hojeISO()) faltas.data = "A data da defesa não pode estar no passado.";
     if (!dados.inicio) faltas.inicio = "Informe o início.";
+    else if (dados.data === hojeISO() && dados.inicio < agoraHHMM()) faltas.inicio = "O início da defesa não pode estar no passado.";
     if (!dados.fim) faltas.fim = "Informe o término.";
     else if (dados.inicio && dados.fim <= dados.inicio) faltas.fim = "O término deve ser depois do início.";
     if (precisaLocal && !dados.local_id) faltas.local_id = "Escolha o local da defesa.";
     if (precisaLink && !dados.link.trim()) faltas.link = "Informe o link da sala virtual.";
+    else if (precisaLink && !dados.link.trim().toLowerCase().startsWith("https://"))
+      faltas.link = "O link da sala virtual deve começar com https://.";
+    else if (precisaLink && !temEndereco(dados.link.trim())) faltas.link = "Informe o link completo da sala virtual.";
     setErros(faltas);
-    if (!Object.keys(faltas).length) setConfirmando(true);
+    setGeral("");
+    if (Object.keys(faltas).length) return;
+
+    // RBN09.04: o convidado externo novo ainda não tem agenda; vão só as pessoas já cadastradas.
+    const consulta = new URLSearchParams({ tcc_id: String(banca.tcc_id), data: dados.data, inicio: dados.inicio, fim: dados.fim });
+    if (precisaLocal) consulta.set("local_id", dados.local_id);
+    membros.forEach((m) => m.usuario_id && consulta.append("pessoa", String(m.usuario_id)));
+    setVerificando(true);
+    try {
+      setVerificacao(await api<Conflitos>(`/defesas/conflitos?${consulta}`));
+      setConfirmando(true);
+    } catch (e) {
+      const erro = e as ErroApi;
+      if (erro.campos) setErros(erro.campos);
+      setGeral(erro.message);
+    } finally {
+      setVerificando(false);
+    }
   }
+  const comConflito = (verificacao?.conflitos.length ?? 0) > 0;
 
   async function confirmar() {
     setEnviando(true);
@@ -393,7 +458,12 @@ function FormularioAgendamento({
       });
       aoConfirmar();
     } catch (e) {
-      const erro = e as ErroApi & { pendencias?: string[] };
+      const erro = e as ErroApi & { pendencias?: string[]; conflitos?: Conflito[] };
+      if (erro.conflitos) {
+        // E4: surgiu um conflito depois da verificação; volta para a janela com o conflito
+        setVerificacao((v) => ({ aviso: v?.aviso ?? "", conflitos: erro.conflitos! }));
+        return;
+      }
       setConfirmando(false);
       if (erro.campos) setErros(erro.campos);
       if (erro.pendencias) setPendencias(erro.pendencias);
@@ -410,7 +480,7 @@ function FormularioAgendamento({
     <form onSubmit={conferir} className="flex flex-col gap-3 rounded-lg border border-borda p-4" noValidate>
       <h3 className="font-semibold">Quando e onde será a defesa?</h3>
       <p className="text-[13px] text-suave">
-        Duração prevista: {banca.etapa === "TCC1" ? "15" : "20"} minutos de apresentação (pode ser maior, RN22).
+        Duração prevista: {banca.etapa === "TCC1" ? "15" : "20"} minutos no total (pode ser maior, RN22).
       </p>
       <div className="grid gap-3 sm:grid-cols-3">
         <Campo rotulo="Data" obrigatorio erro={erros.data}>
@@ -463,7 +533,9 @@ function FormularioAgendamento({
         </Aviso>
       )}
       <div className="flex flex-wrap gap-2">
-        <Botao type="submit">Confirmar defesa</Botao>
+        <Botao type="submit" carregando={verificando}>
+          Confirmar defesa
+        </Botao>
         <Botao variante="texto" onClick={aoCancelar}>
           Voltar para a banca
         </Botao>
@@ -475,11 +547,22 @@ function FormularioAgendamento({
             {dataCurta(dados.data)}, das {dados.inicio} às {dados.fim} · {NOME_FORMATO[dados.formato]}. A defesa e a banca
             serão gravadas; os convites por e-mail serão enviados quando essa etapa estiver disponível.
           </p>
+          <div className="mt-3">
+            {comConflito ? (
+              <Aviso tipo="erro">
+                Há conflito neste horário. Escolha outro horário ou outro local.
+                <ListaConflitos conflitos={verificacao!.conflitos} />
+              </Aviso>
+            ) : (
+              <Aviso tipo="sucesso">Nenhum conflito conhecido.</Aviso>
+            )}
+            {verificacao?.aviso && <p className="mt-2 text-[13px] text-suave">{verificacao.aviso}</p>}
+          </div>
           <div className="mt-4 flex flex-wrap justify-end gap-2">
             <Botao variante="texto" onClick={() => setConfirmando(false)}>
               Revisar
             </Botao>
-            <Botao onClick={confirmar} carregando={enviando}>
+            <Botao onClick={confirmar} carregando={enviando} disabled={comConflito}>
               Confirmar
             </Botao>
           </div>
@@ -502,7 +585,6 @@ function DefesaConfirmada({
 }) {
   const [trocando, setTrocando] = useState<MembroBanca | null>(null);
   const alteravel = banca.pode_editar && (defesa.situacao === "CONFIRMADA" || defesa.situacao === "REMARCADA");
-  const hora = (h: string) => h.slice(0, 5);
 
   return (
     <div className="flex flex-col gap-4">
