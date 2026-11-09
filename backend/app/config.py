@@ -49,6 +49,11 @@ RECUPERACAO_MINUTOS = 10  # validade do link de recuperação de senha (RBN01.07
 MAX_TENTATIVAS_LOGIN = 3  # tentativas inválidas seguidas até bloquear
 BLOQUEIO_MINUTOS = 15  # duração do bloqueio
 
+# Pasta dos documentos oficiais gerados (declaração de horas, RBN09.10; ata e certificados depois).
+# O banco guarda o caminho relativo a esta pasta e o SHA-256 do arquivo (documento_oficial, RNF06).
+# Em produção aponte para um disco persistente: o disco padrão do Render é apagado a cada deploy.
+ARQUIVOS_DIR = Path(os.environ.get("ARQUIVOS_DIR") or BASE_DIR / "arquivos")
+
 # Foto de perfil (RBN01.01, RBN01.09, RBN01.10): JPG, PNG ou WebP de até 5 MB.
 FOTO_MAX_BYTES = 5 * 1024 * 1024
 

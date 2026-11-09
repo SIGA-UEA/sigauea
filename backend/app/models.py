@@ -625,6 +625,79 @@ class HistoricoDefesa(Base):
 
 
 # =====================================================================
+# Ocorrências, ouvintes e documentos oficiais (RBN09.10, RN15, RN23)
+# Tabelas iguais às do modelo físico (ocorrencia_defesa, ouvinte_defesa, documento_oficial) e
+# entidades do DS-FL09 (OcorrenciaDefesa, OuvinteDefesa, DocumentoOficial).
+# =====================================================================
+
+DOC_ATA, DOC_FOLHA, DOC_CERTIFICADO, DOC_DECLARACAO = "ATA", "FOLHA_APROVACAO", "CERTIFICADO", "DECLARACAO_HORAS"
+TIPOS_DOCUMENTO = (DOC_ATA, DOC_FOLHA, DOC_CERTIFICADO, DOC_DECLARACAO)
+
+
+class OcorrenciaDefesa(Base):
+    """Ocorrência da sessão em texto livre, com autor e data (RN23). A correção grava alterada_em."""
+
+    __tablename__ = "ocorrencia_defesa"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    defesa_id: Mapped[int] = _fk("defesa.id", index=True)
+    texto: Mapped[str] = mapped_column(Text)
+    autor_id: Mapped[int] = _fk("usuario.id", index=True)
+    criado_em: Mapped[datetime] = mapped_column(default=agora)
+    alterada_em: Mapped[datetime | None]
+
+    autor: Mapped[Usuario] = relationship()
+
+
+class OuvinteDefesa(Base):
+    """Ouvinte presente (nome e matrícula), para a declaração de horas complementares (RN23)."""
+
+    __tablename__ = "ouvinte_defesa"
+    __table_args__ = (
+        # CA-04 do RBN09.10: a mesma matrícula não entra duas vezes na lista da defesa, também com
+        # dois pedidos ao mesmo tempo. Não está no SQL físico entregue.
+        UniqueConstraint("defesa_id", "matricula", name="uq_ouvinte_defesa_matricula"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    defesa_id: Mapped[int] = _fk("defesa.id", index=True)
+    nome: Mapped[str] = mapped_column(String(150))
+    matricula: Mapped[str | None] = mapped_column(String(20))
+    criado_em: Mapped[datetime] = mapped_column(default=agora)
+
+
+class DocumentoOficial(Base):
+    """Ata, Folha de Aprovação, certificado e declaração de horas. A retificação gera nova versão e
+    marca a anterior como substituída (RN15). O arquivo fica em caminho, conferido pelo sha256 (RNF06)."""
+
+    __tablename__ = "documento_oficial"
+    __table_args__ = (
+        _dominio("documento_oficial", "tipo", TIPOS_DOCUMENTO),
+        # Uma declaração vigente por ouvinte, também com dois cliques ao mesmo tempo. Não está no SQL
+        # físico entregue (ver PR do SCRUM-68).
+        Index(
+            "uq_documento_oficial_declaracao_vigente",
+            "ouvinte_id",
+            unique=True,
+            sqlite_where=text("tipo = 'DECLARACAO_HORAS' AND vigente"),
+            postgresql_where=text("tipo = 'DECLARACAO_HORAS' AND vigente"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    defesa_id: Mapped[int] = _fk("defesa.id", index=True)
+    tipo: Mapped[str] = mapped_column(String(16))
+    versao: Mapped[int]
+    vigente: Mapped[bool]
+    sha256: Mapped[str] = mapped_column(CHAR(64))
+    caminho: Mapped[str] = mapped_column(String(500))
+    membro_id: Mapped[int | None] = _fk("banca_membro.id", nullable=True, index=True)
+    ouvinte_id: Mapped[int | None] = _fk("ouvinte_defesa.id", nullable=True, index=True)
+    gerado_em: Mapped[datetime] = mapped_column(default=agora)
+    substituido_em: Mapped[datetime | None]
+
+
+# =====================================================================
 # MOD04 · Instrumento de avaliação (Sprint S04, RBN10.01, RN19)
 # Nomes iguais aos do modelo físico (instrumento_avaliacao, componente_avaliacao,
 # criterio_avaliacao) e às entidades do DS-FL06-G (InstrumentoAvaliacao, CriterioAvaliacao).

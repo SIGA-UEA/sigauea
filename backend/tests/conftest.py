@@ -29,6 +29,10 @@ from app.main import app  # noqa: E402
 from app.security import gerar_hash_senha  # noqa: E402
 from app.seed import carregar_base, carregar_instrumento, criar_coordenador  # noqa: E402
 from app.services import email  # noqa: E402
+from app import config  # noqa: E402
+
+# PDFs gerados nos testes (declarações) vão para uma pasta temporária, nunca para backend/arquivos
+config.ARQUIVOS_DIR = tempfile.mkdtemp()
 
 SENHA = "Senha@2026"
 COORD = "coord@uea.edu.br"
