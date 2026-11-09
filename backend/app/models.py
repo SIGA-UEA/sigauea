@@ -875,3 +875,70 @@ class ResultadoDefesa(Base):
 
     defesa: Mapped[Defesa] = relationship()
     autor: Mapped["Usuario"] = relationship()
+
+
+# =====================================================================
+# MOD02 · interação e compartilhamento de ideias (RBN02.01 e RBN02.02 · RN07, RN25)
+# =====================================================================
+
+DESTINO_AREA, DESTINO_PROFESSORES = "AREA", "PROFESSORES"
+DESTINOS_PROPOSTA = (DESTINO_AREA, DESTINO_PROFESSORES)
+
+
+class Proposta(Base):
+    """Ideia de TCC de um aluno (RBN02.01). Serve à discussão e não gera protocolo nem cadastro de TCC.
+    Direcionada a uma área (todos os professores vinculados a ela, RN25) ou a professores nomeados.
+    oculta_em é da moderação por denúncia (RBN02.03, fora desta versão)."""
+
+    __tablename__ = "proposta"
+    __table_args__ = (
+        _dominio("proposta", "destino", DESTINOS_PROPOSTA),
+        CheckConstraint("destino <> 'AREA' OR area_id IS NOT NULL", name="ck_proposta_area"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    autor_id: Mapped[int] = _fk("usuario.id", index=True)
+    titulo: Mapped[str] = mapped_column(String(200))
+    descricao: Mapped[str] = mapped_column(Text)
+    destino: Mapped[str] = mapped_column(String(12))
+    area_id: Mapped[int | None] = _fk("area_interesse.id", nullable=True, index=True)
+    oculta_em: Mapped[datetime | None]
+    criado_em: Mapped[datetime] = mapped_column(default=agora)
+
+    autor: Mapped[Usuario] = relationship()
+    area: Mapped[AreaInteresse | None] = relationship()
+    destinatarios: Mapped[list["PropostaDestinatario"]] = relationship(
+        back_populates="proposta", order_by="PropostaDestinatario.professor_id"
+    )
+    comentarios: Mapped[list["ComentarioProposta"]] = relationship(
+        back_populates="proposta", order_by="ComentarioProposta.id"
+    )
+
+
+class PropostaDestinatario(Base):
+    """Professores escolhidos quando destino = PROFESSORES: só eles veem a proposta (CA-03 do RBN02.01)."""
+
+    __tablename__ = "proposta_destinatario"
+
+    proposta_id: Mapped[int] = _fk("proposta.id", primary_key=True, index=True)
+    professor_id: Mapped[int] = _fk("docente.usuario_id", primary_key=True, index=True)
+
+    proposta: Mapped[Proposta] = relationship(back_populates="destinatarios")
+    professor: Mapped[Docente] = relationship()
+
+
+class ComentarioProposta(Base):
+    """Comentário de professor na proposta (RBN02.02); texto vazio não é aceito (CA-03)."""
+
+    __tablename__ = "comentario_proposta"
+    __table_args__ = (CheckConstraint("length(trim(texto)) > 0", name="ck_comentario_proposta_texto"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    proposta_id: Mapped[int] = _fk("proposta.id", index=True)
+    autor_id: Mapped[int] = _fk("usuario.id", index=True)
+    texto: Mapped[str] = mapped_column(Text)
+    oculto_em: Mapped[datetime | None]
+    criado_em: Mapped[datetime] = mapped_column(default=agora)
+
+    proposta: Mapped[Proposta] = relationship(back_populates="comentarios")
+    autor: Mapped[Usuario] = relationship()
