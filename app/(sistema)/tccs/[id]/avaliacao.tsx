@@ -15,7 +15,6 @@ import { Modal } from "@/components/modal";
 import { api, ErroApi } from "@/lib/api";
 import {
   dataHora,
-  type Banca,
   type Conceito,
   type ConsultaAvaliacao,
   type CriterioAvaliacao,
@@ -59,19 +58,17 @@ function erroDaNota(valor: Valor, faixa?: FaixaConceito): string | undefined {
   return undefined;
 }
 
-export function SecaoAvaliacao({ tccId }: { tccId: string }) {
+// aoEnviar avisa a página quando a avaliação é enviada, para a consolidação do resultado recarregar (RBN09.11).
+export function SecaoAvaliacao({ defesaId, aoEnviar }: { defesaId: number; aoEnviar?: () => void }) {
   const [dados, setDados] = useState<ConsultaAvaliacao | null>(null);
   const [oculta, setOculta] = useState(false);
   const [erro, setErro] = useState("");
 
   const carregar = useCallback(() => {
-    api<Banca>(`/tccs/${tccId}/banca`)
-      .then((b) => {
-        if (!b.defesa) return setOculta(true);
-        return api<ConsultaAvaliacao>(`/defesas/${b.defesa.id}/avaliacao`).then(setDados);
-      })
+    api<ConsultaAvaliacao>(`/defesas/${defesaId}/avaliacao`)
+      .then(setDados)
       .catch((e: ErroApi) => (e.status === 403 || e.status === 409 || e.status === 404 ? setOculta(true) : setErro(e.message)));
-  }, [tccId]);
+  }, [defesaId]);
   useEffect(carregar, [carregar]);
 
   if (oculta) return null; // não avalia esta defesa (E2/E6), defesa cancelada ou ainda sem defesa
@@ -90,7 +87,7 @@ export function SecaoAvaliacao({ tccId }: { tccId: string }) {
       ) : dados.minha_avaliacao?.status === "ENVIADA" ? (
         <Enviada dados={dados} minha={dados.minha_avaliacao} />
       ) : (
-        <Formulario dados={dados} aoAtualizar={setDados} />
+        <Formulario dados={dados} aoAtualizar={setDados} aoEnviar={aoEnviar} />
       )}
     </section>
   );
@@ -116,7 +113,15 @@ function itens(dados: ConsultaAvaliacao): Item[] {
 
 // ------------------------------------------------------------------ preenchimento (passos 8 a 19)
 
-function Formulario({ dados, aoAtualizar }: { dados: ConsultaAvaliacao; aoAtualizar: (d: ConsultaAvaliacao) => void }) {
+function Formulario({
+  dados,
+  aoAtualizar,
+  aoEnviar,
+}: {
+  dados: ConsultaAvaliacao;
+  aoAtualizar: (d: ConsultaAvaliacao) => void;
+  aoEnviar?: () => void;
+}) {
   const criterios = useMemo(() => itens(dados), [dados]);
   const faixas = useMemo(
     () => Object.fromEntries(dados.instrumento.conceitos.map((f) => [f.conceito, f])) as Record<Conceito, FaixaConceito>,
@@ -196,6 +201,7 @@ function Formulario({ dados, aoAtualizar }: { dados: ConsultaAvaliacao; aoAtuali
       );
       const enviadas = dados.envios.enviadas + (minha.status === "ENVIADA" ? 1 : 0);
       aoAtualizar({ ...dados, minha_avaliacao: minha, envios: { ...dados.envios, enviadas } });
+      if (minha.status === "ENVIADA") aoEnviar?.();
       if (tipo === "rascunho") setAviso({ tipo: "sucesso", texto: "Rascunho salvo. Você pode continuar depois." });
     } catch (e) {
       tratar(e as ErroApi);

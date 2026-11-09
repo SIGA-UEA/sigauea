@@ -22,7 +22,6 @@ import { Modal } from "@/components/modal";
 import { api, ErroApi } from "@/lib/api";
 import {
   dataHora,
-  type Banca,
   type Declaracao,
   type LoteOuvintes,
   type Ocorrencia,
@@ -41,18 +40,8 @@ const nomeCompleto = (t: string) =>
 const AREA_TEXTO =
   "w-full min-w-0 rounded-lg border bg-superficie px-3 py-2 text-[14px] leading-relaxed placeholder:text-suave";
 
-// A seção só existe depois que há defesa agendada; o id dela vem da consulta da banca (DS-FL04-A).
-export function SecaoPresenca({ tccId }: { tccId: string }) {
-  const [defesaId, setDefesaId] = useState<number | null>(null);
-  useEffect(() => {
-    api<Banca>(`/tccs/${tccId}/banca`)
-      .then((b) => setDefesaId(b.defesa?.id ?? null))
-      .catch(() => setDefesaId(null)); // a seção Banca e defesa já mostra o erro
-  }, [tccId]);
-  return defesaId === null ? null : <PainelPresenca defesaId={defesaId} />;
-}
-
-function PainelPresenca({ defesaId }: { defesaId: number }) {
+// A seção só existe depois que há defesa agendada; a página do TCC passa o id da defesa (DS-FL04-A).
+export function SecaoPresenca({ defesaId }: { defesaId: number }) {
   const [dados, setDados] = useState<Presenca | null>(null);
   const [oculta, setOculta] = useState(false);
   const [erro, setErro] = useState("");

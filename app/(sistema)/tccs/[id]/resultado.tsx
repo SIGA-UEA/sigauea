@@ -10,11 +10,7 @@
 import { useEffect, useState } from "react";
 import { Aviso, Selo } from "@/components/aviso";
 import { api, ErroApi } from "@/lib/api";
-import {
-  type Banca,
-  type ConsultaResultado,
-  type PapelAvaliador,
-} from "@/lib/tipos";
+import { type ConsultaResultado, type PapelAvaliador } from "@/lib/tipos";
 
 const NOME_PAPEL: Record<PapelAvaliador, string> = {
   ORIENTADOR: "Orientador(a)",
@@ -25,26 +21,28 @@ const NOME_PAPEL: Record<PapelAvaliador, string> = {
 // Mesma precisão em tela, ata e relatórios (CA-06): duas casas, vírgula decimal.
 const nota = (n: number) => n.toFixed(2).replace(".", ",");
 
-export function SecaoResultado({ tccId }: { tccId: string }) {
+// envios muda quando alguém da banca envia a avaliação nesta página (o orientador avalia e consolida aqui).
+export function SecaoResultado({
+  defesaId,
+  envios = 0,
+}: {
+  defesaId: number;
+  envios?: number;
+}) {
   const [dados, setDados] = useState<ConsultaResultado | null>(null);
   const [oculta, setOculta] = useState(false);
   const [erro, setErro] = useState("");
 
   useEffect(() => {
-    api<Banca>(`/tccs/${tccId}/banca`)
-      .then((b) => {
-        if (!b.defesa) return setOculta(true);
-        return api<ConsultaResultado>(`/defesas/${b.defesa.id}/resultado`).then(
-          setDados,
-        );
-      })
+    api<ConsultaResultado>(`/defesas/${defesaId}/resultado`)
+      .then(setDados)
       .catch((e: ErroApi) =>
         // 403: não é o orientador; 404: sem acesso ao TCC; 409: defesa cancelada
         e.status === 403 || e.status === 404 || e.status === 409
           ? setOculta(true)
           : setErro(e.message),
       );
-  }, [tccId]);
+  }, [defesaId, envios]);
 
   if (oculta) return null;
 
