@@ -5,14 +5,6 @@ aponte TEST_DATABASE_URL para um banco vazio (ele é apagado a cada teste):
     TEST_DATABASE_URL=postgresql+psycopg://usuario:senha@localhost:5432/siga_teste
 """
 
-from app import config
-from app.services import email
-from app.seed import carregar_base, carregar_instrumento, criar_coordenador
-from app.security import gerar_hash_senha
-from app.main import app
-from app.database import Base, SessionLocal, engine
-from fastapi.testclient import TestClient
-import pytest
 import os
 import re
 import tempfile
@@ -26,9 +18,20 @@ os.environ["BCRYPT_CUSTO"] = "10"
 # testes nunca enviam e-mail de verdade, mesmo com backend/.env
 os.environ["SMTP_HOST"] = ""
 os.environ["BREVO_API_KEY"] = ""
+
+# A aplicação só pode ser importada depois das variáveis acima (o formatador não deve subir estes imports).
+import pytest  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+
+from app.database import Base, SessionLocal, engine  # noqa: E402
+from app.main import app  # noqa: E402
+from app.security import gerar_hash_senha  # noqa: E402
+from app.seed import carregar_base, carregar_instrumento, criar_coordenador  # noqa: E402
+from app.services import email  # noqa: E402
+from app import config  # noqa: E402
+
 # PDFs gerados nos testes (declarações) vão para uma pasta temporária, nunca para backend/arquivos
 config.ARQUIVOS_DIR = tempfile.mkdtemp()
-
 
 SENHA = "Senha@2026"
 COORD = "coord@uea.edu.br"

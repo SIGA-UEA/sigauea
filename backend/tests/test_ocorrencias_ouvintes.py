@@ -225,12 +225,13 @@ def test_ct_09_10_05_aluno_recebe_403(defesa):
     assert defesa["aluno"].get(f"{defesa['url']}/ocorrencias").status_code == 403  # CA-06
 
 
-def test_professor_da_turma_recebe_403_e_avaliador_404(defesa):
-    """CA-05: o professor da turma vê o TCC, mas não é coordenação nem orientador → 403. O avaliador nem
-    vê o TCC no sistema (RN07) → 404, como nas demais rotas do TCC."""
+def test_professor_da_turma_e_avaliador_recebem_403(defesa):
+    """CA-05: professor da turma e avaliador da banca veem o TCC (o membro da banca passou a ver o TCC da
+    defesa não cancelada com o RBN10.02), mas não são coordenação nem orientador → 403."""
     assert _ouvinte(defesa, quem="paulo").status_code == 403
     assert defesa["paulo"].get(f"{defesa['url']}/ocorrencias").status_code == 403
-    assert defesa["otto"].get(f"{defesa['url']}/ocorrencias").status_code == 404
+    assert defesa["otto"].get(f"{defesa['url']}/ocorrencias").status_code == 403
+    assert _ouvinte(defesa, quem="otto").status_code == 403
 
 
 def test_ct_09_10_06_lista_de_ouvintes_fora_das_consultas_abertas(defesa, anonimo):

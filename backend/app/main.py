@@ -5,6 +5,7 @@ from app.routes import (
     agenda,
     areas,
     auth,
+    avaliacao,
     cadastros,
     catalogo,
     defesas,
@@ -43,4 +44,5 @@ v1.include_router(defesas.router)  # banca e defesa (RAN09)
 v1.include_router(agenda.router)  # agenda de apresentações (RAN14)
 v1.include_router(instrumento.router)  # instrumento de avaliação (RBN10.01)
 v1.include_router(ocorrencias.router)  # ocorrências, ouvintes e declaração de horas (RBN09.10)
+v1.include_router(avaliacao.router)  # avaliação da defesa (RBN10.02 a RBN10.05)
 app.include_router(v1)
