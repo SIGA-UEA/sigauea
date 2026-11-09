@@ -7,9 +7,9 @@ base (6 critérios na parte escrita e 3 na oral).
 
 "Depois da defesa" é simulado trocando o relógio do serviço (fixture depois_da_defesa), sem mexer no banco.
 
-Ficam em skip, até as histórias de que dependem entrarem:
-- SCRUM-67 (convocar suplente): CT-10.02-06 e CT-10.05-05. A regra do suplente convocado já é conferida
-  pelos testes unitários de membros_que_avaliam;
+O suplente é convocado pela rota da SCRUM-67 (POST /defesas/{id}/suplente) em CT-10.02-06 e CT-10.05-05.
+
+Ficam em skip, até a história de que dependem entrar:
 - SCRUM-70 (confirmar o resultado): CT-10.05-03 e CT-10.05-04. A lista de pendentes que a confirmação vai
   usar já é conferida aqui.
 """
@@ -59,6 +59,14 @@ def _todos(d, quem="olga", conceito="COMPETENTE", nota="7.0") -> list[dict]:
 
 def _enviar(d, quem="olga", **kw):
     return d[quem].post(_url(d, envio=True), json={"criterios": _todos(d, quem, **kw), "parecer": PARECER})
+
+
+def _convocar_ricardo(d, titular="otto"):
+    """SCRUM-67: a orientadora convoca o suplente (Ricardo) no lugar do titular."""
+    membro = next(m for m in d["defesa"]["membros"] if m["pessoa"]["id"] == d["ids"][titular])
+    r = d["olga"].post(f"/api/v1/defesas/{d['defesa']['id']}/suplente",
+                       json={"membro_titular_id": membro["id"], "motivo": "Avaliador doente no dia.", "data": DIA})
+    assert r.status_code == 200, r.json()
 
 
 # ---------------------------------------------------------------- SCRUM-77 · RBN10.02
@@ -116,9 +124,13 @@ def test_ct_10_02_05_professor_fora_da_banca_recebe_403(defesa, coord):
         assert chamada.json() == {"detail": "Você não avalia esta defesa."}
 
 
-@pytest.mark.skip(reason="A convocação do suplente é a SCRUM-67 (RBN09.09); a regra já é conferida nos testes unitários.")
-def test_ct_10_02_06_suplente_convocado_lanca_a_avaliacao():
+def test_ct_10_02_06_suplente_convocado_lanca_a_avaliacao(defesa, depois_da_defesa):
     """CT-10.02-06 (CA-05): suplente convocado pela rota da SCRUM-67 lança a avaliação no lugar do titular."""
+    assert defesa["ricardo"].get(_url(defesa)).status_code == 403  # antes da convocação (RN20)
+    _convocar_ricardo(defesa)
+    r = _enviar(defesa, "ricardo")
+    assert r.status_code == 200 and r.json()["status"] == "ENVIADA"
+    assert defesa["otto"].get(_url(defesa)).status_code == 403  # o titular substituído não avalia
 
 
 def test_ct_10_02_07_lancamento_e_envio_ficam_no_log(defesa, db, depois_da_defesa):
@@ -330,9 +342,13 @@ def test_ct_10_05_04_com_todas_enviadas_a_confirmacao_fica_disponivel():
     """CT-10.05-04 (CA-04): 3 de 3 enviadas; a confirmação fica disponível."""
 
 
-@pytest.mark.skip(reason="A convocação do suplente é a SCRUM-67 (RBN09.09); a regra já é conferida nos testes unitários.")
-def test_ct_10_05_05_completude_considera_o_suplente_convocado():
+def test_ct_10_05_05_completude_considera_o_suplente_convocado(defesa, db, depois_da_defesa):
     """CT-10.05-05 (CA-05, TI-11): titular substituído; o suplente enviou e é ele quem conta."""
+    _convocar_ricardo(defesa)
+    for quem in ("olga", "paulo", "ricardo"):
+        assert _enviar(defesa, quem).status_code == 200
+    assert defesa["olga"].get(_url(defesa)).json()["envios"] == {"enviadas": 3, "esperadas": 3}
+    assert servico.pendentes(db, db.get(Defesa, defesa["defesa"]["id"])) == []
 
 
 def test_ct_10_05_06_post_de_envio_incompleto_e_rejeitado(defesa, db, depois_da_defesa):
