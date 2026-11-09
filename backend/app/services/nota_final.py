@@ -27,7 +27,9 @@ CENTESIMO = Decimal("0.01")
 PISO_EXCECAO = Decimal("6.00")  # RN21
 MODALIDADE_ARTIGO = "ARTIGO"
 SITUACOES_DA_EXCECAO = ("ACEITO", "PUBLICADO")
-ESTRATOS_DA_EXCECAO = ("A", "B")  # Qualis A1 a A4 e B1 a B4
+# Qualis A ou B (RN21): os estratos A1 a A4 e B1 a B4. Lista fechada: "BX" ou "B5" (estrato que não existe)
+# não aplicam a exceção, mesmo começando com A ou B.
+ESTRATOS_DA_EXCECAO = ("A1", "A2", "A3", "A4", "B1", "B2", "B3", "B4")
 NOME_SITUACAO = {"SUBMETIDO": "submetido", "EM_REVISAO": "em revisão", "ACEITO": "aceito", "RECUSADO": "recusado",
                  "PUBLICADO": "publicado"}
 
@@ -74,7 +76,7 @@ def regra_excecao(defesa: Defesa) -> RegraExcecao:
     publicacao = tcc.publicacoes[-1] if tcc.publicacoes else None  # a situação atual é a do registro mais recente
     situacao = publicacao.situacao_atual if publicacao else None
     qualis = (publicacao.qualis or "").strip().upper() if publicacao else ""
-    if situacao in SITUACOES_DA_EXCECAO and qualis[:1] in ESTRATOS_DA_EXCECAO:
+    if situacao in SITUACOES_DA_EXCECAO and qualis in ESTRATOS_DA_EXCECAO:
         return RegraExcecao(
             True,
             f"Artigo {NOME_SITUACAO[situacao]} em veículo Qualis {qualis}: a nota final é o maior valor entre "

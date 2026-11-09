@@ -197,6 +197,8 @@ def _tcc(modalidade="ARTIGO", situacao=None, qualis=None, publicacoes=None):
     ("ACEITO", "A1", True), ("ACEITO", "A4", True), ("PUBLICADO", "B1", True), ("PUBLICADO", "B4", True),
     ("ACEITO", "a2", True),  # estrato em minúscula conta igual
     ("ACEITO", "C", False), ("PUBLICADO", None, False), ("ACEITO", "", False),
+    ("ACEITO", "BX", False), ("ACEITO", "B5", False), ("ACEITO", "A", False),  # fora da lista A1 a B4
+    ("ACEITO", " b3 ", True),  # espaços e minúscula não mudam o estrato
     ("SUBMETIDO", "A1", False), ("EM_REVISAO", "A1", False), ("RECUSADO", "A1", False),
 ])
 def test_regra_do_qualis(situacao, qualis, aplicada):
