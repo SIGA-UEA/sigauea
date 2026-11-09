@@ -10,7 +10,10 @@ início, local e/ou link https:// conforme o formato; a duração de 15/20 min (
 Conflitos de agenda (SCRUM-62, RBN09.04): mesmo participante ou mesmo local em horários que se
 sobrepõem, sem contar as defesas canceladas nem a própria defesa (remarcação).
 
-Ficam para as próximas histórias: convites por e-mail (SCRUM-63) e a conta limitada do externo (SCRUM-32).
+Convites (SCRUM-63, RBN09.05): ao confirmar, cada membro recebe o convite por e-mail; a situação
+do envio aparece na vaga e o convite pode ser reenviado sem refazer a defesa.
+
+Fica para outra história a conta limitada do externo, com o link de acesso (SCRUM-32).
 
 Pendência: o DS-FL04 (passo 5) confere a versão do PDF para banca antes de agendar. A tabela
 documento_tcc ainda não existe; a conferência entra junto com o envio do PDF (SCRUM-55, RBN07.01).
@@ -22,6 +25,7 @@ como pedem o E4 e o CA-05 da ficha RBN09.01 e a planilha de requisitos (FL04).
 from datetime import date, datetime, time, timedelta
 from urllib.parse import urlsplit
 
+from fastapi import BackgroundTasks
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -66,7 +70,7 @@ from app.schemas.defesa import (
     ValidarMembro,
 )
 from app.schemas.tcc import PessoaOut
-from app.services import auditoria
+from app.services import auditoria, avisos_defesa
 from app.services.tccs import obter_para
 from app.services.turmas import pessoa
 from app.services.usuarios import buscar_por_email
@@ -139,6 +143,7 @@ def _membro_out(db: Session, m: BancaMembro) -> MembroOut:
         interno=m.interno,
         instituicao=None if m.interno else _instituicao(db, m.usuario),
         convite_enviado_em=m.convite_enviado_em,
+        convite=avisos_defesa.situacao_convite(db, m),
     )
 
 
@@ -426,8 +431,9 @@ def verificar_conflitos(
     ))
 
 
-def agendar(db: Session, usuario: Usuario, tcc_id: int, dados: DefesaCriar) -> Defesa:
-    """POST /tccs/{id}/defesa (passos 16 a 21): grava defesa, banca, histórico e auditoria juntos."""
+def agendar(db: Session, usuario: Usuario, tcc_id: int, dados: DefesaCriar, tarefas: BackgroundTasks) -> Defesa:
+    """POST /tccs/{id}/defesa (passos 16 a 26): grava defesa, banca, histórico e auditoria juntos e
+    enfileira o convite de cada membro, que sai depois da resposta (RBN09.05)."""
     tcc = obter_para(db, usuario, tcc_id)
     _exigir_responsavel(usuario, tcc)  # passo 17
     if defesa_vigente(tcc.id, db) is not None:
@@ -467,6 +473,10 @@ def agendar(db: Session, usuario: Usuario, tcc_id: int, dados: DefesaCriar) -> D
             entidade_id=membro.id, campo=m.papel, novo=pessoa_vaga.nome,
         )
     db.add(HistoricoDefesa(defesa_id=defesa.id, evento="AGENDAMENTO", usuario_id=usuario.id))  # passo 19
+    db.flush()
+    db.refresh(defesa)  # carrega a banca recém-gravada para os convites
+    for membro in defesa.membros:  # passos 20 e 22 a 26 (RBN09.05 CA-01)
+        avisos_defesa.convidar(db, tarefas, defesa, membro)
     auditoria.registrar(  # passo 21
         db, ator_id=usuario.id, acao="agendar_defesa", entidade="defesa", entidade_id=defesa.id,
         novo=f"{dados.data.isoformat()} {dados.inicio.isoformat('minutes')}-{dados.fim.isoformat('minutes')} {dados.formato}",
@@ -505,9 +515,12 @@ def _descartar_rascunho(db: Session, ator: Usuario, avaliacao: Avaliacao, nome: 
     db.delete(avaliacao)
 
 
-def trocar_membro(db: Session, usuario: Usuario, defesa_id: int, membro_id: int, dados: PessoaBanca) -> Defesa:
+def trocar_membro(
+    db: Session, usuario: Usuario, defesa_id: int, membro_id: int, dados: PessoaBanca, tarefas: BackgroundTasks
+) -> Defesa:
     """PUT /defesas/{id}/banca/{membro}: troca a pessoa de uma vaga e revalida a banca (RN12).
-    A pessoa anterior fica no histórico da defesa (BANCA_ALTERADA, CA-06) e no log de auditoria.
+    A pessoa anterior fica no histórico da defesa (BANCA_ALTERADA, CA-06) e no log de auditoria;
+    a pessoa nova recebe o convite (RBN09.05).
     Com a avaliação já enviada a troca é recusada (409); um rascunho é descartado (SCRUM-77, D15)."""
     defesa = db.get(Defesa, defesa_id)
     if defesa is None:
@@ -559,6 +572,38 @@ def trocar_membro(db: Session, usuario: Usuario, defesa_id: int, membro_id: int,
         db, ator_id=usuario.id, acao="trocar_membro_banca", entidade="banca_membro", entidade_id=membro.id,
         campo=membro.papel, anterior=anterior, novo=pessoa_vaga.nome,
     )
+    db.flush()
+    avisos_defesa.convidar(db, tarefas, defesa, membro)
     _confirmar(db, "A banca mudou enquanto você editava. Abra a página de novo.")
     db.refresh(defesa)
     return defesa
+
+
+# =================================================================== RBN09.05 · reenviar o convite
+
+
+def reenviar_convite(db: Session, usuario: Usuario, defesa_id: int, membro_id: int, tarefas: BackgroundTasks) -> BancaMembro:
+    """POST /defesas/{id}/banca/{membro}/convite (CA-03, E5 do DS-FL04): um novo e-mail de convite
+    para a mesma vaga, sem refazer a defesa nem a banca."""
+    defesa = db.get(Defesa, defesa_id)
+    if defesa is None:
+        raise ErroAPI(404, "Defesa não encontrada.")
+    tcc = obter_para(db, usuario, defesa.tcc_id)  # 404 para quem não vê o TCC (RN07)
+    _exigir_responsavel(usuario, tcc)
+    if defesa.situacao not in ALTERAVEIS:
+        raise ErroAPI(409, "Esta defesa não está mais agendada; não há convite a reenviar.")
+    membro = next((m for m in defesa.membros if m.id == membro_id), None)
+    if membro is None:
+        raise ErroAPI(404, "Membro da banca não encontrado.")
+    avisos_defesa.convidar(db, tarefas, defesa, membro)
+    auditoria.registrar(
+        db, ator_id=usuario.id, acao="reenviar_convite_banca", entidade="banca_membro", entidade_id=membro.id,
+        novo=membro.usuario.email,
+    )
+    db.commit()
+    db.refresh(membro)
+    return membro
+
+
+def membro_out(db: Session, membro: BancaMembro) -> MembroOut:
+    return _membro_out(db, membro)

@@ -71,6 +71,8 @@ class MembroOut(BaseModel):
     interno: bool
     instituicao: str | None
     convite_enviado_em: DataHora | None = None
+    # RBN09.05: situação do último convite por e-mail desta vaga
+    convite: Literal["NAO_ENVIADO", "PENDENTE", "ENVIADO", "FALHA"] = "NAO_ENVIADO"
 
 
 class LocalOut(BaseModel):

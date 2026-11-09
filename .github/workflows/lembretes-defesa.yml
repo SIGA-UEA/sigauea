@@ -1,0 +1,36 @@
+# Lembrete da véspera da defesa (SCRUM-64, RBN09.06).
+#
+# Uma vez por dia, chama a rota protegida da API, que envia o lembrete das defesas de amanhã.
+# Segredos do repositório (Settings > Secrets and variables > Actions):
+#   SIGA_API_URL        endereço da API no Render, sem barra no fim (ex.: https://siga-uea-api.onrender.com)
+#   SIGA_TAREFAS_CHAVE  o mesmo valor de TAREFAS_CHAVE definido no Render
+# O GitHub só roda agendamentos do workflow que está na branch padrão (main).
+# Para testar na hora: aba Actions > "Lembretes de defesa" > Run workflow.
+
+name: Lembretes de defesa
+
+on:
+  schedule:
+    - cron: "17 11 * * *" # 07:17 em Manaus (UTC-4); fora da hora cheia, que costuma atrasar
+  workflow_dispatch:
+
+jobs:
+  lembretes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Enviar os lembretes das defesas de amanhã
+        env:
+          SIGA_API_URL: ${{ secrets.SIGA_API_URL }}
+          SIGA_TAREFAS_CHAVE: ${{ secrets.SIGA_TAREFAS_CHAVE }}
+        run: |
+          if [ -z "$SIGA_API_URL" ] || [ -z "$SIGA_TAREFAS_CHAVE" ]; then
+            echo "Defina os segredos SIGA_API_URL e SIGA_TAREFAS_CHAVE." >&2
+            exit 1
+          fi
+          # O Render grátis dorme sem uso: as tentativas dão tempo para a API acordar.
+          # Repetir é seguro: a rotina não manda o mesmo lembrete duas vezes (CA-04).
+          curl --fail-with-body --silent --show-error \
+            --retry 5 --retry-delay 30 --retry-all-errors --max-time 120 \
+            -X POST "$SIGA_API_URL/api/v1/tarefas/lembretes-defesa" \
+            -H "X-Chave-Tarefas: $SIGA_TAREFAS_CHAVE"

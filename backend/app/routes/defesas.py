@@ -4,13 +4,14 @@ Caminhos dos diagramas DS-FL04-A (GET /tccs/{id}/banca) e DS-FL04 (POST /tccs/{i
 Com a banca montada na tela (opção 2), POST /tccs/{id}/banca/validar confere uma vaga sem gravar
 e PUT /defesas/{id}/banca/{membro} troca um membro depois da confirmação (CA-06 do RBN09.01).
 GET /defesas/conflitos confere a agenda antes de confirmar (RBN09.04, DS-FL04 mensagem 11).
+POST /defesas/{id}/banca/{membro}/convite reenvia o convite por e-mail (RBN09.05 CA-03).
 Quem pode compor e agendar é conferido no serviço (RN14).
 """
 
 from datetime import date, time
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -69,11 +70,13 @@ def verificar_conflitos(
 def agendar_defesa(
     tcc_id: int,
     dados: DefesaCriar,
+    tarefas: BackgroundTasks,
     db: Session = Depends(get_db, scope="function"),
     eu: Usuario = Depends(usuario_atual),
 ) -> DefesaOut:
-    """DS-FL04 passo 16: grava a defesa CONFIRMADA com a banca. 422 com pendencias (RN12)."""
-    return defesas.defesa_out(db, defesas.agendar(db, eu, tcc_id, dados))
+    """DS-FL04 passo 16: grava a defesa CONFIRMADA com a banca e envia os convites (RBN09.05).
+    422 com pendencias (RN12); 409 com conflitos (RBN09.04)."""
+    return defesas.defesa_out(db, defesas.agendar(db, eu, tcc_id, dados, tarefas))
 
 
 @router.put("/defesas/{defesa_id}/banca/{membro_id}", response_model=DefesaOut)
@@ -81,8 +84,22 @@ def trocar_membro(
     defesa_id: int,
     membro_id: int,
     dados: PessoaBanca,
+    tarefas: BackgroundTasks,
     db: Session = Depends(get_db, scope="function"),
     eu: Usuario = Depends(usuario_atual),
 ) -> DefesaOut:
-    """CA-06: troca a pessoa de uma vaga antes da defesa e revalida a composição (RN12)."""
-    return defesas.defesa_out(db, defesas.trocar_membro(db, eu, defesa_id, membro_id, dados))
+    """CA-06: troca a pessoa de uma vaga antes da defesa e revalida a composição (RN12).
+    A pessoa nova recebe o convite (RBN09.05)."""
+    return defesas.defesa_out(db, defesas.trocar_membro(db, eu, defesa_id, membro_id, dados, tarefas))
+
+
+@router.post("/defesas/{defesa_id}/banca/{membro_id}/convite", response_model=MembroOut)
+def reenviar_convite(
+    defesa_id: int,
+    membro_id: int,
+    tarefas: BackgroundTasks,
+    db: Session = Depends(get_db, scope="function"),
+    eu: Usuario = Depends(usuario_atual),
+) -> MembroOut:
+    """RBN09.05 CA-03: novo envio do convite da vaga, sem duplicar a defesa nem a banca."""
+    return defesas.membro_out(db, defesas.reenviar_convite(db, eu, defesa_id, membro_id, tarefas))

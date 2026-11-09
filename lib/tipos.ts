@@ -274,7 +274,9 @@ export type MembroBanca = {
   interno: boolean;
   instituicao: string | null;
   convite_enviado_em: string | null;
+  convite: SituacaoConvite; // RBN09.05: situação do último convite por e-mail
 };
+export type SituacaoConvite = "NAO_ENVIADO" | "PENDENTE" | "ENVIADO" | "FALHA";
 export type LocalDefesa = { id: number; nome: string; descricao: string | null };
 // RBN09.04: outra defesa no mesmo horário com o mesmo local ou alguém desta banca.
 export type Conflito = { tipo: "PARTICIPANTE" | "LOCAL"; nome: string; data: string; inicio: string; fim: string };

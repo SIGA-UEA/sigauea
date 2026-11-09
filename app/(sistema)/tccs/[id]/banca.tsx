@@ -15,6 +15,7 @@ import { DivulgacaoNaAgenda } from "./divulgacao";
 import { api, ErroApi } from "@/lib/api";
 import {
   dataCurta,
+  dataHora,
   NOME_FORMATO,
   NOME_PAPEL_BANCA,
   type Banca,
@@ -26,6 +27,7 @@ import {
   type MembroEntrada,
   type PapelBanca,
   type PessoaBanca,
+  type SituacaoConvite,
 } from "@/lib/tipos";
 
 // Vagas da banca (RN12): orientador obrigatório, 2 avaliadores, coorientador e suplente opcionais.
@@ -215,16 +217,37 @@ function MontarBanca({ banca, aoConfirmar }: { banca: Banca; aoConfirmar: () => 
 function fixa(papel: PapelBanca, id: number, nome: string): Vaga {
   return {
     entrada: { papel, usuario_id: id },
-    membro: { id: null, papel, pessoa: { id, nome }, email: "", interno: true, instituicao: null, convite_enviado_em: null },
+    membro: {
+      id: null,
+      papel,
+      pessoa: { id, nome },
+      email: "",
+      interno: true,
+      instituicao: null,
+      convite_enviado_em: null,
+      convite: "NAO_ENVIADO",
+    },
   };
 }
 
+// RBN09.05: situação do convite por e-mail de cada vaga.
+const SELO_CONVITE: Record<SituacaoConvite, { cor: "verde" | "cinza" | "ambar" | "vermelho"; texto: string }> = {
+  NAO_ENVIADO: { cor: "cinza", texto: "Convite não enviado" },
+  PENDENTE: { cor: "ambar", texto: "Enviando convite…" },
+  ENVIADO: { cor: "verde", texto: "Convite enviado" },
+  FALHA: { cor: "vermelho", texto: "Falha no envio do convite" },
+};
+
 function PessoaDaVaga({ membro }: { membro: MembroBanca }) {
+  const selo = SELO_CONVITE[membro.convite];
   return (
     <p className="flex flex-wrap items-center gap-2 break-words">
       {membro.pessoa.nome}
       {membro.interno ? <Selo cor="cinza">UEA</Selo> : <Selo cor="ambar">Externo · {membro.instituicao}</Selo>}
-      {membro.convite_enviado_em ? <Selo cor="verde">Convite enviado</Selo> : <Selo cor="cinza">Convite não enviado</Selo>}
+      <Selo cor={selo.cor}>
+        {selo.texto}
+        {membro.convite === "ENVIADO" && membro.convite_enviado_em && ` em ${dataHora(membro.convite_enviado_em)}`}
+      </Selo>
     </p>
   );
 }
@@ -545,7 +568,7 @@ function FormularioAgendamento({
         <Modal titulo="Confirmar a defesa?" aoFechar={() => setConfirmando(false)}>
           <p className="text-sm">
             {dataCurta(dados.data)}, das {dados.inicio} às {dados.fim} · {NOME_FORMATO[dados.formato]}. A defesa e a banca
-            serão gravadas; os convites por e-mail serão enviados quando essa etapa estiver disponível.
+            serão gravadas e cada membro da banca recebe o convite por e-mail.
           </p>
           <div className="mt-3">
             {comConflito ? (
@@ -563,7 +586,7 @@ function FormularioAgendamento({
               Revisar
             </Botao>
             <Botao onClick={confirmar} carregando={enviando} disabled={comConflito}>
-              Confirmar
+              Confirmar e enviar convites
             </Botao>
           </div>
         </Modal>
@@ -584,7 +607,38 @@ function DefesaConfirmada({
   aoMudar: (b: Banca) => void;
 }) {
   const [trocando, setTrocando] = useState<MembroBanca | null>(null);
+  const [reenviando, setReenviando] = useState<number | null>(null);
+  const [erroConvite, setErroConvite] = useState("");
   const alteravel = banca.pode_editar && (defesa.situacao === "CONFIRMADA" || defesa.situacao === "REMARCADA");
+
+  // Os convites saem logo depois da resposta da API: enquanto algum estiver "enviando",
+  // relê a banca algumas vezes para mostrar o resultado (enviado ou falha).
+  const pendentes = defesa.membros.some((m) => m.convite === "PENDENTE");
+  const [tentativas, setTentativas] = useState(0);
+  useEffect(() => {
+    if (!pendentes || tentativas >= 5) return;
+    const t = setTimeout(() => {
+      api<Banca>(`/tccs/${banca.tcc_id}/banca`)
+        .then((b) => aoMudar(b))
+        .catch(() => {})
+        .finally(() => setTentativas((n) => n + 1));
+    }, 2000);
+    return () => clearTimeout(t);
+  }, [pendentes, tentativas, banca.tcc_id, aoMudar]);
+
+  async function reenviar(m: MembroBanca) {
+    setReenviando(m.id);
+    setErroConvite("");
+    try {
+      const novo = await api<MembroBanca>(`/defesas/${defesa.id}/banca/${m.id}/convite`, { metodo: "POST" });
+      aoMudar({ ...banca, defesa: { ...defesa, membros: defesa.membros.map((x) => (x.id === novo.id ? novo : x)) } });
+      setTentativas(0);
+    } catch (e) {
+      setErroConvite((e as ErroApi).message);
+    } finally {
+      setReenviando(null);
+    }
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -620,14 +674,24 @@ function DefesaConfirmada({
               <p className="font-medium">{NOME_PAPEL_BANCA[m.papel]}</p>
               <PessoaDaVaga membro={m} />
             </div>
-            {alteravel && (m.papel === "AVALIADOR" || m.papel === "SUPLENTE") && (
-              <Botao variante="contorno" pequeno onClick={() => setTrocando(m)}>
-                Trocar
-              </Botao>
+            {alteravel && (
+              <div className="flex flex-wrap gap-2">
+                {m.convite !== "PENDENTE" && (
+                  <Botao variante="texto" pequeno carregando={reenviando === m.id} onClick={() => reenviar(m)}>
+                    Reenviar convite
+                  </Botao>
+                )}
+                {(m.papel === "AVALIADOR" || m.papel === "SUPLENTE") && (
+                  <Botao variante="contorno" pequeno onClick={() => setTrocando(m)}>
+                    Trocar
+                  </Botao>
+                )}
+              </div>
             )}
           </li>
         ))}
       </ul>
+      {erroConvite && <Aviso tipo="erro">{erroConvite}</Aviso>}
 
       <DivulgacaoNaAgenda
         defesaId={defesa.id}
