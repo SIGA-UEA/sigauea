@@ -274,10 +274,28 @@ export type MembroBanca = {
   interno: boolean;
   instituicao: string | null;
   convite_enviado_em: string | null;
+  convite: SituacaoConvite; // RBN09.05: situação do último convite por e-mail
+  // RBN09.09: no suplente convocado, quando e no lugar de quem; no titular, quem o substitui
+  convocado_em: string | null;
+  substitui_membro_id: number | null;
+  substituido_por_id: number | null;
 };
+export type EventoDefesa = {
+  evento: "AGENDAMENTO" | "REMARCACAO" | "CANCELAMENTO" | "SUPLENTE_CONVOCADO" | "BANCA_ALTERADA" | "PUBLICACAO" | "RETIRADA";
+  motivo: string | null;
+  valores_anteriores: Record<string, string | number | boolean | null> | null;
+  por: Pessoa;
+  registrado_em: string;
+};
+export type SituacaoConvite = "NAO_ENVIADO" | "PENDENTE" | "ENVIADO" | "FALHA";
 export type LocalDefesa = { id: number; nome: string; descricao: string | null };
+// RBN09.04: outra defesa no mesmo horário com o mesmo local ou alguém desta banca.
+export type Conflito = { tipo: "PARTICIPANTE" | "LOCAL"; nome: string; data: string; inicio: string; fim: string };
+export type Conflitos = { conflitos: Conflito[]; aviso: string };
 export type Defesa = {
   id: number;
+  titulo: string; // herdado do TCC (RBN09.03 CA-01)
+  autor: Pessoa;
   situacao: "CONFIRMADA" | "REMARCADA" | "CANCELADA" | "REALIZADA";
   formato: FormatoDefesa;
   data: string;
@@ -289,6 +307,7 @@ export type Defesa = {
   responsavel: Pessoa;
   membros: MembroBanca[];
   criado_em: string;
+  historico: EventoDefesa[]; // mais recente primeiro
 };
 export type Banca = {
   tcc_id: number;
@@ -300,6 +319,8 @@ export type Banca = {
   docentes: Pessoa[];
   locais: LocalDefesa[];
   defesa: Defesa | null;
+  pode_convocar: boolean; // RBN09.09: coordenação ou orientador do TCC
+  cancelada: Defesa | null; // RBN09.08: sem defesa vigente, a última cancelada
 };
 
 export const NOME_PAPEL_BANCA: Record<PapelBanca, string> = {

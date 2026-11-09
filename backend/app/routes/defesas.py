@@ -3,16 +3,34 @@
 Caminhos dos diagramas DS-FL04-A (GET /tccs/{id}/banca) e DS-FL04 (POST /tccs/{id}/defesa).
 Com a banca montada na tela (opção 2), POST /tccs/{id}/banca/validar confere uma vaga sem gravar
 e PUT /defesas/{id}/banca/{membro} troca um membro depois da confirmação (CA-06 do RBN09.01).
+GET /defesas/conflitos confere a agenda antes de confirmar (RBN09.04, DS-FL04 mensagem 11).
+POST /defesas/{id}/banca/{membro}/convite reenvia o convite por e-mail (RBN09.05 CA-03).
+POST /defesas/{id}/remarcacao, /cancelamento e /suplente seguem os diagramas DS-FL05-B, C e E
+(RBN09.07, RBN09.08 e RBN09.09).
 Quem pode compor e agendar é conferido no serviço (RN14).
 """
 
-from fastapi import APIRouter, Depends
+from datetime import date, time
+from typing import Annotated
+
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.deps import usuario_atual
 from app.models import Usuario
-from app.schemas.defesa import BancaOut, DefesaCriar, DefesaOut, MembroOut, PessoaBanca, ValidarMembro
+from app.schemas.defesa import (
+    BancaOut,
+    ConflitosOut,
+    DefesaCancelar,
+    DefesaCriar,
+    DefesaRemarcar,
+    DefesaOut,
+    MembroOut,
+    PessoaBanca,
+    SuplenteConvocar,
+    ValidarMembro,
+)
 from app.services import defesas
 
 router = APIRouter(tags=["defesa e banca"])
@@ -37,15 +55,33 @@ def validar_membro(
     return defesas.validar_membro(db, eu, tcc_id, dados)
 
 
+@router.get("/defesas/conflitos", response_model=ConflitosOut)
+def verificar_conflitos(
+    tcc_id: int,
+    data: date,
+    inicio: time,
+    fim: time,
+    local_id: int | None = None,
+    pessoa: Annotated[list[int], Query()] = [],
+    db: Session = Depends(get_db, scope="function"),
+    eu: Usuario = Depends(usuario_atual),
+) -> ConflitosOut:
+    """RBN09.04 · DS-FL04 mensagem 11: outras defesas no mesmo horário com o mesmo local ou alguém
+    desta banca (pessoa=id, repetido). Sem pessoa, vale a banca da defesa vigente (remarcação)."""
+    return defesas.verificar_conflitos(db, eu, tcc_id, data, inicio, fim, local_id, pessoa)
+
+
 @router.post("/tccs/{tcc_id}/defesa", response_model=DefesaOut, status_code=201)
 def agendar_defesa(
     tcc_id: int,
     dados: DefesaCriar,
+    tarefas: BackgroundTasks,
     db: Session = Depends(get_db, scope="function"),
     eu: Usuario = Depends(usuario_atual),
 ) -> DefesaOut:
-    """DS-FL04 passo 16: grava a defesa CONFIRMADA com a banca. 422 com pendencias (RN12)."""
-    return defesas.defesa_out(db, defesas.agendar(db, eu, tcc_id, dados))
+    """DS-FL04 passo 16: grava a defesa CONFIRMADA com a banca e envia os convites (RBN09.05).
+    422 com pendencias (RN12); 409 com conflitos (RBN09.04)."""
+    return defesas.defesa_out(db, defesas.agendar(db, eu, tcc_id, dados, tarefas))
 
 
 @router.put("/defesas/{defesa_id}/banca/{membro_id}", response_model=DefesaOut)
@@ -53,8 +89,61 @@ def trocar_membro(
     defesa_id: int,
     membro_id: int,
     dados: PessoaBanca,
+    tarefas: BackgroundTasks,
     db: Session = Depends(get_db, scope="function"),
     eu: Usuario = Depends(usuario_atual),
 ) -> DefesaOut:
-    """CA-06: troca a pessoa de uma vaga antes da defesa e revalida a composição (RN12)."""
-    return defesas.defesa_out(db, defesas.trocar_membro(db, eu, defesa_id, membro_id, dados))
+    """CA-06: troca a pessoa de uma vaga antes da defesa e revalida a composição (RN12).
+    A pessoa nova recebe o convite (RBN09.05)."""
+    return defesas.defesa_out(db, defesas.trocar_membro(db, eu, defesa_id, membro_id, dados, tarefas))
+
+
+@router.post("/defesas/{defesa_id}/banca/{membro_id}/convite", response_model=MembroOut)
+def reenviar_convite(
+    defesa_id: int,
+    membro_id: int,
+    tarefas: BackgroundTasks,
+    db: Session = Depends(get_db, scope="function"),
+    eu: Usuario = Depends(usuario_atual),
+) -> MembroOut:
+    """RBN09.05 CA-03: novo envio do convite da vaga, sem duplicar a defesa nem a banca."""
+    return defesas.membro_out(db, defesas.reenviar_convite(db, eu, defesa_id, membro_id, tarefas))
+
+
+@router.post("/defesas/{defesa_id}/remarcacao", response_model=DefesaOut)
+def remarcar_defesa(
+    defesa_id: int,
+    dados: DefesaRemarcar,
+    tarefas: BackgroundTasks,
+    db: Session = Depends(get_db, scope="function"),
+    eu: Usuario = Depends(usuario_atual),
+) -> DefesaOut:
+    """RBN09.07 · DS-FL05-B: novos dados e motivo. 403 (RN14), 409 cancelada/realizada ou com
+    conflito (RBN09.04), 422 sem motivo, 400 com campo inválido."""
+    return defesas.defesa_out(db, defesas.remarcar(db, eu, defesa_id, dados, tarefas))
+
+
+@router.post("/defesas/{defesa_id}/cancelamento", response_model=DefesaOut)
+def cancelar_defesa(
+    defesa_id: int,
+    dados: DefesaCancelar,
+    tarefas: BackgroundTasks,
+    db: Session = Depends(get_db, scope="function"),
+    eu: Usuario = Depends(usuario_atual),
+) -> DefesaOut:
+    """RBN09.08 · DS-FL05-C: cancela com a justificativa. 403 (RN14), 409 já cancelada ou realizada,
+    422 sem justificativa."""
+    return defesas.defesa_out(db, defesas.cancelar(db, eu, defesa_id, dados, tarefas))
+
+
+@router.post("/defesas/{defesa_id}/suplente", response_model=DefesaOut)
+def convocar_suplente(
+    defesa_id: int,
+    dados: SuplenteConvocar,
+    tarefas: BackgroundTasks,
+    db: Session = Depends(get_db, scope="function"),
+    eu: Usuario = Depends(usuario_atual),
+) -> DefesaOut:
+    """RBN09.09 · DS-FL05-E: o suplente avalia no lugar do titular. 403 se não é a coordenação nem o
+    orientador; 409 sem suplente, já convocado, cancelada ou realizada; 422 sem motivo ou data."""
+    return defesas.defesa_out(db, defesas.convocar_suplente(db, eu, defesa_id, dados, tarefas))

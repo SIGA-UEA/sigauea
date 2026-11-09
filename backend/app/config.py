@@ -72,3 +72,7 @@ SMTP_SENHA = os.environ.get("SMTP_SENHA", "")
 EMAIL_REMETENTE = os.environ.get("EMAIL_REMETENTE", "SIGA UEA <nao-responda@uea.edu.br>")
 # Com chave da Brevo, o envio usa a API HTTPS dela em vez de SMTP (o Render grátis bloqueia SMTP).
 BREVO_API_KEY = os.environ.get("BREVO_API_KEY", "")
+
+# Rotinas agendadas (POST /api/v1/tarefas/..., ex.: lembrete da véspera da defesa, RBN09.06).
+# O GitHub Actions manda esta chave no cabeçalho X-Chave-Tarefas. Vazia: as rotinas ficam desligadas.
+TAREFAS_CHAVE = os.environ.get("TAREFAS_CHAVE", "")

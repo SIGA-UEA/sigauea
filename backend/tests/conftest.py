@@ -22,6 +22,7 @@ os.environ["BREVO_API_KEY"] = ""
 # A aplicação só pode ser importada depois das variáveis acima (o formatador não deve subir estes imports).
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
+from sqlalchemy import inspect, text  # noqa: E402
 
 from app.database import Base, SessionLocal, engine  # noqa: E402
 from app.main import app  # noqa: E402
@@ -38,9 +39,18 @@ COORD = "coord@uea.edu.br"
 _HASH = gerar_hash_senha(SENHA)
 
 
+def _soltar_auto_referencias() -> None:
+    """No SQLite, DROP TABLE apaga linha a linha conferindo as chaves estrangeiras: o suplente convocado
+    aponta para o titular na mesma tabela (banca_membro.substitui_membro_id, SCRUM-67) e travaria a limpeza."""
+    with engine.begin() as conexao:
+        if inspect(conexao).has_table("banca_membro"):
+            conexao.execute(text("UPDATE banca_membro SET substitui_membro_id = NULL"))
+
+
 @pytest.fixture(autouse=True)
 def banco():
     """Cada teste começa com o banco limpo e a carga base."""
+    _soltar_auto_referencias()
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
     with SessionLocal() as db:

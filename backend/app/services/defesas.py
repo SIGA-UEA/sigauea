@@ -4,8 +4,20 @@ ControladorAgendamentoDefesa dos diagramas FL04. A banca é montada na tela (DS-
 gravada junto com a defesa na confirmação (DS-FL04 passo 16), porque no modelo de dados todo
 membro da banca pertence a uma defesa (banca_membro.defesa_id obrigatório).
 
-Ficam para as próximas histórias: conflitos de agenda (SCRUM-62), validações completas de data,
-link e duração (SCRUM-61), convites por e-mail (SCRUM-63) e a conta limitada do externo (SCRUM-32).
+Composição da banca (SCRUM-60, RBN09.02): pessoa repetida, composição mínima e papéis, conferidos
+aqui e não só na tela (CA-05). Agendamento (SCRUM-61, RBN09.03): data não passada, término depois do
+início, local e/ou link https:// conforme o formato; a duração de 15/20 min (RN22) é só sugerida.
+Conflitos de agenda (SCRUM-62, RBN09.04): mesmo participante ou mesmo local em horários que se
+sobrepõem, sem contar as defesas canceladas nem a própria defesa (remarcação).
+
+Convites (SCRUM-63, RBN09.05): ao confirmar, cada membro recebe o convite por e-mail; a situação
+do envio aparece na vaga e o convite pode ser reenviado sem refazer a defesa.
+
+Remarcação (SCRUM-65, RBN09.07), cancelamento (SCRUM-66, RBN09.08) e convocação do suplente
+(SCRUM-67, RBN09.09): mudam a mesma defesa, guardam o histórico com o motivo, entram no log de
+auditoria e avisam os participantes por e-mail. Defesa cancelada ou já realizada não muda mais (409).
+
+Fica para outra história a conta limitada do externo, com o link de acesso (SCRUM-32).
 
 Pendência: o DS-FL04 (passo 5) confere a versão do PDF para banca antes de agendar. A tabela
 documento_tcc ainda não existe; a conferência entra junto com o envio do PDF (SCRUM-55, RBN07.01).
@@ -14,10 +26,15 @@ Quem agenda (RN14): professor da disciplina em SI, orientador nos demais cursos 
 como pedem o E4 e o CA-05 da ficha RBN09.01 e a planilha de requisitos (FL04).
 """
 
+from datetime import date, datetime, time, timedelta
+from urllib.parse import urlsplit
+
+from fastapi import BackgroundTasks
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.database import agora
 from app.erros import ErroAPI
 from app.models import (
     ACEITA,
@@ -45,7 +62,13 @@ from app.models import (
     UsuarioPerfil,
 )
 from app.schemas.defesa import (
+    DefesaCancelar,
+    DefesaRemarcar,
+    EventoDefesaOut,
+    SuplenteConvocar,
     BancaOut,
+    ConflitoOut,
+    ConflitosOut,
     DefesaCriar,
     DefesaOut,
     LocalOut,
@@ -55,7 +78,7 @@ from app.schemas.defesa import (
     ValidarMembro,
 )
 from app.schemas.tcc import PessoaOut
-from app.services import auditoria
+from app.services import auditoria, avisos_defesa
 from app.services.tccs import obter_para
 from app.services.turmas import pessoa
 from app.services.usuarios import buscar_por_email
@@ -63,6 +86,11 @@ from app.services.usuarios import buscar_por_email
 APROVADO = "APROVADO"
 CURSO_PROFESSOR_AGENDA = "SI"  # RN14: em SI quem agenda é o professor da disciplina
 ALTERAVEIS = (CONFIRMADA, REMARCADA)  # CA-06: a banca pode mudar antes da defesa acontecer
+FUSO_MANAUS = timedelta(hours=-4)  # America/Manaus não tem horário de verão (mesma regra da SCRUM-68)
+
+
+def agora_manaus() -> datetime:
+    return agora() + FUSO_MANAUS
 
 
 # =================================================================== RN14 · quem compõe e agenda
@@ -81,6 +109,14 @@ def pode_agendar(usuario: Usuario, tcc: Tcc) -> bool:
         return True
     if tcc.aluno.curso.sigla == CURSO_PROFESSOR_AGENDA:
         return PERFIL_PROFESSOR in usuario.perfis and tcc.turma.professor_id == usuario.id
+    orientador = _orientacao_aceita(tcc, PAPEL_ORIENTADOR)
+    return orientador is not None and orientador.professor_id == usuario.id
+
+
+def pode_convocar(usuario: Usuario, tcc: Tcc) -> bool:
+    """RBN09.09: a coordenação ou o orientador do TCC convocam o suplente (CA-05)."""
+    if PERFIL_COORDENADOR in usuario.perfis:
+        return True
     orientador = _orientacao_aceita(tcc, PAPEL_ORIENTADOR)
     return orientador is not None and orientador.professor_id == usuario.id
 
@@ -123,6 +159,12 @@ def _membro_out(db: Session, m: BancaMembro) -> MembroOut:
         interno=m.interno,
         instituicao=None if m.interno else _instituicao(db, m.usuario),
         convite_enviado_em=m.convite_enviado_em,
+        convite=avisos_defesa.situacao_convite(db, m),
+        convocado_em=m.convocado_em,
+        substitui_membro_id=m.substitui_membro_id,
+        substituido_por_id=next(
+            (s.id for s in m.defesa.membros if s.substitui_membro_id == m.id and s.convocado_em is not None), None
+        ),
     )
 
 
@@ -133,6 +175,8 @@ ORDEM_PAPEIS = {p: i for i, p in enumerate((PAPEL_ORIENTADOR, PAPEL_COORIENTADOR
 def defesa_out(db: Session, d: Defesa) -> DefesaOut:
     return DefesaOut(
         id=d.id,
+        titulo=d.tcc.titulo,
+        autor=pessoa(d.tcc.aluno.usuario),
         situacao=d.situacao,
         formato=d.formato,
         data=d.data,
@@ -144,6 +188,11 @@ def defesa_out(db: Session, d: Defesa) -> DefesaOut:
         responsavel=pessoa(d.responsavel.usuario),
         membros=[_membro_out(db, m) for m in sorted(d.membros, key=lambda m: (ORDEM_PAPEIS[m.papel], m.id))],
         criado_em=d.criado_em,
+        historico=[
+            EventoDefesaOut(evento=h.evento, motivo=h.motivo, valores_anteriores=h.valores_anteriores,
+                            por=pessoa(h.usuario), registrado_em=h.registrado_em)
+            for h in sorted(d.historico, key=lambda h: h.id, reverse=True)
+        ],
     )
 
 
@@ -160,6 +209,9 @@ def consultar(db: Session, usuario: Usuario, tcc_id: int) -> BancaOut:
     """GET /tccs/{id}/banca (passos 3 a 5). Quem não vê o TCC recebe 404 (RN07)."""
     tcc = obter_para(db, usuario, tcc_id)
     defesa = defesa_vigente(tcc.id, db)
+    cancelada = None if defesa else db.scalar(  # RBN09.08: a última cancelada, para o aviso na tela
+        select(Defesa).where(Defesa.tcc_id == tcc.id, Defesa.situacao == CANCELADA).order_by(Defesa.id.desc()).limit(1)
+    )
     liberada = tcc.situacao == APROVADO
     orientador = _orientacao_aceita(tcc, PAPEL_ORIENTADOR)
     coorientador = _orientacao_aceita(tcc, PAPEL_COORIENTADOR)
@@ -173,6 +225,8 @@ def consultar(db: Session, usuario: Usuario, tcc_id: int) -> BancaOut:
         docentes=[pessoa(u) for u in _avaliadores_elegiveis(db, tcc)],
         locais=[_local_out(l) for l in db.scalars(select(LocalDefesa).order_by(LocalDefesa.nome))],
         defesa=defesa_out(db, defesa) if defesa else None,
+        pode_convocar=pode_convocar(usuario, tcc),
+        cancelada=defesa_out(db, cancelada) if cancelada else None,
     )
 
 
@@ -293,10 +347,24 @@ def _criar_externo(db: Session, dados, ator: Usuario) -> Usuario:
     return usuario
 
 
-def _conferir_agenda(db: Session, dados: DefesaCriar) -> LocalDefesa | None:
-    """O mínimo para gravar (RN14 e restrições do banco). Data passada, link https e duração
-    mínima (RN22) entram no SCRUM-61; conflitos de agenda, no SCRUM-62."""
+def _tem_endereco(link: str) -> bool:
+    """O link traz um endereço depois do https:// (só "https://" não leva a lugar nenhum)."""
+    try:
+        return bool(urlsplit(link).hostname)
+    except ValueError:
+        return False
+
+
+def _conferir_agenda(db: Session, dados: DefesaCriar | DefesaRemarcar) -> LocalDefesa | None:
+    """RBN09.03 / RN14: data não passada, término depois do início (CA-03) e, conforme o formato,
+    local e/ou link https:// (CA-02; DS-FL04 mensagens 8 e 10). A duração não é limitada (RN22, CA-04)."""
     campos = {}
+    agora_local = agora_manaus()
+    if dados.data < agora_local.date():
+        campos["data"] = "A data da defesa não pode estar no passado."
+    elif dados.data == agora_local.date() and dados.inicio < agora_local.time():
+        # A avaliação libera o envio quando o horário passa (RBN10.02): a defesa nasceria já realizada.
+        campos["inicio"] = "O início da defesa não pode estar no passado."
     if dados.fim <= dados.inicio:
         campos["fim"] = "O término deve ser depois do início."
     precisa_local = dados.formato in ("PRESENCIAL", "HIBRIDO")
@@ -306,19 +374,105 @@ def _conferir_agenda(db: Session, dados: DefesaCriar) -> LocalDefesa | None:
         campos["local_id"] = "Escolha o local da defesa."
     if precisa_link and not dados.link:
         campos["link"] = "Informe o link da sala virtual."
+    elif precisa_link and not dados.link.lower().startswith("https://"):
+        campos["link"] = "O link da sala virtual deve começar com https://."
+    elif precisa_link and not _tem_endereco(dados.link):
+        campos["link"] = "Informe o link completo da sala virtual."
     if campos:
         raise ErroAPI(400, "Confira os campos destacados.", campos=campos)
     return local if precisa_local else None
 
 
-def agendar(db: Session, usuario: Usuario, tcc_id: int, dados: DefesaCriar) -> Defesa:
-    """POST /tccs/{id}/defesa (passos 16 a 21): grava defesa, banca, histórico e auditoria juntos."""
+# =================================================================== RBN09.04 · conflitos de agenda
+# (fica entre a conferência da agenda e o agendamento, que usa as duas)
+
+
+def _horario(h: time) -> str:
+    return h.isoformat("minutes")
+
+
+def conflitos(
+    db: Session,
+    data: date,
+    inicio: time,
+    fim: time,
+    local_id: int | None,
+    pessoas_ids: set[int],
+    ignorar_defesa_id: int | None = None,
+) -> list[ConflitoOut]:
+    """DS-FL04 mensagens 12 e 13: outra defesa no mesmo dia cujo intervalo se sobrepõe a este e que
+    usa o mesmo local ou tem alguém desta banca. Intervalos que só se encostam (14h–15h e 15h–15h20)
+    não conflitam (CA-03); canceladas não contam (CA-04); a própria defesa fica de fora (CA-05)."""
+    consulta = select(Defesa).where(
+        Defesa.data == data,
+        Defesa.situacao != CANCELADA,
+        Defesa.inicio < fim,  # comparação de intervalos completos
+        Defesa.fim > inicio,
+    )
+    if ignorar_defesa_id is not None:
+        consulta = consulta.where(Defesa.id != ignorar_defesa_id)
+    achados: list[ConflitoOut] = []
+    for outra in db.scalars(consulta.order_by(Defesa.inicio, Defesa.id)):
+        if local_id is not None and outra.local_id == local_id:
+            achados.append(ConflitoOut(tipo="LOCAL", nome=outra.local.nome, data=outra.data,
+                                       inicio=outra.inicio, fim=outra.fim))
+        for m in sorted(outra.membros, key=lambda m: m.usuario.nome):
+            if m.usuario_id in pessoas_ids:
+                achados.append(ConflitoOut(tipo="PARTICIPANTE", nome=m.usuario.nome, data=outra.data,
+                                           inicio=outra.inicio, fim=outra.fim))
+    return achados
+
+
+def _mensagem_conflito(achados: list[ConflitoOut]) -> str:
+    c = achados[0]
+    quem = f"O local {c.nome}" if c.tipo == "LOCAL" else c.nome
+    return f"Há conflito neste horário: {quem} já está em outra defesa das {_horario(c.inicio)} às {_horario(c.fim)}."
+
+
+def _exigir_sem_conflito(achados: list[ConflitoOut]) -> None:
+    """E4 do DS-FL04: o conflito surgiu ou não foi visto na tela; a confirmação é recusada (409)."""
+    if achados:
+        raise ErroAPI(409, _mensagem_conflito(achados), conflitos=[c.model_dump(mode="json") for c in achados])
+
+
+def verificar_conflitos(
+    db: Session,
+    usuario: Usuario,
+    tcc_id: int,
+    data: date,
+    inicio: time,
+    fim: time,
+    local_id: int | None,
+    pessoas_ids: list[int],
+) -> ConflitosOut:
+    """GET /defesas/conflitos (DS-FL04 mensagem 11; DS-FL05-B mensagem 4).
+
+    Antes da confirmação a banca só existe na tela, então a tela manda os ids das pessoas já
+    cadastradas (pessoa=1&pessoa=2...); o convidado externo novo ainda não tem agenda. Sem pessoas,
+    vale a banca da defesa vigente do TCC (remarcação). A defesa vigente do próprio TCC nunca
+    conflita com ela mesma (CA-05). Só quem agenda vê a agenda dos outros (RN14)."""
+    tcc = obter_para(db, usuario, tcc_id)
+    _exigir_responsavel(usuario, tcc)
+    if fim <= inicio:
+        raise ErroAPI(400, "Confira os campos destacados.", campos={"fim": "O término deve ser depois do início."})
+    vigente = defesa_vigente(tcc.id, db)
+    ids = set(pessoas_ids) if pessoas_ids else {m.usuario_id for m in vigente.membros} if vigente else set()
+    return ConflitosOut(conflitos=conflitos(
+        db, data, inicio, fim, local_id, ids, ignorar_defesa_id=vigente.id if vigente else None,
+    ))
+
+
+def agendar(db: Session, usuario: Usuario, tcc_id: int, dados: DefesaCriar, tarefas: BackgroundTasks) -> Defesa:
+    """POST /tccs/{id}/defesa (passos 16 a 26): grava defesa, banca, histórico e auditoria juntos e
+    enfileira o convite de cada membro, que sai depois da resposta (RBN09.05)."""
     tcc = obter_para(db, usuario, tcc_id)
     _exigir_responsavel(usuario, tcc)  # passo 17
     if defesa_vigente(tcc.id, db) is not None:
         raise ErroAPI(409, "Este TCC já tem uma defesa agendada.")
     resolvidos = _conferir_banca(db, tcc, dados.banca)
     local = _conferir_agenda(db, dados)
+    pessoas_ids = {p.id for _, p, _, _ in resolvidos if p is not None}  # externo novo não tem agenda
+    _exigir_sem_conflito(conflitos(db, dados.data, dados.inicio, dados.fim, local.id if local else None, pessoas_ids))
 
     defesa = Defesa(  # passo 18: CONFIRMADA e não publicada
         tcc_id=tcc.id,
@@ -350,6 +504,10 @@ def agendar(db: Session, usuario: Usuario, tcc_id: int, dados: DefesaCriar) -> D
             entidade_id=membro.id, campo=m.papel, novo=pessoa_vaga.nome,
         )
     db.add(HistoricoDefesa(defesa_id=defesa.id, evento="AGENDAMENTO", usuario_id=usuario.id))  # passo 19
+    db.flush()
+    db.refresh(defesa)  # carrega a banca recém-gravada para os convites
+    for membro in defesa.membros:  # passos 20 e 22 a 26 (RBN09.05 CA-01)
+        avisos_defesa.convidar(db, tarefas, defesa, membro)
     auditoria.registrar(  # passo 21
         db, ator_id=usuario.id, acao="agendar_defesa", entidade="defesa", entidade_id=defesa.id,
         novo=f"{dados.data.isoformat()} {dados.inicio.isoformat('minutes')}-{dados.fim.isoformat('minutes')} {dados.formato}",
@@ -388,9 +546,12 @@ def _descartar_rascunho(db: Session, ator: Usuario, avaliacao: Avaliacao, nome: 
     db.delete(avaliacao)
 
 
-def trocar_membro(db: Session, usuario: Usuario, defesa_id: int, membro_id: int, dados: PessoaBanca) -> Defesa:
+def trocar_membro(
+    db: Session, usuario: Usuario, defesa_id: int, membro_id: int, dados: PessoaBanca, tarefas: BackgroundTasks
+) -> Defesa:
     """PUT /defesas/{id}/banca/{membro}: troca a pessoa de uma vaga e revalida a banca (RN12).
-    A pessoa anterior fica no histórico da defesa (BANCA_ALTERADA, CA-06) e no log de auditoria.
+    A pessoa anterior fica no histórico da defesa (BANCA_ALTERADA, CA-06) e no log de auditoria;
+    a pessoa nova recebe o convite (RBN09.05).
     Com a avaliação já enviada a troca é recusada (409); um rascunho é descartado (SCRUM-77, D15)."""
     defesa = db.get(Defesa, defesa_id)
     if defesa is None:
@@ -413,7 +574,10 @@ def trocar_membro(db: Session, usuario: Usuario, defesa_id: int, membro_id: int,
     if any(_chave_usuario(o.usuario) == _chave(nova) for o in outros):  # RBN09.02
         raise ErroAPI(422, "Esta pessoa já faz parte da banca.", campo="usuario_id")
     pessoa_vaga, interno, _ = _conferir_vaga(db, tcc, nova)
-    if pessoa_vaga is None:
+    if pessoa_vaga is not None:  # RBN09.04: a pessoa nova não pode estar em outra defesa no horário
+        _exigir_sem_conflito(conflitos(db, defesa.data, defesa.inicio, defesa.fim, None, {pessoa_vaga.id},
+                                       ignorar_defesa_id=defesa.id))
+    else:
         pessoa_vaga = _criar_externo(db, nova.externo, usuario)
 
     anterior = membro.usuario.nome
@@ -439,6 +603,207 @@ def trocar_membro(db: Session, usuario: Usuario, defesa_id: int, membro_id: int,
         db, ator_id=usuario.id, acao="trocar_membro_banca", entidade="banca_membro", entidade_id=membro.id,
         campo=membro.papel, anterior=anterior, novo=pessoa_vaga.nome,
     )
+    db.flush()
+    avisos_defesa.convidar(db, tarefas, defesa, membro)
     _confirmar(db, "A banca mudou enquanto você editava. Abra a página de novo.")
+    db.refresh(defesa)
+    return defesa
+
+
+# =================================================================== RBN09.05 · reenviar o convite
+
+
+def reenviar_convite(db: Session, usuario: Usuario, defesa_id: int, membro_id: int, tarefas: BackgroundTasks) -> BancaMembro:
+    """POST /defesas/{id}/banca/{membro}/convite (CA-03, E5 do DS-FL04): um novo e-mail de convite
+    para a mesma vaga, sem refazer a defesa nem a banca."""
+    defesa = db.get(Defesa, defesa_id)
+    if defesa is None:
+        raise ErroAPI(404, "Defesa não encontrada.")
+    tcc = obter_para(db, usuario, defesa.tcc_id)  # 404 para quem não vê o TCC (RN07)
+    _exigir_responsavel(usuario, tcc)
+    if defesa.situacao not in ALTERAVEIS:
+        raise ErroAPI(409, "Esta defesa não está mais agendada; não há convite a reenviar.")
+    membro = next((m for m in defesa.membros if m.id == membro_id), None)
+    if membro is None:
+        raise ErroAPI(404, "Membro da banca não encontrado.")
+    if any(s.substitui_membro_id == membro.id and s.convocado_em is not None for s in defesa.membros):
+        raise ErroAPI(409, "Este titular foi substituído pelo suplente; não há convite a reenviar.")  # RBN09.09
+    avisos_defesa.convidar(db, tarefas, defesa, membro)
+    auditoria.registrar(
+        db, ator_id=usuario.id, acao="reenviar_convite_banca", entidade="banca_membro", entidade_id=membro.id,
+        novo=membro.usuario.email,
+    )
+    db.commit()
+    db.refresh(membro)
+    return membro
+
+
+def membro_out(db: Session, membro: BancaMembro) -> MembroOut:
+    return _membro_out(db, membro)
+
+
+# =================================================================== FL05 · remarcar, cancelar, suplente
+
+MOTIVO_MINIMO = 5  # DS-FL05-B mensagem 8: motivo com menos de 5 caracteres é recusado
+
+
+def realizada(defesa: Defesa) -> bool:
+    """A mesma regra da avaliação (SCRUM-77, D6/D21): situação REALIZADA ou término já passado em Manaus."""
+    if defesa.situacao == "REALIZADA":
+        return True
+    return defesa.situacao != CANCELADA and datetime.combine(defesa.data, defesa.fim) <= agora_manaus()
+
+
+def _defesa_aberta(db: Session, usuario: Usuario, defesa_id: int, pode) -> tuple[Defesa, Tcc]:
+    """404 se a defesa não existe ou o TCC não é visível (RN07); 403 sem permissão; 409 se a defesa
+    foi cancelada ou já aconteceu (E2 das três fichas)."""
+    defesa = db.get(Defesa, defesa_id)
+    if defesa is None:
+        raise ErroAPI(404, "Defesa não encontrada.")
+    tcc = obter_para(db, usuario, defesa.tcc_id)
+    pode(usuario, tcc)
+    if defesa.situacao == CANCELADA:
+        raise ErroAPI(409, "Esta defesa foi cancelada.")
+    if realizada(defesa):
+        raise ErroAPI(409, "Esta defesa já foi realizada e não pode mais ser alterada.")
+    return defesa, tcc
+
+
+def _exigir_motivo(texto: str, campo: str) -> str:
+    texto = (texto or "").strip()
+    if len(texto) < MOTIVO_MINIMO:
+        raise ErroAPI(422, f"Informe o motivo (pelo menos {MOTIVO_MINIMO} caracteres).", campo=campo)
+    return texto
+
+
+def _retrato(defesa: Defesa) -> dict:
+    """Os dados de agenda como estavam, para o histórico (RN14) e o e-mail de remarcação."""
+    return {
+        "data": defesa.data.isoformat(),
+        "inicio": defesa.inicio.isoformat("minutes"),
+        "fim": defesa.fim.isoformat("minutes"),
+        "formato": defesa.formato,
+        "local_id": defesa.local_id,
+        "local": defesa.local.nome if defesa.local else None,
+        "link": defesa.link,
+        "situacao": defesa.situacao,
+    }
+
+
+def _resumo(r: dict) -> str:
+    return f"{r['data']} {r['inicio']}-{r['fim']} {r['formato']}" + (f" {r['local']}" if r["local"] else "")
+
+
+# ------------------------------------------------------------------- SCRUM-65 · RBN09.07 · remarcar
+
+
+def remarcar(db: Session, usuario: Usuario, defesa_id: int, dados: DefesaRemarcar, tarefas: BackgroundTasks) -> Defesa:
+    """POST /defesas/{id}/remarcacao (DS-FL05-B mensagens 10 a 19). Quem agenda (RN14) ou a coordenação.
+    O mesmo registro de defesa muda, então a agenda publicada mostra os dados novos (RN09, CA-04)."""
+    defesa, _ = _defesa_aberta(db, usuario, defesa_id, _exigir_responsavel)
+    motivo = _exigir_motivo(dados.motivo, "motivo")  # CA-02
+    local = _conferir_agenda(db, dados)  # RBN09.03 de novo
+    link = dados.link if dados.formato != "PRESENCIAL" else None
+    anteriores = _retrato(defesa)
+    if (dados.data, dados.inicio, dados.fim, dados.formato, local.id if local else None, link) == (
+        defesa.data, defesa.inicio, defesa.fim, defesa.formato, defesa.local_id, defesa.link
+    ):
+        raise ErroAPI(422, "Nada mudou: altere a data, o horário, o formato, o local ou o link.")
+    _exigir_sem_conflito(conflitos(  # CA-03 (RBN09.04): a própria defesa não conta
+        db, dados.data, dados.inicio, dados.fim, local.id if local else None,
+        {m.usuario_id for m in defesa.membros}, ignorar_defesa_id=defesa.id,
+    ))
+
+    db.add(HistoricoDefesa(defesa_id=defesa.id, evento="REMARCACAO", motivo=motivo,  # mensagem 11
+                           valores_anteriores=anteriores, usuario_id=usuario.id))
+    defesa.data, defesa.inicio, defesa.fim = dados.data, dados.inicio, dados.fim  # mensagem 12
+    defesa.formato, defesa.local_id, defesa.link = dados.formato, local.id if local else None, link
+    defesa.situacao = REMARCADA
+    defesa.lembrete_enviado_em = None  # RBN09.06 CA-03: o lembrete sai de novo, com os dados novos
+    db.flush()
+    db.refresh(defesa)
+    auditoria.registrar(  # mensagem 13 · CA-06: anterior, novo e motivo
+        db, ator_id=usuario.id, acao="remarcar_defesa", entidade="defesa", entidade_id=defesa.id,
+        campo="agenda", anterior=_resumo(anteriores), novo=_resumo(_retrato(defesa)),
+    )
+    auditoria.registrar(db, ator_id=usuario.id, acao="remarcar_defesa", entidade="defesa",
+                        entidade_id=defesa.id, campo="motivo", novo=motivo)
+    avisos_defesa.avisar_remarcacao(db, tarefas, defesa, anteriores, motivo)  # mensagens 14 a 19
+    db.commit()
+    db.refresh(defesa)
+    return defesa
+
+
+# ------------------------------------------------------------------- SCRUM-66 · RBN09.08 · cancelar
+
+
+def cancelar(db: Session, usuario: Usuario, defesa_id: int, dados: DefesaCancelar, tarefas: BackgroundTasks) -> Defesa:
+    """POST /defesas/{id}/cancelamento (DS-FL05-C). O TCC fica como estava (CA-03); a agenda deixa de
+    mostrar a apresentação (CA-05) e a avaliação recusa defesa cancelada (CA-04, SCRUM-77)."""
+    defesa, _ = _defesa_aberta(db, usuario, defesa_id, _exigir_responsavel)
+    justificativa = _exigir_motivo(dados.justificativa, "justificativa")  # CA-02 · E3
+    anterior = defesa.situacao
+    defesa.situacao = CANCELADA  # mensagem 4
+    db.add(HistoricoDefesa(defesa_id=defesa.id, evento="CANCELAMENTO", motivo=justificativa,  # mensagem 5
+                           valores_anteriores=_retrato(defesa) | {"situacao": anterior, "publicada": defesa.publicada},
+                           usuario_id=usuario.id))
+    auditoria.registrar(  # mensagem 6 · CA-06
+        db, ator_id=usuario.id, acao="cancelar_defesa", entidade="defesa", entidade_id=defesa.id,
+        campo="situacao", anterior=anterior, novo=f"{CANCELADA}: {justificativa}",
+    )
+    avisos_defesa.avisar_cancelamento(db, tarefas, defesa, justificativa)  # mensagens 7 a 12
+    db.commit()
+    db.refresh(defesa)
+    return defesa
+
+
+# ------------------------------------------------------------------- SCRUM-67 · RBN09.09 · suplente
+
+
+def _exigir_convocador(usuario: Usuario, tcc: Tcc) -> None:
+    if not pode_convocar(usuario, tcc):  # E1 · CA-05
+        raise ErroAPI(403, "Só a coordenação ou o orientador do TCC convocam o suplente.")
+
+
+def convocar_suplente(
+    db: Session, usuario: Usuario, defesa_id: int, dados: SuplenteConvocar, tarefas: BackgroundTasks
+) -> Defesa:
+    """POST /defesas/{id}/suplente (DS-FL05-E). O suplente passa a avaliar no lugar do titular (RN20):
+    a avaliação (SCRUM-77) lê convocado_em e substitui_membro_id para saber quem avalia."""
+    defesa, _ = _defesa_aberta(db, usuario, defesa_id, _exigir_convocador)
+    suplente = next((m for m in defesa.membros if m.papel == PAPEL_SUPLENTE), None)
+    if suplente is None:  # E3 · CA-04
+        raise ErroAPI(409, "Esta banca não tem suplente indicado.")
+    if suplente.convocado_em is not None:
+        raise ErroAPI(409, "O suplente já foi convocado nesta defesa.")
+    titular = next((m for m in defesa.membros if m.id == dados.membro_titular_id), None)
+    if titular is None or titular.papel != PAPEL_AVALIADOR:
+        raise ErroAPI(422, "Escolha um dos avaliadores titulares da banca.", campo="membro_titular_id")
+    motivo = _exigir_motivo(dados.motivo, "motivo")  # E4 · CA-02
+    if dados.data is None:  # CA-02: a data é obrigatória
+        raise ErroAPI(422, "Informe a data da convocação.", campo="data")
+    avaliacao = db.scalar(select(Avaliacao).where(Avaliacao.membro_id == titular.id))
+    if avaliacao is not None and avaliacao.status == ENVIADA:  # RBN10.02: a avaliação enviada vale
+        raise ErroAPI(409, "Este avaliador já enviou a avaliação; ele não pode mais ser substituído.")
+    if avaliacao is not None:  # o rascunho do titular não vale para o suplente (como na troca, D15)
+        _descartar_rascunho(db, usuario, avaliacao, titular.usuario.nome)
+
+    suplente.convocado_em = agora()  # mensagem 5
+    suplente.substitui_membro_id = titular.id
+    suplente.motivo_convocacao = motivo
+    db.add(HistoricoDefesa(  # mensagem 6
+        defesa_id=defesa.id, evento="SUPLENTE_CONVOCADO", motivo=motivo, usuario_id=usuario.id,
+        valores_anteriores={"titular_id": titular.id, "titular": titular.usuario.nome,
+                            "suplente_id": suplente.id, "suplente": suplente.usuario.nome,
+                            "data": dados.data.isoformat()},
+    ))
+    auditoria.registrar(  # mensagem 7
+        db, ator_id=usuario.id, acao="convocar_suplente", entidade="banca_membro", entidade_id=suplente.id,
+        campo="substitui", anterior=titular.usuario.nome,
+        novo=f"{suplente.usuario.nome} em {dados.data.isoformat()}: {motivo}",
+    )
+    db.flush()
+    avisos_defesa.avisar_convocacao(db, tarefas, defesa, suplente, titular, motivo)  # mensagens 8 a 12
+    db.commit()
     db.refresh(defesa)
     return defesa
