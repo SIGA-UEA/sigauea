@@ -467,3 +467,28 @@ export type ConsultaAvaliacao = {
 export type CriterioLancado = { criterio_id: number; conceito: Conceito; nota: string };
 // 422: critérios com problema (faltando ou fora da faixa), destacados na tela
 export type CriterioComProblema = { id: number; nome: string; motivo: string };
+
+// ---------------------------------------------------------------- TEL12 · consolidação da nota final (RBN09.11)
+
+export type PapelAvaliador = "ORIENTADOR" | "AVALIADOR" | "SUPLENTE";
+
+export type NotaDoMembro = {
+  membro_id: number;
+  papel: PapelAvaliador;
+  pessoa: { id: number; nome: string };
+  nota: number;
+};
+
+export type RegraExcecao = {
+  aplicada: boolean;
+  porque: string; // explicação pronta da API (RN21)
+  modalidade: "ARTIGO" | "MONOGRAFIA";
+  situacao_editorial: SituacaoEditorial | null;
+  qualis: string | null;
+};
+
+export type ConsultaResultado = {
+  defesa_id: number;
+  pendentes: { membro_id: number; papel: PapelAvaliador; pessoa: { id: number; nome: string } }[];
+  consolidacao: { notas: NotaDoMembro[]; media: number; regra: RegraExcecao; nota_final: number } | null;
+};

@@ -3,7 +3,8 @@
 // TEL06 · Acompanhamento do TCC: dados do cadastro, vínculos de orientação, resultado da análise
 // da coordenação (DS-FL02-B), banca e defesa (TEL10/TEL11, ver banca.tsx), presença e ocorrências
 // (TEL19, ver presenca.tsx) e histórico de situações (RNF03). Quem pode ver é decidido pela API (404 para
-// os demais, RN07). Para quem está na banca, a seção "Minha avaliação" (TEL12, ver avaliacao.tsx).
+// os demais, RN07). Para quem está na banca, a seção "Minha avaliação" (TEL12, ver avaliacao.tsx);
+// para o orientador, "Consolidar resultado" (TEL12, ver resultado.tsx).
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -16,7 +17,8 @@ import { useSessao } from "@/lib/sessao";
 import { SecaoAvaliacao } from "./avaliacao";
 import { SecaoBanca } from "./banca";
 import { SecaoPresenca } from "./presenca";
-import { dataHora, NOME_SITUACAO_EDITORIAL, NOME_SITUACAO_TCC, type SituacaoTcc, type Tcc } from "@/lib/tipos";
+import { SecaoResultado } from "./resultado";
+import { dataHora, NOME_SITUACAO_EDITORIAL, NOME_SITUACAO_TCC, type Banca, type SituacaoTcc, type Tcc } from "@/lib/tipos";
 
 export default function PaginaTcc() {
   const { id } = useParams<{ id: string }>();
@@ -24,9 +26,16 @@ export default function PaginaTcc() {
   const router = useRouter();
   const [tcc, setTcc] = useState<Tcc | null>(null);
   const [erro, setErro] = useState("");
+  // A defesa vigente é buscada uma vez e repassada às seções que dependem dela (presença, avaliação e resultado).
+  const [defesaId, setDefesaId] = useState<number | null>(null);
+  // Muda a cada avaliação enviada: a consolidação recarrega sem precisar abrir a página de novo.
+  const [envios, setEnvios] = useState(0);
 
   useEffect(() => {
     api<Tcc>(`/tccs/${id}`).then(setTcc).catch((e: ErroApi) => setErro(e.message));
+    api<Banca>(`/tccs/${id}/banca`)
+      .then((b) => setDefesaId(b.defesa?.id ?? null))
+      .catch(() => setDefesaId(null)); // a seção Banca e defesa mostra o erro
   }, [id]);
 
   if (erro) return <Aviso tipo="erro">{erro}</Aviso>;
@@ -151,10 +160,14 @@ export default function PaginaTcc() {
       )}
 
       <SecaoBanca tccId={id} />
-      <SecaoPresenca tccId={id} />
+      {defesaId !== null && (
+        <>
+          <SecaoPresenca defesaId={defesaId} />
+          <SecaoAvaliacao defesaId={defesaId} aoEnviar={() => setEnvios((n) => n + 1)} />
+          <SecaoResultado defesaId={defesaId} envios={envios} />
+        </>
+      )}
 
-      <SecaoAvaliacao tccId={id} />
-      
       <section className="rounded-xl border border-borda bg-superficie p-5">
         <h2 className="mb-3 font-semibold">Histórico</h2>
         {tcc.historico.length === 0 ? (
