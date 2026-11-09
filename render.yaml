@@ -23,6 +23,8 @@ services:
         sync: false
       - key: FRONTEND_URL          # endereço do site na Vercel, para os links dos e-mails
         sync: false
+      - key: TAREFAS_CHAVE         # lembrete da defesa: a mesma do segredo SIGA_TAREFAS_CHAVE do GitHub
+        sync: false
       - key: SEED_COORDENADOR_NOME
         sync: false
       - key: SEED_COORDENADOR_EMAIL

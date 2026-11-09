@@ -4,6 +4,9 @@ O cadastro grava uma linha em notificacao_email com status "pendente" e
 responde na hora. O envio acontece depois da resposta (BackgroundTasks do
 FastAPI). Se falhar, o cadastro continua valendo: a linha fica com status
 "falha" e a coordenação pode reenviar.
+
+Rotinas sem requisição (o lembrete diário da defesa, RBN09.06) usam registrar() e chamam
+processar() elas mesmas, depois de gravar.
 """
 
 import json
@@ -17,7 +20,9 @@ from sqlalchemy.orm import Session
 
 from app import config
 from app.database import SessionLocal, agora
-from app.models import NotificacaoEmail, Usuario
+from app.models import BancaMembro, NotificacaoEmail, Usuario
+
+TIPO_CONVITE_BANCA = "CONVITE_BANCA"  # RBN09.05: o envio confirmado marca o convite do membro
 
 
 def enfileirar(
@@ -31,6 +36,14 @@ def enfileirar(
     entidade_id: int | None = None,
 ) -> None:
     """Registra a pendência e agenda o envio para depois da resposta."""
+    notificacao = registrar(db, usuario, tipo, entidade, entidade_id)
+    tarefas.add_task(processar, notificacao.id, assunto, corpo)
+
+
+def registrar(
+    db: Session, usuario: Usuario, tipo: str, entidade: str | None = None, entidade_id: int | None = None
+) -> NotificacaoEmail:
+    """Grava a linha "pendente" na transação de quem chama; o envio é com processar()."""
     notificacao = NotificacaoEmail(
         usuario_id=usuario.id,
         tipo=tipo,
@@ -40,7 +53,7 @@ def enfileirar(
     )
     db.add(notificacao)
     db.flush()  # gera o id sem encerrar a transação do cadastro
-    tarefas.add_task(processar, notificacao.id, assunto, corpo)
+    return notificacao
 
 
 def processar(notificacao_id: int, assunto: str, corpo: str) -> None:
@@ -55,12 +68,23 @@ def processar(notificacao_id: int, assunto: str, corpo: str) -> None:
             notificacao.status = "enviado"
             notificacao.enviado_em = agora()
             notificacao.erro = None
+            _marcar_convite(db, notificacao)
         except Exception as erro:  # qualquer falha de envio vira pendência
             notificacao.status = "falha"
             notificacao.erro = str(erro)[:500]
             # Aparece nos logs do servidor (Render), não só no banco.
             print(f"Falha no e-mail para {notificacao.destinatario}: {erro!r}", flush=True)
         db.commit()
+
+
+def _marcar_convite(db: Session, notificacao: NotificacaoEmail) -> None:
+    """RBN09.05 CA-01: o convite conta como enviado quando o e-mail sai. Se a vaga mudou de pessoa
+    antes do envio (troca de membro), o convite antigo não marca a pessoa nova."""
+    if notificacao.tipo != TIPO_CONVITE_BANCA or notificacao.entidade != "banca_membro":
+        return
+    membro = db.get(BancaMembro, notificacao.entidade_id)
+    if membro is not None and membro.usuario_id == notificacao.usuario_id:
+        membro.convite_enviado_em = notificacao.enviado_em
 
 
 def entregar(destinatario: str, assunto: str, corpo: str) -> None:

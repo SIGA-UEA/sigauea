@@ -8,6 +8,8 @@ O cadastro precisa estar APROVADO (decisão B). A aprovação pela coordenação
 não existe, então os testes colocam o TCC nessa situação direto no banco.
 """
 
+from datetime import date, timedelta
+
 import pytest
 from sqlalchemy import select
 
@@ -24,7 +26,9 @@ from app.models import (
 from tests.conftest import DOCENTE, ativar
 from tests.test_tcc import PROFESSOR, _aceitar, _rascunho, cenario  # noqa: F401  (cenario é fixture)
 
-AGENDA = {"formato": "REMOTO", "data": "2026-12-01", "inicio": "14:00", "fim": "14:20",
+# Data relativa: a defesa não pode ser marcada no passado (RBN09.03), então não dá para fixar o dia.
+DIA = (date.today() + timedelta(days=30)).isoformat()
+AGENDA = {"formato": "REMOTO", "data": DIA, "inicio": "14:00", "fim": "14:20",
           "link": "https://meet.exemplo.com/defesa"}
 
 
@@ -269,10 +273,12 @@ def test_tcc_com_defesa_agendada_nao_agenda_outra(banca):
 
 def test_dois_pedidos_simultaneos_gravam_uma_defesa_so(banca, db, monkeypatch):
     """Os dois pedidos passam juntos pela checagem do serviço; o índice uq_defesa_tcc_vigente barra
-    o segundo no banco. A simultaneidade é simulada fazendo a checagem não ver a primeira defesa."""
+    o segundo no banco. A simultaneidade é simulada fazendo as checagens não verem a primeira defesa
+    (nem como defesa vigente, nem como conflito de agenda da mesma banca, RBN09.04)."""
     from app.services import defesas
 
     monkeypatch.setattr(defesas, "defesa_vigente", lambda tcc_id, db: None)
+    monkeypatch.setattr(defesas, "conflitos", lambda *args, **kwargs: [])
     assert _agendar(banca).status_code == 201
     segundo = _agendar(banca)
     assert segundo.status_code == 409 and segundo.json()["detail"] == "Este TCC já tem uma defesa agendada."
@@ -347,4 +353,4 @@ def test_ct_09_01_08_log_completo_do_agendamento(banca, db):
     assert acoes == ["agendar_defesa", "incluir_membro_banca", "incluir_membro_banca", "incluir_membro_banca"]
     assert all(l.usuario_id == banca["ids"]["olga"] and l.criado_em is not None for l in logs)
     agendamento = next(l for l in logs if l.acao == "agendar_defesa")
-    assert agendamento.entidade_id == defesa["id"] and "2026-12-01 14:00-14:20 REMOTO" == agendamento.valor_novo
+    assert agendamento.entidade_id == defesa["id"] and f"{DIA} 14:00-14:20 REMOTO" == agendamento.valor_novo

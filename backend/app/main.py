@@ -14,6 +14,7 @@ from app.routes import (
     ocorrencias,
     perfil,
     resultado,
+    tarefas,
     tccs,
     turmas,
     usuarios,
@@ -47,4 +48,5 @@ v1.include_router(instrumento.router)  # instrumento de avaliação (RBN10.01)
 v1.include_router(ocorrencias.router)  # ocorrências, ouvintes e declaração de horas (RBN09.10)
 v1.include_router(resultado.router)  # consolidação da nota final (RBN09.11)
 v1.include_router(avaliacao.router)  # avaliação da defesa (RBN10.02 a RBN10.05)
+v1.include_router(tarefas.router)  # rotinas agendadas: lembrete da defesa (RBN09.06)
 app.include_router(v1)
