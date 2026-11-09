@@ -1,12 +1,12 @@
 """SCRUM-68 (RBN09.10): ocorrências da defesa, lista de ouvintes e declaração de horas.
 
 Cada teste cita o caso de teste da ficha (CT-09.10-xx), o critério de aceite ou o fluxo de exceção
-dos diagramas DS-FL09, DS-FL09-A e DS-FL09-B. A defesa do cenário é em 01/12/2026, das 14:00 às 14:20;
+dos diagramas DS-FL09, DS-FL09-A e DS-FL09-B. A defesa do cenário é no dia DIA da agenda padrão, das 14:00 às 14:20;
 o relógio de Manaus é fixado para cada situação (antes, durante e depois da defesa).
 """
 
 import hashlib
-from datetime import datetime
+from datetime import date, datetime, time
 from pathlib import Path
 
 import pytest
@@ -15,12 +15,13 @@ from sqlalchemy import select
 from app import config
 from app.models import Defesa, DocumentoOficial, LogAuditoria, OcorrenciaDefesa, OuvinteDefesa
 from app.services import ocorrencias
-from tests.test_defesas_banca import _agendar, banca  # noqa: F401  (banca é fixture)
+from tests.test_defesas_banca import DIA, _agendar, banca  # noqa: F401  (banca é fixture)
 from tests.test_tcc import cenario  # noqa: F401  (fixture usada por banca)
 
-ANTES = datetime(2026, 12, 1, 13, 0)
-DURANTE = datetime(2026, 12, 1, 14, 10)
-DEPOIS = datetime(2026, 12, 1, 15, 0)
+_DIA = date.fromisoformat(DIA)
+ANTES = datetime.combine(_DIA, time(13, 0))
+DURANTE = datetime.combine(_DIA, time(14, 10))
+DEPOIS = datetime.combine(_DIA, time(15, 0))
 
 
 @pytest.fixture
