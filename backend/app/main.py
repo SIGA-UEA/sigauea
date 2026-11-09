@@ -1,7 +1,22 @@
 from fastapi import APIRouter, FastAPI
 
 from app.erros import registrar_tratadores
-from app.routes import agenda, areas, auth, avaliacao, cadastros, catalogo, defesas, health, instrumento, perfil, tccs, turmas, usuarios
+from app.routes import (
+    agenda,
+    areas,
+    auth,
+    avaliacao,
+    cadastros,
+    catalogo,
+    defesas,
+    health,
+    instrumento,
+    perfil,
+    tarefas,
+    tccs,
+    turmas,
+    usuarios,
+)
 
 app = FastAPI(
     title="SIGA UEA API",
@@ -29,4 +44,5 @@ v1.include_router(defesas.router)  # banca e defesa (RAN09)
 v1.include_router(agenda.router)  # agenda de apresentações (RAN14)
 v1.include_router(instrumento.router)  # instrumento de avaliação (RBN10.01)
 v1.include_router(avaliacao.router)  # avaliação da defesa (RBN10.02 a RBN10.05)
+v1.include_router(tarefas.router)  # rotinas agendadas: lembrete da defesa (RBN09.06)
 app.include_router(v1)
