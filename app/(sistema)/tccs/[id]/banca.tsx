@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Aviso, Selo } from "@/components/aviso";
 import { Botao } from "@/components/botao";
-import { Campo, Entrada, Selecao } from "@/components/campo";
+import { Campo, Entrada, ESTILO_ENTRADA, Selecao } from "@/components/campo";
 import { Modal } from "@/components/modal";
 import { DivulgacaoNaAgenda } from "./divulgacao";
 import { api, ErroApi } from "@/lib/api";
@@ -22,6 +22,7 @@ import {
   type Conflito,
   type Conflitos,
   type Defesa,
+  type EventoDefesa,
   type FormatoDefesa,
   type MembroBanca,
   type MembroEntrada,
@@ -64,13 +65,29 @@ export function SecaoBanca({ tccId }: { tccId: string }) {
       ) : !banca.liberada ? (
         <Aviso tipo="info">Etapa ainda não liberada: o cadastro do TCC precisa estar aprovado.</Aviso>
       ) : banca.defesa ? (
-        <DefesaConfirmada banca={banca} defesa={banca.defesa} aoMudar={setBanca} />
-      ) : banca.pode_editar ? (
-        <MontarBanca banca={banca} aoConfirmar={carregar} />
+        <DefesaConfirmada banca={banca} defesa={banca.defesa} aoMudar={setBanca} aoRecarregar={carregar} />
       ) : (
-        <p className="text-sm text-suave">A banca ainda não foi definida.</p>
+        <div className="flex flex-col gap-4">
+          {banca.cancelada && <AvisoCancelada defesa={banca.cancelada} podeAgendar={banca.pode_editar} />}
+          {banca.pode_editar ? (
+            <MontarBanca banca={banca} aoConfirmar={carregar} />
+          ) : (
+            !banca.cancelada && <p className="text-sm text-suave">A banca ainda não foi definida.</p>
+          )}
+        </div>
       )}
     </section>
+  );
+}
+
+// RBN09.08 · passo 5: "Defesa cancelada. Você pode agendar uma nova."
+function AvisoCancelada({ defesa, podeAgendar }: { defesa: Defesa; podeAgendar: boolean }) {
+  const evento = defesa.historico.find((h) => h.evento === "CANCELAMENTO");
+  return (
+    <Aviso tipo="alerta">
+      Defesa de {dataCurta(defesa.data)} cancelada{evento ? ` em ${dataHora(evento.registrado_em)}` : ""}.
+      {evento?.motivo && <> Motivo: {evento.motivo.replace(/[.!?]+$/, "")}.</>} {podeAgendar && "Você pode agendar uma nova."}
+    </Aviso>
   );
 }
 
@@ -226,6 +243,9 @@ function fixa(papel: PapelBanca, id: number, nome: string): Vaga {
       instituicao: null,
       convite_enviado_em: null,
       convite: "NAO_ENVIADO",
+      convocado_em: null,
+      substitui_membro_id: null,
+      substituido_por_id: null,
     },
   };
 }
@@ -402,18 +422,34 @@ function ListaConflitos({ conflitos }: { conflitos: Conflito[] }) {
   );
 }
 
+// Com `remarcar`, o mesmo formulário faz a remarcação (RBN09.07 · DS-FL05-B): vem com os dados atuais e
+// pede o motivo; a verificação de conflitos usa a banca gravada e ignora a própria defesa.
 function FormularioAgendamento({
   banca,
   membros,
+  remarcar,
   aoCancelar,
   aoConfirmar,
 }: {
   banca: Banca;
   membros: MembroEntrada[];
+  remarcar?: Defesa;
   aoCancelar: () => void;
   aoConfirmar: () => void;
 }) {
-  const [dados, setDados] = useState({ data: "", inicio: "", fim: "", formato: "REMOTO" as FormatoDefesa, local_id: "", link: "" });
+  const [dados, setDados] = useState(() =>
+    remarcar
+      ? {
+          data: remarcar.data,
+          inicio: hora(remarcar.inicio),
+          fim: hora(remarcar.fim),
+          formato: remarcar.formato,
+          local_id: remarcar.local ? String(remarcar.local.id) : "",
+          link: remarcar.link ?? "",
+        }
+      : { data: "", inicio: "", fim: "", formato: "REMOTO" as FormatoDefesa, local_id: "", link: "" },
+  );
+  const [motivo, setMotivo] = useState("");
   const [erros, setErros] = useState<Record<string, string>>({});
   const [pendencias, setPendencias] = useState<string[]>([]);
   const [geral, setGeral] = useState("");
@@ -440,6 +476,7 @@ function FormularioAgendamento({
     else if (precisaLink && !dados.link.trim().toLowerCase().startsWith("https://"))
       faltas.link = "O link da sala virtual deve começar com https://.";
     else if (precisaLink && !temEndereco(dados.link.trim())) faltas.link = "Informe o link completo da sala virtual.";
+    if (remarcar && motivo.trim().length < 5) faltas.motivo = "Informe o motivo da remarcação (pelo menos 5 caracteres).";
     setErros(faltas);
     setGeral("");
     if (Object.keys(faltas).length) return;
@@ -447,7 +484,8 @@ function FormularioAgendamento({
     // RBN09.04: o convidado externo novo ainda não tem agenda; vão só as pessoas já cadastradas.
     const consulta = new URLSearchParams({ tcc_id: String(banca.tcc_id), data: dados.data, inicio: dados.inicio, fim: dados.fim });
     if (precisaLocal) consulta.set("local_id", dados.local_id);
-    membros.forEach((m) => m.usuario_id && consulta.append("pessoa", String(m.usuario_id)));
+    // Na remarcação, sem pessoas: a API usa a banca gravada e ignora a própria defesa (RBN09.04 CA-05).
+    if (!remarcar) membros.forEach((m) => m.usuario_id && consulta.append("pessoa", String(m.usuario_id)));
     setVerificando(true);
     try {
       setVerificacao(await api<Conflitos>(`/defesas/conflitos?${consulta}`));
@@ -466,19 +504,20 @@ function FormularioAgendamento({
     setEnviando(true);
     setGeral("");
     setPendencias([]);
+    const agenda = {
+      formato: dados.formato,
+      data: dados.data,
+      inicio: dados.inicio,
+      fim: dados.fim,
+      local_id: precisaLocal ? Number(dados.local_id) : null,
+      link: precisaLink ? dados.link.trim() : null,
+    };
     try {
-      await api<Defesa>(`/tccs/${banca.tcc_id}/defesa`, {
-        metodo: "POST",
-        corpo: {
-          banca: membros,
-          formato: dados.formato,
-          data: dados.data,
-          inicio: dados.inicio,
-          fim: dados.fim,
-          local_id: precisaLocal ? Number(dados.local_id) : null,
-          link: precisaLink ? dados.link.trim() : null,
-        },
-      });
+      if (remarcar) {
+        await api<Defesa>(`/defesas/${remarcar.id}/remarcacao`, { metodo: "POST", corpo: { ...agenda, motivo: motivo.trim() } });
+      } else {
+        await api<Defesa>(`/tccs/${banca.tcc_id}/defesa`, { metodo: "POST", corpo: { ...agenda, banca: membros } });
+      }
       aoConfirmar();
     } catch (e) {
       const erro = e as ErroApi & { pendencias?: string[]; conflitos?: Conflito[] };
@@ -489,6 +528,7 @@ function FormularioAgendamento({
       }
       setConfirmando(false);
       if (erro.campos) setErros(erro.campos);
+      else if (erro.campo) setErros({ [erro.campo]: erro.message });
       if (erro.pendencias) setPendencias(erro.pendencias);
       setGeral(erro.message);
     } finally {
@@ -501,7 +541,7 @@ function FormularioAgendamento({
 
   return (
     <form onSubmit={conferir} className="flex flex-col gap-3 rounded-lg border border-borda p-4" noValidate>
-      <h3 className="font-semibold">Quando e onde será a defesa?</h3>
+      <h3 className="font-semibold">{remarcar ? "Remarcar defesa" : "Quando e onde será a defesa?"}</h3>
       <p className="text-[13px] text-suave">
         Duração prevista: {banca.etapa === "TCC1" ? "15" : "20"} minutos no total (pode ser maior, RN22).
       </p>
@@ -542,6 +582,18 @@ function FormularioAgendamento({
           <Entrada type="url" placeholder="https://" value={dados.link} onChange={mudar("link")} erro={erros.link} />
         </Campo>
       )}
+      {remarcar && (
+        <Campo rotulo="Motivo da remarcação" obrigatorio erro={erros.motivo}>
+          <textarea
+            value={motivo}
+            onChange={(e) => setMotivo(e.target.value)}
+            rows={3}
+            maxLength={1000}
+            aria-invalid={erros.motivo ? true : undefined}
+            className={`${ESTILO_ENTRADA} h-auto py-2 ${erros.motivo ? "border-vermelho" : "border-borda"}`}
+          />
+        </Campo>
+      )}
 
       {geral && (
         <Aviso tipo="erro">
@@ -557,18 +609,21 @@ function FormularioAgendamento({
       )}
       <div className="flex flex-wrap gap-2">
         <Botao type="submit" carregando={verificando}>
-          Confirmar defesa
+          {remarcar ? "Confirmar remarcação" : "Confirmar defesa"}
         </Botao>
         <Botao variante="texto" onClick={aoCancelar}>
-          Voltar para a banca
+          {remarcar ? "Desistir" : "Voltar para a banca"}
         </Botao>
       </div>
 
       {confirmando && (
-        <Modal titulo="Confirmar a defesa?" aoFechar={() => setConfirmando(false)}>
+        <Modal titulo={remarcar ? "Confirmar remarcação?" : "Confirmar a defesa?"} aoFechar={() => setConfirmando(false)}>
           <p className="text-sm">
-            {dataCurta(dados.data)}, das {dados.inicio} às {dados.fim} · {NOME_FORMATO[dados.formato]}. A defesa e a banca
-            serão gravadas e cada membro da banca recebe o convite por e-mail.
+            {dataCurta(dados.data)}, das {dados.inicio} às {dados.fim} · {NOME_FORMATO[dados.formato]}.{" "}
+            {remarcar ? "Os novos dados " : "A defesa e a banca "}
+            {remarcar
+              ? "passam a valer para esta defesa. O horário anterior e o motivo ficam no histórico, e a banca e o aluno são avisados por e-mail."
+              : "serão gravadas e cada membro da banca recebe o convite por e-mail."}
           </p>
           <div className="mt-3">
             {comConflito ? (
@@ -586,7 +641,7 @@ function FormularioAgendamento({
               Revisar
             </Botao>
             <Botao onClick={confirmar} carregando={enviando} disabled={comConflito}>
-              Confirmar e enviar convites
+              {remarcar ? "Confirmar remarcação" : "Confirmar e enviar convites"}
             </Botao>
           </div>
         </Modal>
@@ -597,19 +652,33 @@ function FormularioAgendamento({
 
 // ---------------------------------------------------------------- defesa confirmada e troca de membro (CA-06)
 
+// A defesa já aconteceu? Mesma regra da API (término passado); a API confere de novo (409).
+function jaRealizada(defesa: Defesa) {
+  return defesa.situacao === "REALIZADA" || new Date(`${defesa.data}T${defesa.fim}`) <= new Date();
+}
+
 function DefesaConfirmada({
   banca,
   defesa,
   aoMudar,
+  aoRecarregar,
 }: {
   banca: Banca;
   defesa: Defesa;
   aoMudar: (b: Banca) => void;
+  aoRecarregar: () => void;
 }) {
   const [trocando, setTrocando] = useState<MembroBanca | null>(null);
   const [reenviando, setReenviando] = useState<number | null>(null);
   const [erroConvite, setErroConvite] = useState("");
-  const alteravel = banca.pode_editar && (defesa.situacao === "CONFIRMADA" || defesa.situacao === "REMARCADA");
+  const [remarcando, setRemarcando] = useState(false);
+  const [cancelando, setCancelando] = useState(false);
+  const [convocando, setConvocando] = useState(false);
+  const aberta = (defesa.situacao === "CONFIRMADA" || defesa.situacao === "REMARCADA") && !jaRealizada(defesa);
+  const alteravel = banca.pode_editar && aberta;
+  const suplente = defesa.membros.find((m) => m.papel === "SUPLENTE");
+  const podeConvocar = banca.pode_convocar && aberta && suplente !== undefined && !suplente.convocado_em;
+  const nomeDe = (id: number | null) => defesa.membros.find((m) => m.id === id)?.pessoa.nome ?? "";
 
   // Os convites saem logo depois da resposta da API: enquanto algum estiver "enviando",
   // relê a banca algumas vezes para mostrar o resultado (enviado ou falha).
@@ -643,7 +712,7 @@ function DefesaConfirmada({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-2">
-        <Selo cor="verde">Defesa confirmada</Selo>
+        <Selo cor="verde">{defesa.situacao === "REMARCADA" ? "Defesa remarcada" : "Defesa confirmada"}</Selo>
         <Selo cor="cinza">{defesa.publicada ? "Publicada na agenda" : "Não publicada"}</Selo>
       </div>
       <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-[max-content_1fr]">
@@ -673,6 +742,16 @@ function DefesaConfirmada({
             <div className="min-w-0">
               <p className="font-medium">{NOME_PAPEL_BANCA[m.papel]}</p>
               <PessoaDaVaga membro={m} />
+              {m.convocado_em && (
+                <p className="mt-1">
+                  <Selo cor="azul">Convocado(a) no lugar de {nomeDe(m.substitui_membro_id)}</Selo>
+                </p>
+              )}
+              {m.substituido_por_id && (
+                <p className="mt-1">
+                  <Selo cor="ambar">Substituído(a) pelo suplente {nomeDe(m.substituido_por_id)}</Selo>
+                </p>
+              )}
             </div>
             {alteravel && (
               <div className="flex flex-wrap gap-2">
@@ -681,7 +760,7 @@ function DefesaConfirmada({
                     Reenviar convite
                   </Botao>
                 )}
-                {(m.papel === "AVALIADOR" || m.papel === "SUPLENTE") && (
+                {(m.papel === "AVALIADOR" || m.papel === "SUPLENTE") && !m.convocado_em && !m.substituido_por_id && (
                   <Botao variante="contorno" pequeno onClick={() => setTrocando(m)}>
                     Trocar
                   </Botao>
@@ -693,10 +772,68 @@ function DefesaConfirmada({
       </ul>
       {erroConvite && <Aviso tipo="erro">{erroConvite}</Aviso>}
 
+      {(alteravel || podeConvocar) && !remarcando && (
+        <div className="flex flex-wrap gap-2">
+          {alteravel && (
+            <Botao variante="contorno" onClick={() => setRemarcando(true)}>
+              Remarcar
+            </Botao>
+          )}
+          {podeConvocar && (
+            <Botao variante="contorno" onClick={() => setConvocando(true)}>
+              Convocar suplente
+            </Botao>
+          )}
+          {alteravel && (
+            <Botao variante="perigo" onClick={() => setCancelando(true)}>
+              Cancelar defesa
+            </Botao>
+          )}
+        </div>
+      )}
+      {remarcando && (
+        <FormularioAgendamento
+          banca={banca}
+          membros={[]}
+          remarcar={defesa}
+          aoCancelar={() => setRemarcando(false)}
+          aoConfirmar={() => {
+            setRemarcando(false);
+            aoRecarregar();
+          }}
+        />
+      )}
+
+      <HistoricoDefesa eventos={defesa.historico} />
+
       <DivulgacaoNaAgenda
+        // recarrega a prévia quando a defesa é remarcada (RN09: a agenda segue o mesmo registro)
+        key={`${defesa.id}-${defesa.data}-${defesa.inicio}-${defesa.fim}-${defesa.formato}-${defesa.local?.id ?? ""}-${defesa.link ?? ""}`}
         defesaId={defesa.id}
         aoMudar={(publicada) => aoMudar({ ...banca, defesa: { ...defesa, publicada } })}
       />
+
+      {cancelando && (
+        <CancelarDefesa
+          defesa={defesa}
+          aoFechar={() => setCancelando(false)}
+          aoCancelar={() => {
+            setCancelando(false);
+            aoRecarregar();
+          }}
+        />
+      )}
+      {convocando && suplente && (
+        <ConvocarSuplente
+          defesa={defesa}
+          suplente={suplente}
+          aoFechar={() => setConvocando(false)}
+          aoConvocar={(nova) => {
+            setConvocando(false);
+            aoMudar({ ...banca, defesa: nova });
+          }}
+        />
+      )}
 
       {trocando && (
         <Modal titulo={`Trocar ${NOME_PAPEL_BANCA[trocando.papel].toLowerCase()}`} aoFechar={() => setTrocando(null)} largo>
@@ -714,5 +851,199 @@ function DefesaConfirmada({
         </Modal>
       )}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------- RBN09.07 a 09.09 · histórico da defesa
+
+const NOME_EVENTO: Record<EventoDefesa["evento"], string> = {
+  AGENDAMENTO: "Defesa agendada",
+  REMARCACAO: "Defesa remarcada",
+  CANCELAMENTO: "Defesa cancelada",
+  SUPLENTE_CONVOCADO: "Suplente convocado",
+  BANCA_ALTERADA: "Membro da banca trocado",
+  PUBLICACAO: "Publicada na agenda",
+  RETIRADA: "Retirada da agenda",
+};
+
+function detalheEvento(e: EventoDefesa) {
+  const v = e.valores_anteriores;
+  if (!v) return null;
+  if (e.evento === "REMARCACAO" && typeof v.data === "string")
+    return `Antes: ${dataCurta(v.data)}, das ${v.inicio} às ${v.fim}${v.local ? ` · ${v.local}` : ""}`;
+  if (e.evento === "SUPLENTE_CONVOCADO")
+    return `${v.suplente} no lugar de ${v.titular}${typeof v.data === "string" ? `, em ${dataCurta(v.data)}` : ""}`;
+  if (e.evento === "BANCA_ALTERADA") return `Saiu: ${v.nome}`;
+  return null;
+}
+
+function HistoricoDefesa({ eventos }: { eventos: EventoDefesa[] }) {
+  if (eventos.length < 2) return null; // só o agendamento: nada a mostrar
+  return (
+    <details className="rounded-lg border border-borda p-3 text-sm">
+      <summary className="cursor-pointer font-medium">Histórico da defesa ({eventos.length})</summary>
+      <ol className="mt-3 flex flex-col gap-3">
+        {eventos.map((e, i) => (
+          <li key={i} className="border-l-2 border-borda pl-3">
+            <p className="font-medium">{NOME_EVENTO[e.evento]}</p>
+            <p className="text-suave">
+              {dataHora(e.registrado_em)} · {e.por.nome}
+            </p>
+            {detalheEvento(e) && <p>{detalheEvento(e)}</p>}
+            {e.motivo && <p>Motivo: {e.motivo}</p>}
+          </li>
+        ))}
+      </ol>
+    </details>
+  );
+}
+
+// ---------------------------------------------------------------- RBN09.08 · cancelar a defesa (DS-FL05-C)
+
+function CancelarDefesa({ defesa, aoFechar, aoCancelar }: { defesa: Defesa; aoFechar: () => void; aoCancelar: () => void }) {
+  const [motivo, setMotivo] = useState("");
+  const [erro, setErro] = useState("");
+  const [geral, setGeral] = useState("");
+  const [enviando, setEnviando] = useState(false);
+
+  async function cancelar() {
+    if (motivo.trim().length < 5) return setErro("Informe o motivo do cancelamento (pelo menos 5 caracteres).");
+    setErro("");
+    setEnviando(true);
+    try {
+      await api<Defesa>(`/defesas/${defesa.id}/cancelamento`, { metodo: "POST", corpo: { justificativa: motivo.trim() } });
+      aoCancelar();
+    } catch (e) {
+      const falha = e as ErroApi;
+      if (falha.campo === "justificativa") setErro(falha.message);
+      else setGeral(falha.message);
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <Modal titulo="Cancelar esta defesa?" aoFechar={aoFechar}>
+      <p className="mb-4 text-sm">
+        A defesa de {dataCurta(defesa.data)} será cancelada e sai da agenda. O TCC continua como está, e a banca e o aluno
+        são avisados por e-mail.
+      </p>
+      <Campo rotulo="Motivo do cancelamento" obrigatorio erro={erro}>
+        <textarea
+          value={motivo}
+          onChange={(e) => setMotivo(e.target.value)}
+          rows={4}
+          maxLength={1000}
+          aria-invalid={erro ? true : undefined}
+          className={`${ESTILO_ENTRADA} h-auto py-2 ${erro ? "border-vermelho" : "border-borda"}`}
+        />
+      </Campo>
+      {geral && (
+        <div className="mt-3">
+          <Aviso tipo="erro">{geral}</Aviso>
+        </div>
+      )}
+      <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <Botao variante="texto" onClick={aoFechar}>
+          Voltar
+        </Botao>
+        <Botao variante="destrutivo" carregando={enviando} onClick={cancelar}>
+          Cancelar defesa
+        </Botao>
+      </div>
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------- RBN09.09 · convocar o suplente (DS-FL05-E)
+
+function ConvocarSuplente({
+  defesa,
+  suplente,
+  aoFechar,
+  aoConvocar,
+}: {
+  defesa: Defesa;
+  suplente: MembroBanca;
+  aoFechar: () => void;
+  aoConvocar: (d: Defesa) => void;
+}) {
+  const titulares = defesa.membros.filter((m) => m.papel === "AVALIADOR");
+  const [titular, setTitular] = useState("");
+  const [data, setData] = useState(hojeISO());
+  const [motivo, setMotivo] = useState("");
+  const [erros, setErros] = useState<Record<string, string>>({});
+  const [geral, setGeral] = useState("");
+  const [enviando, setEnviando] = useState(false);
+
+  async function convocar() {
+    const faltas: Record<string, string> = {};
+    if (!titular) faltas.membro_titular_id = "Escolha o avaliador titular.";
+    if (!data) faltas.data = "Informe a data.";
+    if (motivo.trim().length < 5) faltas.motivo = "Informe o motivo (pelo menos 5 caracteres).";
+    setErros(faltas);
+    setGeral("");
+    if (Object.keys(faltas).length) return;
+    setEnviando(true);
+    try {
+      const nova = await api<Defesa>(`/defesas/${defesa.id}/suplente`, {
+        metodo: "POST",
+        corpo: { membro_titular_id: Number(titular), data, motivo: motivo.trim() },
+      });
+      aoConvocar(nova);
+    } catch (e) {
+      const falha = e as ErroApi;
+      if (falha.campo) setErros({ [falha.campo]: falha.message });
+      else setGeral(falha.message);
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <Modal titulo="Convocar o suplente" aoFechar={aoFechar}>
+      <p className="mb-4 text-sm">
+        {suplente.pessoa.nome} passa a avaliar no lugar do titular escolhido. Antes da convocação, o suplente não conta
+        para o quórum (RN20). O suplente, o titular e o aluno são avisados por e-mail.
+      </p>
+      <div className="flex flex-col gap-3">
+        <Campo rotulo="Titular substituído" obrigatorio erro={erros.membro_titular_id}>
+          <Selecao value={titular} onChange={(e) => setTitular(e.target.value)} erro={erros.membro_titular_id}>
+            <option value="">Escolha…</option>
+            {titulares.map((m) => (
+              <option key={m.id} value={m.id!}>
+                {m.pessoa.nome}
+              </option>
+            ))}
+          </Selecao>
+        </Campo>
+        <Campo rotulo="Data" obrigatorio erro={erros.data}>
+          <Entrada type="date" value={data} onChange={(e) => setData(e.target.value)} erro={erros.data} />
+        </Campo>
+        <Campo rotulo="Motivo" obrigatorio erro={erros.motivo}>
+          <textarea
+            value={motivo}
+            onChange={(e) => setMotivo(e.target.value)}
+            rows={3}
+            maxLength={1000}
+            aria-invalid={erros.motivo ? true : undefined}
+            className={`${ESTILO_ENTRADA} h-auto py-2 ${erros.motivo ? "border-vermelho" : "border-borda"}`}
+          />
+        </Campo>
+      </div>
+      {geral && (
+        <div className="mt-3">
+          <Aviso tipo="erro">{geral}</Aviso>
+        </div>
+      )}
+      <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <Botao variante="texto" onClick={aoFechar}>
+          Voltar
+        </Botao>
+        <Botao carregando={enviando} onClick={convocar}>
+          Convocar suplente
+        </Botao>
+      </div>
+    </Modal>
   );
 }
