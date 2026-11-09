@@ -755,7 +755,7 @@ function DefesaConfirmada({
             </div>
             {alteravel && (
               <div className="flex flex-wrap gap-2">
-                {m.convite !== "PENDENTE" && (
+                {m.convite !== "PENDENTE" && !m.substituido_por_id && (
                   <Botao variante="texto" pequeno carregando={reenviando === m.id} onClick={() => reenviar(m)}>
                     Reenviar convite
                   </Botao>

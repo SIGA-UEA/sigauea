@@ -626,6 +626,8 @@ def reenviar_convite(db: Session, usuario: Usuario, defesa_id: int, membro_id: i
     membro = next((m for m in defesa.membros if m.id == membro_id), None)
     if membro is None:
         raise ErroAPI(404, "Membro da banca não encontrado.")
+    if any(s.substitui_membro_id == membro.id and s.convocado_em is not None for s in defesa.membros):
+        raise ErroAPI(409, "Este titular foi substituído pelo suplente; não há convite a reenviar.")  # RBN09.09
     avisos_defesa.convidar(db, tarefas, defesa, membro)
     auditoria.registrar(
         db, ator_id=usuario.id, acao="reenviar_convite_banca", entidade="banca_membro", entidade_id=membro.id,

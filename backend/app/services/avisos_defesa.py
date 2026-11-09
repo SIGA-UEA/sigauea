@@ -84,7 +84,10 @@ def texto_convite(defesa: Defesa, membro: BancaMembro) -> tuple[str, str]:
         f"Você foi convidado(a) para a banca de defesa de TCC como {papel}.\n\n"
         f"{descrever(defesa)}\n\n"
     )
-    if membro.papel == "SUPLENTE":
+    if membro.convocado_em is not None:  # RBN09.09: reenvio ao suplente que já avalia
+        titular = next((m for m in defesa.membros if m.id == membro.substitui_membro_id), None)
+        corpo += f"Você foi convocado(a) para avaliar no lugar de {titular.usuario.nome if titular else 'um avaliador titular'}.\n\n"
+    elif membro.papel == "SUPLENTE":
         corpo += "Como suplente, você só avalia se for convocado(a) no lugar de um avaliador titular.\n\n"
     corpo += _rodape(defesa, membro.interno)
     return f"Convite para banca de defesa de TCC – {defesa.data.strftime('%d/%m/%Y')}", corpo

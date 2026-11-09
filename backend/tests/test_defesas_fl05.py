@@ -295,6 +295,23 @@ def test_titular_que_ja_enviou_nao_e_substituido_e_rascunho_e_descartado(banca, 
     assert db.scalar(select(Avaliacao).where(Avaliacao.membro_id == _membro(defesa, banca, "otto")["id"])) is None
 
 
+def test_titular_substituido_nao_recebe_convite_de_novo(banca, defesa, cartas):
+    otto = _membro(_convocar(banca, defesa).json(), banca, "otto")
+    cartas.clear()
+    r = _post(banca, "olga", defesa["id"], f"banca/{otto['id']}/convite", None)
+    assert r.status_code == 409 and "substituído" in r.json()["detail"]
+    assert cartas == []
+
+
+def test_convite_reenviado_ao_suplente_convocado_diz_quem_ele_substitui(banca, defesa, cartas):
+    ricardo = _membro(_convocar(banca, defesa).json(), banca, "ricardo")
+    cartas.clear()
+    assert _post(banca, "olga", defesa["id"], f"banca/{ricardo['id']}/convite", None).status_code == 200
+    corpo = cartas[0]["corpo"]
+    assert "Você foi convocado(a) para avaliar no lugar de Otto Orientador." in corpo
+    assert "só avalia se for convocado" not in corpo
+
+
 def test_convocar_em_defesa_cancelada_ou_realizada_e_409(banca, defesa, db):
     _ontem(db, defesa["id"])
     assert _convocar(banca, defesa).status_code == 409
