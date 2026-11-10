@@ -8,10 +8,7 @@ base (6 critérios na parte escrita e 3 na oral).
 "Depois da defesa" é simulado trocando o relógio do serviço (fixture depois_da_defesa), sem mexer no banco.
 
 O suplente é convocado pela rota da SCRUM-67 (POST /defesas/{id}/suplente) em CT-10.02-06 e CT-10.05-05.
-
-Ficam em skip, até a história de que dependem entrar:
-- SCRUM-70 (confirmar o resultado): CT-10.05-03 e CT-10.05-04. A lista de pendentes que a confirmação vai
-  usar já é conferida aqui.
+A confirmação do resultado é a rota da SCRUM-70 (POST /defesas/{id}/resultado) em CT-10.05-03 e CT-10.05-04.
 """
 
 from datetime import date, datetime, time
@@ -332,14 +329,32 @@ def test_ct_10_05_02_envio_completo_fica_enviada(defesa, depois_da_defesa):
     assert defesa["olga"].get(_url(defesa)).json()["envios"] == {"enviadas": 1, "esperadas": 3}
 
 
-@pytest.mark.skip(reason="A confirmação do resultado é a SCRUM-70 (RBN09.12); a lista de pendentes já é conferida aqui.")
-def test_ct_10_05_03_orientador_nao_confirma_com_avaliacao_pendente():
-    """CT-10.05-03 (CA-03): 2 de 3 enviadas; a confirmação é impedida e lista o avaliador pendente."""
+def _resultado(d) -> str:
+    return f"/api/v1/defesas/{d['defesa']['id']}/resultado"
 
 
-@pytest.mark.skip(reason="A confirmação do resultado é a SCRUM-70 (RBN09.12).")
-def test_ct_10_05_04_com_todas_enviadas_a_confirmacao_fica_disponivel():
-    """CT-10.05-04 (CA-04): 3 de 3 enviadas; a confirmação fica disponível."""
+RESULTADO = {"resultado": "APROVADO", "parecer": "Trabalho aprovado pela banca, com apresentação clara e bem conduzida."}
+
+
+def test_ct_10_05_03_orientador_nao_confirma_com_avaliacao_pendente(defesa, depois_da_defesa):
+    """CT-10.05-03 (CA-03): 2 de 3 enviadas; a confirmação (SCRUM-70) é impedida e lista o avaliador pendente."""
+    for quem in ("olga", "otto"):
+        assert _enviar(defesa, quem).status_code == 200
+    assert [p["pessoa"]["id"] for p in defesa["olga"].get(_resultado(defesa)).json()["pendentes"]] == [
+        defesa["ids"]["paulo"]]
+    r = defesa["olga"].post(_resultado(defesa), json=RESULTADO)
+    assert r.status_code == 409
+    assert [p["pessoa"]["id"] for p in r.json()["pendentes"]] == [defesa["ids"]["paulo"]]
+
+
+def test_ct_10_05_04_com_todas_enviadas_a_confirmacao_fica_disponivel(defesa, depois_da_defesa):
+    """CT-10.05-04 (CA-04): 3 de 3 enviadas; a consolidação aparece e a confirmação (SCRUM-70) é aceita."""
+    for quem in ("olga", "otto", "paulo"):
+        assert _enviar(defesa, quem).status_code == 200
+    consulta = defesa["olga"].get(_resultado(defesa)).json()
+    assert consulta["pendentes"] == [] and consulta["consolidacao"] is not None
+    r = defesa["olga"].post(_resultado(defesa), json=RESULTADO)
+    assert r.status_code == 200 and r.json()["resultado"]["resultado"] == "APROVADO"
 
 
 def test_ct_10_05_05_completude_considera_o_suplente_convocado(defesa, db, depois_da_defesa):
