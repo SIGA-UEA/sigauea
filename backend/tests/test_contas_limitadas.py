@@ -13,10 +13,12 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from app import config
 from app.database import agora
 from app.main import app
-from app.models import AcessoLimitado, LogAuditoria, TokenUsuario, Usuario
+from app.models import AcessoLimitado, LogAuditoria, ResultadoDefesa, TokenUsuario, Usuario
 from tests.conftest import SENHA, ativar
+from tests.test_avaliacao import RESULTADO, _enviar, depois_da_defesa  # noqa: F401  (depois_da_defesa é fixture)
 from tests.test_defesas_banca import _agendar, _membros, banca  # noqa: F401  (banca é fixture)
 from tests.test_tcc import cenario  # noqa: F401  (fixture usada por banca)
 
@@ -206,14 +208,13 @@ def test_rotas_da_propria_defesa_fora_da_lista_tambem_sao_negadas(defesa, ana):
         assert ana.get(rota).status_code == 403, rota
 
 
-def test_ct_01_12_02_outra_defesa_recebe_403(defesa, ana, db):
-    """CT-01.12-02 (CA-02, E2, decisão 32-33-b): a defesa da Ana é cancelada e o TCC é agendado de novo sem ela;
-    a defesa nova e o TCC respondem 403, e não 404."""
-    defesa["olga"].post(f"/api/v1/defesas/{defesa['defesa']['id']}/cancelamento", json=MOTIVO)
-    outra = _agendar(defesa).json()
-    assert ana.get(f"/api/v1/defesas/{outra['id']}/avaliacao").status_code == 403
-    assert ana.get(f"/api/v1/tccs/{defesa['tcc']['id']}").status_code == 403
-    assert ana.get("/api/v1/tccs").json() == [] and ana.get("/api/v1/auth/me").json()["acessos"] == []
+def test_ct_01_12_02_outra_defesa_recebe_403(defesa, ana):
+    """CT-01.12-02 (CA-02, E2, decisão 32-33-b): defesa e TCC fora do escopo da Ana respondem 403, e não 404,
+    exista o registro ou não (a resposta não revela se ele existe)."""
+    fora = defesa["defesa"]["id"] + 1, defesa["tcc"]["id"] + 1
+    assert ana.get(f"/api/v1/defesas/{fora[0]}/avaliacao").status_code == 403
+    assert ana.put(f"/api/v1/defesas/{fora[0]}/avaliacao", json={"criterios": []}).status_code == 403
+    assert ana.get(f"/api/v1/tccs/{fora[1]}").status_code == 403
 
 
 def test_foto_so_a_propria(defesa, ana, db):
@@ -226,3 +227,103 @@ def test_membro_interno_da_banca_nao_muda(defesa):
     """O perfil membro_banca também é de docentes; a restrição vale só para quem tem usuario_externo."""
     assert defesa["otto"].get("/api/v1/agenda").status_code == 200
     assert defesa["otto"].get(f"/api/v1/tccs/{defesa['tcc']['id']}/banca").status_code == 200
+
+
+# ---------------------------------------------------------------- SCRUM-32 · RBN01.12 · expiração (CA-03)
+
+CHAVE = {"X-Chave-Tarefas": "segredo-certo"}
+
+
+@pytest.fixture
+def confirmada(defesa, ana, depois_da_defesa, monkeypatch, db):
+    """Defesa realizada, as três avaliações enviadas (Olga, Otto e Ana) e o resultado confirmado (SCRUM-70)."""
+    monkeypatch.setattr(config, "TAREFAS_CHAVE", "segredo-certo")
+    d = {**defesa, "ana": ana}
+    for quem in ("olga", "otto", "ana"):
+        assert _enviar(d, quem).status_code == 200, quem
+    r = defesa["olga"].post(f"/api/v1/defesas/{defesa['defesa']['id']}/resultado", json=RESULTADO)
+    assert r.status_code == 200, r.json()
+    return d
+
+
+def _vencer(db, ana_id: int):
+    """Os 7 dias passaram: o prazo gravado na confirmação fica no passado."""
+    for acesso in _acessos(db, ana_id):
+        acesso.expira_em = agora() - timedelta(minutes=1)
+    db.commit()
+
+
+def _rotina():
+    return TestClient(app).post("/api/v1/tarefas/expirar-acessos", headers=CHAVE)
+
+
+def test_confirmar_o_resultado_marca_o_prazo_de_7_dias(confirmada, db):
+    """Decisão 32-d (opção A): expira_em = confirmação do resultado + 7 dias."""
+    resultado = db.scalar(select(ResultadoDefesa).where(ResultadoDefesa.defesa_id == confirmada["defesa"]["id"]))
+    [acesso] = _acessos(db, _ana(db).id)
+    assert acesso.expira_em == resultado.confirmado_em + timedelta(days=7)
+
+
+def test_retificar_o_resultado_nao_reinicia_o_prazo(confirmada, db):
+    """Decisão 32-d: o prazo conta da primeira confirmação."""
+    antes = _acessos(db, _ana(db).id)[0].expira_em
+    r = confirmada["olga"].post(f"/api/v1/defesas/{confirmada['defesa']['id']}/resultado/retificacao",
+                                json={"resultado": "APROVADO_COM_CORRECOES", "motivo": "Faltou registrar as correções."})
+    assert r.status_code == 200, r.json()
+    assert _acessos(db, _ana(db).id)[0].expira_em == antes
+
+
+def test_antes_dos_7_dias_a_rotina_nao_mexe_em_nada(confirmada, db):
+    assert _rotina().json() == {"expirados": 0, "contas_desligadas": 0}
+    assert confirmada["ana"].get("/api/v1/auth/me").status_code == 200
+
+
+def test_ct_01_12_04_depois_de_7_dias_a_conta_e_desativada(confirmada, db):
+    """CT-01.12-04 (CA-03): resultado confirmado há 7 dias; a rotina desativa a conta, encerra a sessão aberta e
+    o login passa a ser negado. Rodar de novo não repete nada."""
+    _vencer(db, _ana(db).id)
+    assert _rotina().json() == {"expirados": 1, "contas_desligadas": 1}
+    db.expire_all()
+    assert _ana(db).ativo is False and _ana(db).inativado_em is None
+    assert confirmada["ana"].get("/api/v1/auth/me").status_code == 401  # a sessão aberta caiu
+    entrar = {"email": ANA["email"], "senha": SENHA}
+    assert TestClient(app).post("/api/v1/auth/login", json=entrar).status_code == 401
+    assert _rotina().json() == {"expirados": 0, "contas_desligadas": 0}
+
+
+def test_ct_01_12_06_expiracao_fica_no_log(confirmada, db):
+    """CT-01.12-06 (CA-05, RNF03): a expiração registra data e hora, defesa e evento; o responsável é a rotina."""
+    _vencer(db, _ana(db).id)
+    _rotina()
+    expirou = db.scalar(select(LogAuditoria).where(LogAuditoria.acao == "expirar_acesso"))
+    assert expirou.usuario_id is None and expirou.criado_em is not None
+    assert expirou.valor_anterior.startswith(f"Ana Externa · Defesa {confirmada['defesa']['id']} (")
+    desligou = db.scalar(select(LogAuditoria).where(LogAuditoria.acao == "desligar_conta_externa"))
+    assert desligou.entidade_id == _ana(db).id
+
+
+def test_conta_com_outro_acesso_valido_continua_ativa(confirmada, db):
+    """Decisão 32-f: vence só o acesso; a conta segue ativa enquanto houver outro (aqui, uma coorientação)."""
+    db.add(AcessoLimitado(usuario_id=_ana(db).id, escopo="COORIENTACAO", tcc_id=confirmada["tcc"]["id"]))
+    db.commit()
+    _vencer_banca = [a for a in _acessos(db, _ana(db).id) if a.escopo == "BANCA"]
+    _vencer_banca[0].expira_em = agora() - timedelta(minutes=1)
+    db.commit()
+    assert _rotina().json() == {"expirados": 1, "contas_desligadas": 0}
+    db.expire_all()
+    assert _ana(db).ativo is True
+
+
+def test_revogar_o_ultimo_acesso_desliga_a_conta(defesa, ana, db):
+    """Decisões 32-f e 32-k: com a defesa cancelada, a Ana fica sem acesso e a conta é desligada na hora."""
+    defesa["olga"].post(f"/api/v1/defesas/{defesa['defesa']['id']}/cancelamento", json=MOTIVO)
+    db.expire_all()
+    assert _ana(db).ativo is False
+    assert ana.get("/api/v1/auth/me").status_code == 401
+
+
+def test_rotina_exige_a_chave(monkeypatch):
+    monkeypatch.setattr(config, "TAREFAS_CHAVE", "segredo-certo")
+    assert TestClient(app).post("/api/v1/tarefas/expirar-acessos").status_code == 401
+    monkeypatch.setattr(config, "TAREFAS_CHAVE", "")
+    assert TestClient(app).post("/api/v1/tarefas/expirar-acessos", headers=CHAVE).status_code == 503
