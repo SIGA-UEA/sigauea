@@ -3,6 +3,8 @@
 Os caminhos são os dos diagramas de sequência: DS-FL01-A (GET /tccs/formulario),
 DS-FL01-B (POST/PUT /tccs), DS-FL01 (POST /tccs/{id}/submissao), DS-FL02-B (GET /tccs/{id}),
 DS-FL03-B (POST /tccs/{id}/orientacoes), DS-FL03-A (GET /orientacoes) e DS-FL03 (resposta).
+DS-FL03-D (RBN01.13): a coordenação e o orientador também usam POST /tccs/{id}/orientacoes para informar o
+coorientador (interno ou externo) e DELETE /tccs/{id}/orientacoes/{orientacao_id} para encerrar o vínculo.
 """
 
 from fastapi import APIRouter, BackgroundTasks, Depends
@@ -12,6 +14,7 @@ from app.database import get_db
 from app.deps import exigir_perfil, usuario_atual
 from app.models import PERFIL_ALUNO, PERFIL_ORIENTADOR, PERFIL_PROFESSOR, Usuario
 from app.schemas.tcc import (
+    EncerrarOrientacao,
     FormularioOut,
     IndicarOrientador,
     RespostaOrientacao,
@@ -79,9 +82,23 @@ def indicar_orientador(
     dados: IndicarOrientador,
     tarefas: BackgroundTasks,
     db: Session = Depends(get_db, scope="function"),
-    eu: Usuario = Depends(aluno),
+    eu: Usuario = Depends(usuario_atual),
 ) -> VinculoOut:
-    return tccs._vinculo_out(tccs.indicar(db, tarefas, eu, tcc_id, dados))
+    """O aluno indica um docente (DS-FL03-B); a coordenação e o orientador informam o coorientador, interno ou
+    externo (DS-FL03-D, RBN01.13). Outro perfil recebe 403."""
+    return tccs._vinculo_out(tccs.indicar_por_perfil(db, tarefas, eu, tcc_id, dados))
+
+
+@router.delete("/tccs/{tcc_id}/orientacoes/{orientacao_id}", response_model=VinculoOut)
+def encerrar_coorientacao(
+    tcc_id: int,
+    orientacao_id: int,
+    dados: EncerrarOrientacao,
+    db: Session = Depends(get_db, scope="function"),
+    eu: Usuario = Depends(usuario_atual),
+) -> VinculoOut:
+    """DS-FL03-D mensagens 14 a 17: encerra o vínculo do coorientador e revoga o acesso do externo (RBN01.13 CA-04)."""
+    return tccs._vinculo_out(tccs.encerrar_coorientacao(db, eu, tcc_id, orientacao_id, dados))
 
 
 @router.get("/orientacoes", response_model=list[SolicitacaoOut])

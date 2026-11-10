@@ -10,6 +10,11 @@ membro externo, mesmo quem já tem conta de outra defesa (decisão 32-c). Cancel
 revoga o acesso (32-k). O link vai no convite (32-h): link de ativação de 48 horas para quem ainda não tem
 senha (32-a); para quem já tem, o endereço de entrada.
 
+Coorientação (SCRUM-33, DS-FL03-D): quando a coordenação ou o orientador informam um coorientador externo, a
+pessoa ganha conta sem senha (se ainda não tem), acesso limitado ao TCC (escopo COORIENTACAO) e o link de
+ativação de 48 horas (RBN01.05). Ativar a conta vale como aceite da coorientação (decisão 33-b). O fim do
+vínculo revoga o acesso (CA-04, RN16) e, sem outro acesso válido, desliga a conta.
+
 Expiração (CA-03 da ficha 32, decisões 32-d, 32-e e 32-f): ao confirmar o resultado da defesa (SCRUM-70), o
 acesso da banca ganha expira_em = confirmação + 7 dias; a retificação não reinicia o prazo. Uma vez por dia,
 POST /tarefas/expirar-acessos (ControladorAcesso.revogarAcessosVencidos do diagrama de classes, no padrão do
@@ -24,15 +29,31 @@ recebe 403. A conferência fica na sessão (deps.usuario_atual), antes de qualqu
 import re
 from datetime import datetime, timedelta
 
-from fastapi import Request
+from fastapi import BackgroundTasks, Request
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app import config
 from app.database import agora
 from app.erros import ErroAPI
-from app.models import ESCOPO_BANCA, TOKEN_ATIVACAO, AcessoLimitado, BancaMembro, Defesa, LogAuditoria, Sessao, Usuario
-from app.services import auditoria, tokens
+from app.models import (
+    ACEITA,
+    ESCOPO_BANCA,
+    ESCOPO_COORIENTACAO,
+    PAPEL_COORIENTADOR,
+    PENDENTE,
+    TOKEN_ATIVACAO,
+    AcessoLimitado,
+    BancaMembro,
+    Defesa,
+    LogAuditoria,
+    Orientacao,
+    Sessao,
+    Tcc,
+    Usuario,
+    UsuarioExterno,
+)
+from app.services import auditoria, email, tokens
 
 DIAS_DEPOIS_DO_RESULTADO = 7  # RBN01.12: a conta expira 7 dias após a confirmação do resultado da defesa
 
@@ -160,6 +181,88 @@ def link_do_convite(db: Session, pessoa: Usuario) -> str:
     if pessoa.senha_hash is None and pessoa.inativado_em is None:
         return f"{config.FRONTEND_URL}/ativar?token={tokens.criar(db, pessoa, TOKEN_ATIVACAO)}"
     return f"{config.FRONTEND_URL}/entrar"
+
+
+# =================================================================== coorientação externa (SCRUM-33, DS-FL03-D)
+
+
+def criar_externo(db: Session, nome: str, email_: str, instituicao: str) -> Usuario:
+    """DS-FL03-D mensagem 5: conta sem senha, aguardando ativação, com a instituição (RN12). Sem perfil: o que a
+    pessoa pode fazer vem do acesso limitado."""
+    pessoa = Usuario(nome=nome, email=email_.lower())
+    db.add(pessoa)
+    db.flush()
+    db.add(UsuarioExterno(usuario_id=pessoa.id, instituicao=instituicao))
+    db.flush()
+    db.refresh(pessoa)
+    return pessoa
+
+
+def _descrever_tcc(tcc: Tcc) -> str:
+    return f"TCC {tcc.id}: {tcc.titulo}"
+
+
+def conceder_coorientacao(db: Session, ator: Usuario, pessoa: Usuario, tcc: Tcc) -> AcessoLimitado:
+    """DS-FL03-D mensagens 6 e 10: acesso limitado ao TCC (visualizar) e o registro no log."""
+    acesso = AcessoLimitado(usuario_id=pessoa.id, escopo=ESCOPO_COORIENTACAO, tcc_id=tcc.id)
+    db.add(acesso)
+    if pessoa.senha_hash is not None and not pessoa.ativo and pessoa.inativado_em is None:
+        pessoa.ativo = True  # decisão 32-f: a conta desligada por falta de acesso volta com o acesso novo
+    db.flush()
+    auditoria.registrar(
+        db, ator_id=ator.id, acao="criar_conta_coorientador", entidade="acesso_limitado", entidade_id=acesso.id,
+        campo="tcc", novo=f"{pessoa.nome} · {_descrever_tcc(tcc)}",
+    )
+    return acesso
+
+
+def avisar_coorientador(db: Session, tarefas: BackgroundTasks, ator: Usuario, pessoa: Usuario, tcc: Tcc) -> None:
+    """DS-FL03-D mensagens 8 e 9: o e-mail com o link de ativação (48 horas) ou, para quem já tem senha, a entrada."""
+    link = link_do_convite(db, pessoa)
+    if "/ativar?" in link:
+        acesso = (f"Para acessar o trabalho no SIGA UEA, crie a sua senha pelo link abaixo, em até "
+                  f"{config.ATIVACAO_HORAS} horas:\n\n{link}\n\nAo criar a senha, você aceita a coorientação.")
+    else:
+        acesso = f"Para acessar o trabalho no SIGA UEA, entre com o seu e-mail e a sua senha: {link}"
+    corpo = (
+        f"Olá, {pessoa.nome}.\n\n"
+        f"{ator.nome} informou você como coorientador(a) do TCC \"{tcc.titulo}\", de {tcc.aluno.usuario.nome}.\n\n"
+        f"{acesso}\n\nA conta dá acesso só a este trabalho."
+    )
+    email.enfileirar(db, tarefas, pessoa, "COORIENTACAO_EXTERNA", "SIGA UEA: coorientação de TCC", corpo,
+                     entidade="tcc", entidade_id=tcc.id)
+
+
+def aceitar_coorientacoes(db: Session, pessoa: Usuario) -> None:
+    """Decisão 33-b: a pessoa externa que ativa a conta aceita as coorientações pendentes dela."""
+    if pessoa.externo is None:
+        return
+    pendentes = db.scalars(select(Orientacao).where(
+        Orientacao.professor_id == pessoa.id, Orientacao.papel == PAPEL_COORIENTADOR,
+        Orientacao.status == PENDENTE, Orientacao.encerrado_em.is_(None),
+    ))
+    for o in pendentes:
+        o.status, o.respondido_em = ACEITA, agora()
+        auditoria.registrar(
+            db, ator_id=pessoa.id, acao="responder_orientacao", entidade="tcc", entidade_id=o.tcc_id,
+            campo="coorientador", anterior=PENDENTE, novo=f"{ACEITA} (ativação da conta)",
+        )
+
+
+def revogar_coorientacao(db: Session, ator: Usuario, pessoa: Usuario, tcc: Tcc) -> None:
+    """DS-FL03-D mensagem 16 (CA-04): o fim do vínculo encerra o acesso ao TCC; sem outro acesso, a conta é desligada."""
+    acessos_do_tcc = db.scalars(select(AcessoLimitado).where(
+        AcessoLimitado.usuario_id == pessoa.id, AcessoLimitado.escopo == ESCOPO_COORIENTACAO,
+        AcessoLimitado.tcc_id == tcc.id, *_vigente(),
+    )).all()
+    for acesso in acessos_do_tcc:
+        acesso.revogado_em = agora()
+        auditoria.registrar(
+            db, ator_id=ator.id, acao="revogar_acesso", entidade="acesso_limitado", entidade_id=acesso.id,
+            campo="tcc", anterior=f"{pessoa.nome} · {_descrever_tcc(tcc)}",
+        )
+    db.flush()
+    desligar_se_sem_acesso(db, pessoa, ator)
 
 
 # =================================================================== escopo da conta externa (CA-02)

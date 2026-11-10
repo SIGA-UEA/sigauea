@@ -18,7 +18,7 @@ from app.security import (
     validate_password,
     verificar_senha,
 )
-from app.services import auditoria, tokens
+from app.services import acessos, auditoria, tokens
 from app.services.usuarios import buscar_por_email
 
 # HU01.06 R5: a mesma mensagem para e-mail inexistente, senha errada e conta inativa.
@@ -113,6 +113,7 @@ def ativar_conta(db: Session, token: str, senha: str) -> None:
     usuario.ativo = True
     registro.usado_em = agora()  # o link vale uma única vez
     auditoria.registrar(db, ator_id=usuario.id, acao="ativar_conta", entidade_id=usuario.id)
+    acessos.aceitar_coorientacoes(db, usuario)  # RBN01.13, decisão 33-b: ativar vale como aceite da coorientação
     db.commit()
 
 
