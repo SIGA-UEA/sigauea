@@ -517,12 +517,46 @@ EVENTOS_DEFESA = (
 
 
 class UsuarioExterno(Base):
-    """Convidado de fora da UEA (RN12): só guarda a instituição; o acesso limitado é do SCRUM-32."""
+    """Pessoa de fora da UEA (RN12): membro externo da banca ou coorientador externo. Guarda só a
++    instituição; o que a pessoa pode acessar fica em AcessoLimitado (RBN01.12 e RBN01.13)."""
 
     __tablename__ = "usuario_externo"
 
     usuario_id: Mapped[int] = _fk("usuario.id", primary_key=True)
     instituicao: Mapped[str] = mapped_column(String(150))
+
+    usuario: Mapped[Usuario] = relationship()
+
+
+# Escopo da conta limitada (RBN01.12 e RBN01.13): a banca de uma defesa ou a coorientação de um TCC.
+ESCOPO_BANCA, ESCOPO_COORIENTACAO = "BANCA", "COORIENTACAO"
+ESCOPOS_ACESSO = (ESCOPO_BANCA, ESCOPO_COORIENTACAO)
+
+
+class AcessoLimitado(Base):
+    """O que a pessoa externa pode acessar (DS-FL04-B mensagem 8 e DS-FL03-D mensagem 6), igual à tabela
+    acesso_limitado do modelo físico: escopo BANCA aponta para a defesa; COORIENTACAO, para o TCC.
+
+    expira_em fica vazio até a confirmação do resultado da defesa (7 dias depois dela, RBN01.12 CA-03);
+    revogado_em marca o fim antes do prazo (defesa cancelada, membro trocado, vínculo encerrado)."""
+
+    __tablename__ = "acesso_limitado"
+    __table_args__ = (
+        _dominio("acesso_limitado", "escopo", ESCOPOS_ACESSO),
+        CheckConstraint(
+            "(escopo = 'BANCA' AND defesa_id IS NOT NULL) OR (escopo = 'COORIENTACAO' AND tcc_id IS NOT NULL)",
+            name="ck_acesso_limitado_alvo",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    usuario_id: Mapped[int] = _fk("usuario.id", index=True)
+    escopo: Mapped[str] = mapped_column(String(20))
+    defesa_id: Mapped[int | None] = _fk("defesa.id", nullable=True, index=True)
+    tcc_id: Mapped[int | None] = _fk("tcc.id", nullable=True, index=True)
+    expira_em: Mapped[datetime | None]
+    revogado_em: Mapped[datetime | None]
+    criado_em: Mapped[datetime] = mapped_column(default=agora)
 
     usuario: Mapped[Usuario] = relationship()
 
