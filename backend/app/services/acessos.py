@@ -10,12 +10,19 @@ membro externo, mesmo quem já tem conta de outra defesa (decisão 32-c). Cancel
 revoga o acesso (32-k). O link vai no convite (32-h): link de ativação de 48 horas para quem ainda não tem
 senha (32-a); para quem já tem, o endereço de entrada.
 
+Expiração (CA-03 da ficha 32, decisões 32-d, 32-e e 32-f): ao confirmar o resultado da defesa (SCRUM-70), o
+acesso da banca ganha expira_em = confirmação + 7 dias; a retificação não reinicia o prazo. Uma vez por dia,
+POST /tarefas/expirar-acessos (ControladorAcesso.revogarAcessosVencidos do diagrama de classes, no padrão do
+DS-FL10-H) registra os acessos vencidos e desliga a conta que não tem mais nenhum acesso válido, encerrando
+as sessões abertas. A conta também é desligada quando o último acesso é revogado.
+
 Escopo (CA-02 das duas fichas, decisões 32-33-a e 32-33-b): a cada requisição, a conta externa só passa pelas
 rotas de ROTAS_DO_EXTERNO, e só para a defesa ou o TCC de um acesso vigente; o resto, inclusive a Agenda,
 recebe 403. A conferência fica na sessão (deps.usuario_atual), antes de qualquer serviço.
 """
 
 import re
+from datetime import datetime, timedelta
 
 from fastapi import Request
 from sqlalchemy import or_, select
@@ -24,8 +31,10 @@ from sqlalchemy.orm import Session
 from app import config
 from app.database import agora
 from app.erros import ErroAPI
-from app.models import ESCOPO_BANCA, TOKEN_ATIVACAO, AcessoLimitado, BancaMembro, Defesa, Usuario
+from app.models import ESCOPO_BANCA, TOKEN_ATIVACAO, AcessoLimitado, BancaMembro, Defesa, LogAuditoria, Sessao, Usuario
 from app.services import auditoria, tokens
+
+DIAS_DEPOIS_DO_RESULTADO = 7  # RBN01.12: a conta expira 7 dias após a confirmação do resultado da defesa
 
 
 def _vigente():
@@ -79,13 +88,70 @@ def conceder_banca(db: Session, ator: Usuario, membro: BancaMembro) -> AcessoLim
 
 def revogar_banca(db: Session, ator: Usuario, defesa: Defesa, usuario_id: int | None = None) -> None:
     """Decisão 32-k: a defesa cancelada revoga o acesso de todos os membros externos; a troca de membro,
-    só o de quem saiu."""
+    só o de quem saiu. Quem fica sem nenhum acesso válido tem a conta desligada (32-f)."""
     for acesso in _da_banca(db, defesa.id, usuario_id):
         acesso.revogado_em = agora()
         auditoria.registrar(
             db, ator_id=ator.id, acao="revogar_acesso", entidade="acesso_limitado", entidade_id=acesso.id,
             campo="defesa", anterior=f"{acesso.usuario.nome} · {_descrever(defesa)}",
         )
+        db.flush()
+        desligar_se_sem_acesso(db, acesso.usuario, ator)
+
+
+def definir_prazo_banca(db: Session, defesa: Defesa, confirmado_em: datetime) -> None:
+    """Decisão 32-d (opção A): na confirmação do resultado, o acesso da banca vence 7 dias depois. Só o acesso
+    ainda sem prazo recebe a data, então a retificação (outra versão do resultado) não reinicia a contagem."""
+    for acesso in _da_banca(db, defesa.id):
+        if acesso.expira_em is None:
+            acesso.expira_em = confirmado_em + timedelta(days=DIAS_DEPOIS_DO_RESULTADO)
+
+
+def desligar_se_sem_acesso(db: Session, pessoa: Usuario, ator: Usuario | None) -> bool:
+    """Decisão 32-f: a conta externa sem nenhum acesso válido é desligada (ativo falso, login negado pelo
+    DS-FL10) e as sessões abertas são encerradas. inativado_em fica vazio: não é a inativação da coordenação."""
+    if pessoa.externo is None or not pessoa.ativo or vigentes(db, pessoa.id):
+        return False
+    pessoa.ativo = False
+    for sessao in db.scalars(select(Sessao).where(Sessao.usuario_id == pessoa.id, Sessao.expira_em > agora())):
+        sessao.expira_em = agora()
+    auditoria.registrar(
+        db, ator_id=ator.id if ator else None, acao="desligar_conta_externa", entidade="usuario",
+        entidade_id=pessoa.id, campo="ativo", anterior="ativo", novo="sem acesso válido",
+    )
+    return True
+
+
+def expirar_vencidos(db: Session) -> dict:
+    """POST /tarefas/expirar-acessos (CA-03, ControladorAcesso.revogarAcessosVencidos, no padrão do DS-FL10-H).
+
+    1. Lista os acessos que venceram e ainda não foram registrados como expirados (o log expirar_acesso é a marca:
+       rodar duas vezes no mesmo dia não repete nada).
+    2. Registra cada um no log (CA-05: data e hora, defesa e evento; o responsável é a rotina, sem usuário).
+    3. Desliga a conta de quem ficou sem nenhum acesso válido e encerra as sessões."""
+    ja_registrados = select(LogAuditoria.entidade_id).where(
+        LogAuditoria.acao == "expirar_acesso", LogAuditoria.entidade == "acesso_limitado"
+    )
+    vencidos = db.scalars(  # passo 1
+        select(AcessoLimitado).where(
+            AcessoLimitado.revogado_em.is_(None),
+            AcessoLimitado.expira_em <= agora(),
+            AcessoLimitado.id.not_in(ja_registrados),
+        ).order_by(AcessoLimitado.id)
+    ).all()
+    pessoas: dict[int, Usuario] = {}
+    for acesso in vencidos:  # passo 2
+        alvo = _descrever(acesso.defesa) if acesso.defesa else f"TCC {acesso.tcc_id}"
+        auditoria.registrar(
+            db, ator_id=None, acao="expirar_acesso", entidade="acesso_limitado", entidade_id=acesso.id,
+            campo="defesa" if acesso.defesa else "tcc", anterior=f"{acesso.usuario.nome} · {alvo}",
+            novo=f"expirou em {acesso.expira_em.isoformat(timespec='minutes')}",
+        )
+        pessoas[acesso.usuario_id] = acesso.usuario
+    db.flush()
+    desligadas = sum(desligar_se_sem_acesso(db, p, None) for p in pessoas.values())  # passo 3
+    db.commit()
+    return {"expirados": len(vencidos), "contas_desligadas": desligadas}
 
 
 def link_do_convite(db: Session, pessoa: Usuario) -> str:

@@ -37,7 +37,7 @@ from app.schemas.resultado import (
     RetificacaoEntrada,
     RetificacaoOut,
 )
-from app.services import auditoria, avaliacao, avisos_defesa, nota_final
+from app.services import acessos, auditoria, avaliacao, avisos_defesa, nota_final
 from app.services.tccs import obter_para
 from app.services.turmas import pessoa
 
@@ -175,6 +175,7 @@ def confirmar_resultado(
     auditoria.registrar(db, ator_id=usuario.id, acao="confirmar_resultado", entidade="resultado_defesa",
                         entidade_id=registro.id, campo="resultado",
                         novo=f"{dados.resultado}; nota final {calculo.nota_final}")
+    acessos.definir_prazo_banca(db, defesa, registro.confirmado_em)  # RBN01.12: o externo tem mais 7 dias (32-d)
     # E3: o aviso entra na fila na mesma transação e sai depois da resposta; a falha de envio não desfaz nada
     avisos_defesa.avisar_resultado(db, tarefas, defesa, registro)
     _gravar(db)
