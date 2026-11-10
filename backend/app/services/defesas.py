@@ -238,6 +238,10 @@ def _resolver(db: Session, tcc: Tcc, p: PessoaBanca) -> tuple[Usuario | None, bo
     """Quem ocupa a vaga: (usuário já cadastrado ou None se o externo é novo, interno?, instituição)."""
     if p.usuario_id is not None:
         usuario = db.get(Usuario, p.usuario_id)
+        if usuario is not None and usuario.externo is not None and getattr(p, "papel", None) == PAPEL_COORIENTADOR:
+            # decisão 32-j: na vaga de coorientador, o coorientador externo vinculado ao TCC (RBN01.13);
+            # _conferir_vaga confere que é o mesmo do vínculo aceito
+            return usuario, False, usuario.externo.instituicao
         if usuario is None or usuario.docente is None or not usuario.ativo:  # DS-FL04-A passo 9
             raise ErroAPI(422, "Escolha um docente ativo da UEA.", campo="usuario_id")
         if usuario.id == tcc.aluno_id:
