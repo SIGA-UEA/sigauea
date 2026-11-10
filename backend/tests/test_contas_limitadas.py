@@ -155,3 +155,74 @@ def test_conta_desligada_volta_com_um_acesso_novo(defesa, caixa, db):
     assert TestClient(app).post("/api/v1/auth/login", json=entrar).status_code == 401
     assert defesa["olga"].put(url, json={"externo": ANA}).status_code == 200
     assert TestClient(app).post("/api/v1/auth/login", json=entrar).status_code == 200
+
+
+# ---------------------------------------------------------------- SCRUM-32 · RBN01.12 · escopo (CA-02)
+
+
+@pytest.fixture
+def ana(defesa, caixa):
+    """A Ana com a conta ativada e logada."""
+    return ativar(caixa, ANA["email"])
+
+
+def test_ana_ve_so_o_tcc_e_a_avaliacao_da_sua_defesa(defesa, ana):
+    """CA-02 e decisão 32-33-a: a lista e a página do TCC da defesa, e a avaliação dela (lançar nota e parecer)."""
+    tcc, defesa_id = defesa["tcc"]["id"], defesa["defesa"]["id"]
+    assert [t["id"] for t in ana.get("/api/v1/tccs").json()] == [tcc]
+    assert ana.get(f"/api/v1/tccs/{tcc}").status_code == 200
+    assert ana.get(f"/api/v1/defesas/{defesa_id}/avaliacao").status_code == 200
+    assert ana.put(f"/api/v1/defesas/{defesa_id}/avaliacao", json={"criterios": []}).status_code == 200
+
+
+def test_me_diz_que_e_externa_e_traz_os_acessos(defesa, ana):
+    """Decisões 32-33-d e opção A: tipo "externo" e a defesa que ela pode abrir, para a tela achar a avaliação."""
+    eu = ana.get("/api/v1/auth/me").json()
+    assert eu["tipo"] == "externo"
+    assert eu["acessos"] == [{"escopo": "BANCA", "tcc_id": defesa["tcc"]["id"], "defesa_id": defesa["defesa"]["id"]}]
+    assert ana.get("/api/v1/usuarios/me").json()["acessos"] == eu["acessos"]
+
+
+def test_docente_continua_sem_acessos_e_com_tipo_docente(defesa):
+    eu = defesa["otto"].get("/api/v1/auth/me").json()
+    assert eu["tipo"] == "docente" and eu["acessos"] == []
+
+
+@pytest.mark.parametrize("rota", [
+    "/api/v1/agenda", "/api/v1/turmas/minhas", "/api/v1/periodos", "/api/v1/perfis", "/api/v1/docentes",
+    "/api/v1/orientacoes", "/api/v1/instrumento-avaliacao", "/api/v1/cadastros",
+])
+def test_ct_01_12_03_telas_de_gestao_e_agenda_negadas(defesa, ana, rota):
+    """CT-01.12-03 (CA-02, decisão 32-33-a): fora da lista, 403, inclusive a Agenda."""
+    r = ana.get(rota)
+    assert r.status_code == 403 and r.json()["detail"] == "Esta conta só acessa a defesa ou o TCC para os quais foi convidada."
+
+
+def test_rotas_da_propria_defesa_fora_da_lista_tambem_sao_negadas(defesa, ana):
+    """A banca (com e-mails e docentes), a presença e o resultado da própria defesa ficam de fora (32-33-a)."""
+    tcc, defesa_id = defesa["tcc"]["id"], defesa["defesa"]["id"]
+    for rota in (f"/api/v1/tccs/{tcc}/banca", f"/api/v1/defesas/{defesa_id}/ocorrencias",
+                 f"/api/v1/defesas/{defesa_id}/resultado", f"/api/v1/defesas/{defesa_id}/divulgacao"):
+        assert ana.get(rota).status_code == 403, rota
+
+
+def test_ct_01_12_02_outra_defesa_recebe_403(defesa, ana, db):
+    """CT-01.12-02 (CA-02, E2, decisão 32-33-b): a defesa da Ana é cancelada e o TCC é agendado de novo sem ela;
+    a defesa nova e o TCC respondem 403, e não 404."""
+    defesa["olga"].post(f"/api/v1/defesas/{defesa['defesa']['id']}/cancelamento", json=MOTIVO)
+    outra = _agendar(defesa).json()
+    assert ana.get(f"/api/v1/defesas/{outra['id']}/avaliacao").status_code == 403
+    assert ana.get(f"/api/v1/tccs/{defesa['tcc']['id']}").status_code == 403
+    assert ana.get("/api/v1/tccs").json() == [] and ana.get("/api/v1/auth/me").json()["acessos"] == []
+
+
+def test_foto_so_a_propria(defesa, ana, db):
+    """O menu mostra o avatar de quem entrou; a foto dos outros fica de fora."""
+    assert ana.get(f"/api/v1/usuarios/{_ana(db).id}/foto").status_code != 403
+    assert ana.get(f"/api/v1/usuarios/{defesa['ids']['olga']}/foto").status_code == 403
+
+
+def test_membro_interno_da_banca_nao_muda(defesa):
+    """O perfil membro_banca também é de docentes; a restrição vale só para quem tem usuario_externo."""
+    assert defesa["otto"].get("/api/v1/agenda").status_code == 200
+    assert defesa["otto"].get(f"/api/v1/tccs/{defesa['tcc']['id']}/banca").status_code == 200
