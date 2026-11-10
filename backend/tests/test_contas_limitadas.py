@@ -11,12 +11,12 @@ from datetime import timedelta
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app import config
 from app.database import agora
 from app.main import app
-from app.models import AcessoLimitado, LogAuditoria, ResultadoDefesa, TokenUsuario, Usuario
+from app.models import AcessoLimitado, LogAuditoria, Orientacao, ResultadoDefesa, Tcc, TokenUsuario, Usuario
 from tests.conftest import SENHA, ativar
 from tests.test_avaliacao import RESULTADO, _enviar, depois_da_defesa  # noqa: F401  (depois_da_defesa é fixture)
 from tests.test_defesas_banca import _agendar, _membros, banca  # noqa: F401  (banca é fixture)
@@ -327,3 +327,172 @@ def test_rotina_exige_a_chave(monkeypatch):
     assert TestClient(app).post("/api/v1/tarefas/expirar-acessos").status_code == 401
     monkeypatch.setattr(config, "TAREFAS_CHAVE", "")
     assert TestClient(app).post("/api/v1/tarefas/expirar-acessos", headers=CHAVE).status_code == 503
+
+
+# ---------------------------------------------------------------- SCRUM-33 · RBN01.13 · coorientador externo
+
+BETO = {"nome": "Beto Externo", "email": "beto@inpa.gov.br", "instituicao": "INPA"}
+ENCERRAR = {"justificativa": "O coorientador deixou o projeto."}
+
+
+def _orientacoes(b) -> str:
+    return f"/api/v1/tccs/{b['tcc']['id']}/orientacoes"
+
+
+def _informar(b, quem="olga", **corpo):
+    return b[quem].post(_orientacoes(b), json={"papel": "COORIENTADOR", **corpo})
+
+
+def _remover(b, quem: str, corpo: dict):
+    """DELETE com a justificativa no corpo (DS-FL03-D mensagens 14 e 15)."""
+    return b[quem].request("DELETE", f"{_orientacoes(b)}/{b['vinculo']['id']}", json=corpo)
+
+
+def _beto(db) -> Usuario:
+    db.expire_all()
+    return db.scalar(select(Usuario).where(Usuario.email == BETO["email"]))
+
+
+@pytest.fixture
+def beto(banca, caixa):
+    """O Beto informado como coorientador externo pela Olga (orientadora); a conta ainda não foi ativada."""
+    r = _informar(banca, externo=BETO)
+    assert r.status_code == 201, r.json()
+    return {**banca, "vinculo": r.json()}
+
+
+def test_ct_01_13_01_conta_sem_senha_acesso_ao_tcc_e_link_de_ativacao(beto, caixa, db):
+    """CT-01.13-01 (CA-01, DS-FL03-D mensagens 4 a 10): conta sem senha, acesso limitado ao TCC, vínculo pendente,
+    e-mail com o link de ativação (48 horas) e o registro no log."""
+    assert beto["vinculo"]["status"] == "PENDENTE" and beto["vinculo"]["externo"] is True
+    assert beto["vinculo"]["instituicao"] == "INPA"
+    pessoa = _beto(db)
+    assert pessoa.senha_hash is None and not pessoa.ativo and pessoa.externo.instituicao == "INPA"
+    [acesso] = _acessos(db, pessoa.id)
+    assert (acesso.escopo, acesso.tcc_id, acesso.defesa_id) == ("COORIENTACAO", beto["tcc"]["id"], None)
+    [aviso] = [m for m in caixa if m["para"] == BETO["email"]]
+    assert aviso["assunto"] == "SIGA UEA: coorientação de TCC" and aviso["token"]
+    log = db.scalar(select(LogAuditoria).where(LogAuditoria.acao == "criar_conta_coorientador"))
+    assert log.usuario_id == beto["ids"]["olga"] and log.entidade_id == acesso.id
+
+
+def test_ativar_a_conta_vale_como_aceite_e_ele_ve_so_o_tcc(beto, caixa, db):
+    """Decisão 33-b e CA-02: ao ativar a conta, a coorientação fica aceita; ele vê o TCC vinculado."""
+    cliente = ativar(caixa, BETO["email"])
+    vinculo = db.get(Orientacao, beto["vinculo"]["id"])
+    db.refresh(vinculo)
+    assert vinculo.status == "ACEITA" and vinculo.respondido_em is not None
+    tcc = beto["tcc"]["id"]
+    assert [t["id"] for t in cliente.get("/api/v1/tccs").json()] == [tcc]
+    assert cliente.get(f"/api/v1/tccs/{tcc}").json()["coorientador"]["status"] == "ACEITA"
+    assert cliente.get("/api/v1/auth/me").json()["acessos"] == [
+        {"escopo": "COORIENTACAO", "tcc_id": tcc, "defesa_id": None}]
+
+
+def test_ct_01_13_02_outro_tcc_recebe_403(beto, caixa):
+    """CT-01.13-02 (CA-02, decisão 32-33-b)."""
+    cliente = ativar(caixa, BETO["email"])
+    assert cliente.get(f"/api/v1/tccs/{beto['tcc']['id'] + 1}").status_code == 403
+
+
+def test_ct_01_13_03_nao_edita_nem_submete(beto, caixa):
+    """CT-01.13-03 (CA-02): só visualizar; editar, submeter e as telas de banca e orientação são negados."""
+    cliente = ativar(caixa, BETO["email"])
+    tcc = beto["tcc"]["id"]
+    assert cliente.put(f"/api/v1/tccs/{tcc}", json={}).status_code == 403
+    assert cliente.post(f"/api/v1/tccs/{tcc}/submissao").status_code == 403
+    assert cliente.get(f"/api/v1/tccs/{tcc}/banca").status_code == 403
+    assert cliente.get("/api/v1/orientacoes").status_code == 403
+
+
+def test_ct_01_13_04_coorientador_interno_so_ganha_o_vinculo(banca, coord, db):
+    """CT-01.13-04 (CA-03, DS-FL03-D mensagens 11 e 12): docente da UEA, informado pela coordenação, sem conta nova."""
+    pessoas = db.scalar(select(func.count()).select_from(Usuario))
+    r = _informar({**banca, "coord": coord}, quem="coord", professor_id=banca["ids"]["ricardo"])
+    assert r.status_code == 201 and r.json()["externo"] is False and r.json()["status"] == "PENDENTE"
+    assert db.scalar(select(func.count()).select_from(Usuario)) == pessoas
+    assert db.scalars(select(AcessoLimitado)).all() == []
+
+
+def test_ct_01_13_05_remover_revoga_o_acesso_e_preserva_o_historico(beto, caixa, db):
+    """CT-01.13-05 (CA-04, RN16, DS-FL03-D mensagens 14 a 17): o vínculo fica encerrado com data e justificativa,
+    o acesso é revogado, a conta (sem outro acesso) é desligada e o log registra o fim."""
+    cliente = ativar(caixa, BETO["email"])
+    r = _remover(beto, "olga", ENCERRAR)
+    assert r.status_code == 200, r.json()
+    assert r.json()["encerrado_em"] and r.json()["justificativa_encerramento"] == ENCERRAR["justificativa"]
+    assert db.get(Orientacao, beto["vinculo"]["id"]) is not None  # histórico preservado
+    assert [a.revogado_em is not None for a in _acessos(db, _beto(db).id)] == [True]
+    assert _beto(db).ativo is False and cliente.get("/api/v1/auth/me").status_code == 401
+    assert beto["olga"].get(f"/api/v1/tccs/{beto['tcc']['id']}").json()["coorientador"] is None
+    log = db.scalar(select(LogAuditoria).where(LogAuditoria.acao == "encerrar_coorientacao"))
+    assert (log.entidade_id, log.valor_anterior) == (beto["vinculo"]["id"], "Beto Externo")
+
+
+def test_ct_01_13_06_aluno_e_outro_docente_recebem_403(banca, db):
+    """CT-01.13-06 (CA-05, E2): o aluno não informa coorientador externo; o docente que não orienta o TCC também não."""
+    assert _informar(banca, quem="aluno", externo=BETO).status_code == 403
+    assert _informar(banca, quem="otto", externo=BETO).status_code == 403
+    assert _beto(db) is None
+
+
+def test_e1_campo_faltando_da_400_com_o_campo(banca):
+    """E1 e DS-FL03-D: nome, e-mail e instituição obrigatórios (400 com os campos)."""
+    r = _informar(banca, externo={"nome": "Beto", "email": "beto@inpa.gov.br"})
+    assert r.status_code == 400 and "instituicao" in r.json()["campos"]
+    assert _informar(banca, externo={**BETO, "email": "sem-arroba"}).status_code == 400
+
+
+def test_e1_email_de_docente_da_uea_da_409(banca):
+    """E1 e DS-FL03-D [e-mail do orientador ou de pessoa que já tem conta de outro perfil]: 409 (decisão 33-c)."""
+    r = _informar(banca, externo={**BETO, "email": "olga@exemplo.com"})
+    assert r.status_code == 409 and r.json()["campo"] == "email"
+
+
+def test_ja_tem_coorientador_da_409(beto):
+    assert _informar(beto, externo={**BETO, "email": "outro@inpa.gov.br"}).status_code == 409
+
+
+def test_remover_exige_justificativa_e_permissao(beto):
+    r = _remover(beto, "olga", {"justificativa": " oi "})
+    assert r.status_code == 422 and r.json()["campo"] == "justificativa"
+    assert _remover(beto, "otto", ENCERRAR).status_code == 403
+
+
+def test_externo_ja_cadastrado_e_reaproveitado(defesa, caixa, db):
+    """Decisão 33-c: a Ana (externa da banca, já com senha) vira coorientadora: mesma conta, acesso novo, aceite na
+    hora e e-mail com o endereço de entrada, sem link de ativação."""
+    ativar(caixa, ANA["email"])
+    pessoas = db.scalar(select(func.count()).select_from(Usuario))
+    r = _informar(defesa, externo=ANA)
+    assert r.status_code == 201 and r.json()["status"] == "ACEITA"
+    assert db.scalar(select(func.count()).select_from(Usuario)) == pessoas
+    assert sorted(a.escopo for a in _acessos(db, _ana(db).id)) == ["BANCA", "COORIENTACAO"]
+    aviso = [m for m in caixa if m["para"] == ANA["email"] and "coorientação" in m["assunto"]][-1]
+    assert aviso["token"] is None
+
+
+def test_32_j_coorientador_externo_entra_na_vaga_da_banca(beto, caixa, db):
+    """Decisão 32-j: com a coorientação aceita, o Beto ocupa a vaga de coorientador e ganha também o acesso à defesa."""
+    ativar(caixa, BETO["email"])
+    membros = _membros(beto) + [{"papel": "COORIENTADOR", "usuario_id": _beto(db).id}]
+    r = _agendar(beto, membros=membros)
+    assert r.status_code == 201, r.json()
+    vaga = next(m for m in r.json()["membros"] if m["papel"] == "COORIENTADOR")
+    assert vaga["interno"] is False and vaga["instituicao"] == "INPA"
+    assert sorted(a.escopo for a in _acessos(db, _beto(db).id)) == ["BANCA", "COORIENTACAO"]
+
+
+def test_a19_aluno_nao_troca_nem_tira_o_coorientador_externo(beto, db):
+    """A19: no cadastro devolvido, o aluno salva mantendo o externo; trocar ou tirar recebe 409."""
+    registro = db.get(Tcc, beto["tcc"]["id"])
+    registro.situacao = "DEVOLVIDO"
+    db.commit()
+    corpo = {"titulo": "Detecção de fraudes com aprendizado de máquina", "resumo": "Um resumo curto.",
+             "palavras_chave": ["IA", "fraude"], "area_id": beto["area"]["id"], "modalidade": "MONOGRAFIA",
+             "orientador_id": beto["orientador"]["id"]}
+    url = f"/api/v1/tccs/{beto['tcc']['id']}"
+    assert beto["aluno"].put(url, json={**corpo, "coorientador_id": _beto(db).id}).status_code == 200
+    assert beto["aluno"].put(url, json=corpo).status_code == 409
+    assert beto["aluno"].put(url, json={**corpo, "coorientador_id": beto["ids"]["ricardo"]}).status_code == 409
+    assert beto["olga"].get(url).json()["coorientador"]["id"] == beto["vinculo"]["id"]
