@@ -6,7 +6,7 @@ vira "enviado" ou "falha", e uma falha não desfaz o que foi gravado (E5 do DS-F
 O texto leva só o necessário para a pessoa comparecer: título e autor do trabalho, data, horário,
 formato, local ou link e o papel na banca. Nada de nota, matrícula ou contato pessoal (RBN09.05 CA-02).
 Remarcação (SCRUM-65), cancelamento (SCRUM-66) e convocação do suplente (SCRUM-67) usam o mesmo
-bloco de dados e a mesma fila.
+bloco de dados e a mesma fila. O convite do membro externo leva o link de acesso da conta limitada (SCRUM-32).
 """
 
 from fastapi import BackgroundTasks
@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app import config
 from app.models import BancaMembro, Defesa, NotificacaoEmail, Usuario
-from app.services import email
+from app.services import acessos, email
 
 TIPO_CONVITE = email.TIPO_CONVITE_BANCA
 TIPO_LEMBRETE = "LEMBRETE_DEFESA"
@@ -55,8 +55,20 @@ def descrever(defesa: Defesa) -> str:
 def _rodape(defesa: Defesa, interno: bool) -> str:
     if interno:
         return f"Detalhes no SIGA UEA: {config.FRONTEND_URL}/tccs/{defesa.tcc_id}"
-    # O link de acesso da conta limitada do convidado externo é da SCRUM-32.
-    return "O link de acesso ao SIGA UEA será enviado em mensagem separada."
+    # Pessoa externa (RBN01.12): o link de ativação vai só no convite; os outros avisos levam a entrada.
+    return f"Para acessar esta defesa no SIGA UEA, entre com o seu e-mail e a sua senha: {config.FRONTEND_URL}/entrar"
+
+
+def _rodape_convite_externo(link: str) -> str:
+    """RBN01.12 e DS-FL04-B ("o link de acesso vai junto com o convite"), decisões 32-a, 32-b e 32-h."""
+    if "/ativar?" in link:
+        return (
+            "Para acessar esta defesa no SIGA UEA, crie a sua senha pelo link abaixo, em até "
+            f"{config.ATIVACAO_HORAS} horas:\n\n{link}\n\n"
+            "A conta dá acesso só a esta defesa: ao trabalho e à sua avaliação. Se o link expirar, "
+            "peça ao orientador que reenvie o convite."
+        )
+    return f"Para acessar esta defesa no SIGA UEA, entre com o seu e-mail e a sua senha: {link}"
 
 
 def participantes(defesa: Defesa) -> list[tuple[Usuario, bool]]:
@@ -77,7 +89,8 @@ def participantes(defesa: Defesa) -> list[tuple[Usuario, bool]]:
 # =================================================================== RBN09.05 · convite à banca
 
 
-def texto_convite(defesa: Defesa, membro: BancaMembro) -> tuple[str, str]:
+def texto_convite(defesa: Defesa, membro: BancaMembro, link: str | None = None) -> tuple[str, str]:
+    """O convite. Para o membro externo, link é o de ativação ou o de entrada (acessos.link_do_convite)."""
     papel = NOME_PAPEL.get(membro.papel, membro.papel.lower())
     corpo = (
         f"Olá, {membro.usuario.nome}.\n\n"
@@ -89,13 +102,15 @@ def texto_convite(defesa: Defesa, membro: BancaMembro) -> tuple[str, str]:
         corpo += f"Você foi convocado(a) para avaliar no lugar de {titular.usuario.nome if titular else 'um avaliador titular'}.\n\n"
     elif membro.papel == "SUPLENTE":
         corpo += "Como suplente, você só avalia se for convocado(a) no lugar de um avaliador titular.\n\n"
-    corpo += _rodape(defesa, membro.interno)
+    corpo += _rodape_convite_externo(link) if not membro.interno and link else _rodape(defesa, membro.interno)
     return f"Convite para banca de defesa de TCC – {defesa.data.strftime('%d/%m/%Y')}", corpo
 
 
 def convidar(db: Session, tarefas: BackgroundTasks, defesa: Defesa, membro: BancaMembro) -> None:
-    """DS-FL04 passos 22 a 26: um convite por membro, enviado depois da resposta."""
-    assunto, corpo = texto_convite(defesa, membro)
+    """DS-FL04 passos 22 a 26: um convite por membro, enviado depois da resposta. O membro externo recebe
+    junto o link de acesso (RBN01.12); o reenvio gera um link novo."""
+    link = None if membro.interno else acessos.link_do_convite(db, membro.usuario)
+    assunto, corpo = texto_convite(defesa, membro, link)
     email.enfileirar(db, tarefas, membro.usuario, TIPO_CONVITE, assunto, corpo,
                      entidade="banca_membro", entidade_id=membro.id)
 

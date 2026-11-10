@@ -21,7 +21,7 @@ from app.models import (
     Usuario,
     UsuarioPerfil,
 )
-from app.schemas.usuario import AlunoCriar, DocenteCriar, UsuarioAtualizar, UsuarioOut
+from app.schemas.usuario import AcessoOut, AlunoCriar, DocenteCriar, UsuarioAtualizar, UsuarioOut
 from app.services import auditoria, tokens
 
 # ---------- leitura ----------
@@ -35,7 +35,7 @@ def para_saida(usuario: Usuario) -> UsuarioOut:
         nome=usuario.nome,
         email=usuario.email,
         telefone=usuario.telefone,
-        tipo="aluno" if aluno else "docente",
+        tipo="aluno" if aluno else "externo" if usuario.externo else "docente",
         situacao=usuario.situacao,
         perfis=usuario.perfis,
         cargo=docente.cargo if docente else None,
@@ -45,6 +45,10 @@ def para_saida(usuario: Usuario) -> UsuarioOut:
         email_ativacao=ativacoes[-1].status if ativacoes else None,
         foto_versao=usuario.foto.sha256[:12] if usuario.foto else None,
         criado_em=usuario.criado_em,
+        acessos=[  # pessoa externa: o que ela pode abrir (RBN01.12 e RBN01.13)
+            AcessoOut(escopo=a.escopo, tcc_id=a.tcc_alvo, defesa_id=a.defesa_id)
+            for a in usuario.acessos_limitados if a.vigente
+        ] if usuario.externo else [],
     )
 
 
@@ -280,7 +284,7 @@ def atualizar(db: Session, usuario_id: int, dados: UsuarioAtualizar, ator: Usuar
 
         if dados.areas is not None:
             areas = areas_validas(db, dados.areas)
-            nomes = lambda lista: ", ".join(sorted(a.nome for a in lista)) or None  # noqa: E731
+            def nomes(lista): return ", ".join(sorted(a.nome for a in lista)) or None  # noqa: E731
             if mudar("areas", nomes(docente.areas), nomes(areas)):
                 docente.areas = areas
 

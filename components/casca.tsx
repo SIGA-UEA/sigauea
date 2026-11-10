@@ -12,14 +12,14 @@ import { Avatar } from "./avatar";
 import { Icone, type NomeIcone } from "./icone";
 import { Marca } from "./marca";
 
-type Item = { href: string; rotulo: string; icone: NomeIcone; perfis?: Perfil[]; exceto?: Perfil[] };
+type Item = { href: string; rotulo: string; icone: NomeIcone; perfis?: Perfil[]; exceto?: Perfil[]; externo?: boolean };
 
 // Cada tela nova entra aqui. "perfis" limita quem vê o item no menu e "exceto"
 // esconde de quem já tem outro item para a mesma tela. A API confere a permissão
-// de novo em cada rota.
+// de novo em cada rota. A pessoa externa (RBN01.12 e RBN01.13) vê só os itens com "externo".
 const MENU: Item[] = [
-  { href: "/inicio", rotulo: "Início", icone: "inicio" },
-  { href: "/tccs", rotulo: "TCCs", icone: "documento" },
+  { href: "/inicio", rotulo: "Início", icone: "inicio", externo: true },
+  { href: "/tccs", rotulo: "TCCs", icone: "documento", externo: true },
   { href: "/orientacoes", rotulo: "Orientações", icone: "certo", perfis: ["orientador", "professor_disciplina"] },
   { href: "/agenda", rotulo: "Agenda", icone: "relogio" },
   { href: "/analise", rotulo: "Análise de cadastros", icone: "busca", perfis: ["coordenador"] },
@@ -34,17 +34,19 @@ const MENU: Item[] = [
   },
   { href: "/turmas", rotulo: "Minha turma", icone: "turma", perfis: ["aluno"] },
   { href: "/usuarios", rotulo: "Usuários e perfis", icone: "pessoas", perfis: ["coordenador"] },
-  { href: "/perfil", rotulo: "Meu perfil", icone: "perfil" },
+  { href: "/perfil", rotulo: "Meu perfil", icone: "perfil", externo: true },
 ];
 
 export function Casca({ children }: { children: React.ReactNode }) {
   const { usuario, sair } = useSessao();
   const caminho = usePathname();
   const [menuAberto, setMenuAberto] = useState(false);
-  const itens = MENU.filter(
-    (i) =>
-      (!i.perfis || i.perfis.some((p) => usuario.perfis.includes(p))) &&
-      !i.exceto?.some((p) => usuario.perfis.includes(p)),
+  const externo = usuario.tipo === "externo";
+  const itens = MENU.filter((i) =>
+    externo
+      ? i.externo
+      : (!i.perfis || i.perfis.some((p) => usuario.perfis.includes(p))) &&
+        !i.exceto?.some((p) => usuario.perfis.includes(p)),
   );
 
   return (
@@ -66,7 +68,9 @@ export function Casca({ children }: { children: React.ReactNode }) {
         <div className="ml-auto flex items-center gap-2 sm:gap-3">
           <div className="hidden text-right leading-tight sm:block">
             <p className="text-sm font-medium">{usuario.nome}</p>
-            <p className="text-xs text-suave">{usuario.perfis.map((p) => NOME_PERFIL[p]).join(" · ")}</p>
+            <p className="text-xs text-suave">
+              {externo ? "Acesso limitado" : usuario.perfis.map((p) => NOME_PERFIL[p]).join(" · ")}
+            </p>
           </div>
           <Link href="/perfil" aria-label="Meu perfil" className="rounded-full">
             <Avatar nome={usuario.nome} foto={urlFoto(usuario)} />

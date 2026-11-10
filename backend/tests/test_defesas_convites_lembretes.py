@@ -106,13 +106,15 @@ def test_suplente_e_avisado_de_que_so_avalia_se_convocado(banca, cartas):
     assert "como suplente" in ricardo["corpo"] and "convocado(a)" in ricardo["corpo"]
 
 
-def test_convidado_externo_recebe_convite_sem_link_interno(banca, cartas):
+def test_convidado_externo_recebe_convite_com_link_de_ativacao(banca, cartas):
+    """O convite do externo leva o link de ativação da conta limitada (SCRUM-32, decisão 32-h), e não o link
+    interno do TCC."""
     externo = {"nome": "Ana Externa", "email": "ana@ufam.edu.br", "instituicao": "UFAM"}
     membros = [m for m in _membros(banca) if m["papel"] == "ORIENTADOR"] + [
         {"papel": "AVALIADOR", "usuario_id": banca["ids"]["otto"]}, {"papel": "AVALIADOR", "externo": externo}]
     assert _agendar(banca, membros=membros).status_code == 201
     carta = next(c for c in _convites(cartas) if c["para"] == "ana@ufam.edu.br")
-    assert "link de acesso" in carta["corpo"] and "/tccs/" not in carta["corpo"]
+    assert "/ativar?token=" in carta["corpo"] and "/tccs/" not in carta["corpo"]
 
 
 def test_troca_de_membro_convida_a_pessoa_nova(banca, cartas):

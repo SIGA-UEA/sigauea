@@ -1,0 +1,37 @@
+# Expiração das contas limitadas dos externos (SCRUM-32, RBN01.12 CA-03).
+#
+# Uma vez por dia, chama a rota protegida da API, que expira os acessos vencidos (7 dias depois da
+# confirmação do resultado da defesa) e desliga as contas externas que ficaram sem acesso.
+# Usa os mesmos segredos do lembrete da véspera (lembretes-defesa.yml):
+#   SIGA_API_URL        endereço da API no Render, sem barra no fim
+#   SIGA_TAREFAS_CHAVE  o mesmo valor de TAREFAS_CHAVE definido no Render
+# O GitHub só roda agendamentos do workflow que está na branch padrão (main).
+# Para testar na hora: aba Actions > "Expiração das contas limitadas" > Run workflow.
+
+name: Expiração das contas limitadas
+
+on:
+  schedule:
+    - cron: "43 4 * * *" # 00:43 em Manaus (UTC-4); fora da hora cheia, que costuma atrasar
+  workflow_dispatch:
+
+jobs:
+  expirar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Expirar os acessos vencidos
+        env:
+          SIGA_API_URL: ${{ secrets.SIGA_API_URL }}
+          SIGA_TAREFAS_CHAVE: ${{ secrets.SIGA_TAREFAS_CHAVE }}
+        run: |
+          if [ -z "$SIGA_API_URL" ] || [ -z "$SIGA_TAREFAS_CHAVE" ]; then
+            echo "Defina os segredos SIGA_API_URL e SIGA_TAREFAS_CHAVE." >&2
+            exit 1
+          fi
+          # O Render grátis dorme sem uso: as tentativas dão tempo para a API acordar.
+          # Repetir é seguro: a rotina não expira o mesmo acesso duas vezes.
+          curl --fail-with-body --silent --show-error \
+            --retry 5 --retry-delay 30 --retry-all-errors --max-time 120 \
+            -X POST "$SIGA_API_URL/api/v1/tarefas/expirar-acessos" \
+            -H "X-Chave-Tarefas: $SIGA_TAREFAS_CHAVE"

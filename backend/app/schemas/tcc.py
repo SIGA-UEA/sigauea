@@ -7,9 +7,9 @@ submissão) e DS-FL03 (orientador responde, indicar orientador).
 from datetime import date
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, StringConstraints, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, StringConstraints, field_validator, model_validator
 
-from app.schemas.usuario import AreaOut, CursoOut, DataHora
+from app.schemas.usuario import AreaOut, CursoOut, DataHora, Nome
 
 Texto = Annotated[str, StringConstraints(strip_whitespace=True)]
 Disciplina = Literal["TCC1", "TCC2"]
@@ -165,6 +165,12 @@ class VinculoOut(BaseModel):
     solicitado_em: DataHora
     respondido_em: DataHora | None
     motivo_recusa: str | None
+    # Coorientador externo (RBN01.13): PENDENTE + externo = "Aguardando ativação" na tela.
+    externo: bool = False
+    instituicao: str | None = None
+    # Fim do vínculo (DS-FL03-D mensagens 15 e 17): o histórico fica preservado (RN16).
+    encerrado_em: DataHora | None = None
+    justificativa_encerramento: str | None = None 
 
 
 class ArtigoOut(BaseModel):
@@ -251,9 +257,36 @@ class FormularioOut(BaseModel):
 # ---------------------------------------------------------------- orientação (RAN06)
 
 
+Instituicao = Annotated[str, StringConstraints(strip_whitespace=True, min_length=2, max_length=150)]
+
+
+class CoorientadorExterno(BaseModel):
+    """DS-FL03-D mensagem 2: nome, e-mail e instituição, todos obrigatórios (RBN06.02 CA-03, RN12)."""
+
+    nome: Nome
+    email: EmailStr
+    instituicao: Instituicao
+
+
 class IndicarOrientador(BaseModel):
-    professor_id: int
+    """O aluno indica um docente (professor_id). A coordenação e o orientador do TCC informam o coorientador:
+    um docente da UEA (professor_id) ou um externo (DS-FL03-D, RBN01.13)."""
+
+    professor_id: int | None = None
+    externo: CoorientadorExterno | None = None
     papel: Literal["ORIENTADOR", "COORIENTADOR"] = "ORIENTADOR"
+
+    @model_validator(mode="after")
+    def _um_dos_dois(self):
+        if (self.professor_id is None) == (self.externo is None):
+            raise ValueError("Escolha um docente da UEA ou informe o coorientador externo.")
+        return self
+
+
+class EncerrarOrientacao(BaseModel):
+    """DS-FL03-D mensagem 14: a justificativa do fim do vínculo (mensagem 15)."""
+
+    justificativa: Annotated[str, StringConstraints(strip_whitespace=True, max_length=1000)]
 
 
 class RespostaOrientacao(BaseModel):

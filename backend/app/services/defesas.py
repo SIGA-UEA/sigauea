@@ -17,7 +17,8 @@ Remarcação (SCRUM-65, RBN09.07), cancelamento (SCRUM-66, RBN09.08) e convocaç
 (SCRUM-67, RBN09.09): mudam a mesma defesa, guardam o histórico com o motivo, entram no log de
 auditoria e avisam os participantes por e-mail. Defesa cancelada ou já realizada não muda mais (409).
 
-Fica para outra história a conta limitada do externo, com o link de acesso (SCRUM-32).
+Conta limitada do membro externo (SCRUM-32, RBN01.12): o acesso à defesa nasce quando ele entra na banca
+gravada (confirmação ou troca) e é revogado quando a defesa é cancelada ou ele sai da banca (services/acessos.py).
 
 Pendência: o DS-FL04 (passo 5) confere a versão do PDF para banca antes de agendar. A tabela
 documento_tcc ainda não existe; a conferência entra junto com o envio do PDF (SCRUM-55, RBN07.01).
@@ -78,7 +79,7 @@ from app.schemas.defesa import (
     ValidarMembro,
 )
 from app.schemas.tcc import PessoaOut
-from app.services import auditoria, avisos_defesa
+from app.services import acessos, auditoria, avisos_defesa
 from app.services.tccs import obter_para
 from app.services.turmas import pessoa
 from app.services.usuarios import buscar_por_email
@@ -237,6 +238,10 @@ def _resolver(db: Session, tcc: Tcc, p: PessoaBanca) -> tuple[Usuario | None, bo
     """Quem ocupa a vaga: (usuário já cadastrado ou None se o externo é novo, interno?, instituição)."""
     if p.usuario_id is not None:
         usuario = db.get(Usuario, p.usuario_id)
+        if usuario is not None and usuario.externo is not None and getattr(p, "papel", None) == PAPEL_COORIENTADOR:
+            # decisão 32-j: na vaga de coorientador, o coorientador externo vinculado ao TCC (RBN01.13);
+            # _conferir_vaga confere que é o mesmo do vínculo aceito
+            return usuario, False, usuario.externo.instituicao
         if usuario is None or usuario.docente is None or not usuario.ativo:  # DS-FL04-A passo 9
             raise ErroAPI(422, "Escolha um docente ativo da UEA.", campo="usuario_id")
         if usuario.id == tcc.aluno_id:
@@ -333,7 +338,7 @@ def validar_membro(db: Session, usuario: Usuario, tcc_id: int, dados: ValidarMem
 
 def _criar_externo(db: Session, dados, ator: Usuario) -> Usuario:
     """DS-FL04-B passos 6 e 7 (decisão C): conta sem senha e inativa, com a instituição e o perfil
-    de membro da banca. O link de acesso e o acesso limitado ficam com o SCRUM-32."""
+    de membro da banca. O acesso limitado (passo 8) e o link no convite são do services/acessos.py."""
     usuario = Usuario(nome=dados.nome, email=dados.email.lower())
     db.add(usuario)
     db.flush()
@@ -503,6 +508,7 @@ def agendar(db: Session, usuario: Usuario, tcc_id: int, dados: DefesaCriar, tare
             db, ator_id=usuario.id, acao="incluir_membro_banca", entidade="banca_membro",
             entidade_id=membro.id, campo=m.papel, novo=pessoa_vaga.nome,
         )
+        acessos.conceder_banca(db, usuario, membro)  # DS-FL04-B passo 8 (RBN01.12)
     db.add(HistoricoDefesa(defesa_id=defesa.id, evento="AGENDAMENTO", usuario_id=usuario.id))  # passo 19
     db.flush()
     db.refresh(defesa)  # carrega a banca recém-gravada para os convites
@@ -581,6 +587,8 @@ def trocar_membro(
         pessoa_vaga = _criar_externo(db, nova.externo, usuario)
 
     anterior = membro.usuario.nome
+    if not membro.interno:  # decisão 32-k: quem sai da banca perde o acesso à defesa
+        acessos.revogar_banca(db, usuario, defesa, membro.usuario_id)
     if avaliacao is not None:
         _descartar_rascunho(db, usuario, avaliacao, anterior)
     db.add(HistoricoDefesa(  # CA-06: histórico preservado
@@ -604,6 +612,7 @@ def trocar_membro(
         campo=membro.papel, anterior=anterior, novo=pessoa_vaga.nome,
     )
     db.flush()
+    acessos.conceder_banca(db, usuario, membro)  # DS-FL04-B passo 8 para quem entra (RBN01.12)
     avisos_defesa.convidar(db, tarefas, defesa, membro)
     _confirmar(db, "A banca mudou enquanto você editava. Abra a página de novo.")
     db.refresh(defesa)
@@ -751,6 +760,7 @@ def cancelar(db: Session, usuario: Usuario, defesa_id: int, dados: DefesaCancela
         db, ator_id=usuario.id, acao="cancelar_defesa", entidade="defesa", entidade_id=defesa.id,
         campo="situacao", anterior=anterior, novo=f"{CANCELADA}: {justificativa}",
     )
+    acessos.revogar_banca(db, usuario, defesa)  # decisão 32-k: a defesa cancelada encerra o acesso dos externos
     avisos_defesa.avisar_cancelamento(db, tarefas, defesa, justificativa)  # mensagens 7 a 12
     db.commit()
     db.refresh(defesa)

@@ -304,7 +304,7 @@ export default function PaginaUsuarios() {
 
       {formulario && aba !== "area" && (
         <FormularioUsuario
-          tipo={formulario.usuario?.tipo ?? aba}
+          tipo={formulario.usuario?.tipo === "aluno" ? "aluno" : formulario.usuario ? "docente" : aba} // a lista não traz externos
           usuario={formulario.usuario}
           cursos={cursos}
           areas={areas}

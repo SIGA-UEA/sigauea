@@ -23,6 +23,7 @@ from app.models import (
     PAPEL_COORIENTADOR,
     PAPEL_ORIENTADOR,
     PENDENTE,
+    PERFIL_ALUNO,
     PERFIL_COORDENADOR,
     PERFIL_ORIENTADOR,
     PERFIL_PROFESSOR,
@@ -50,6 +51,7 @@ from app.models import (
 from app.schemas.tcc import (
     ArtigoOut,
     DecisaoOut,
+    EncerrarOrientacao,
     FormularioOut,
     HistoricoOut,
     IndicarOrientador,
@@ -61,8 +63,9 @@ from app.schemas.tcc import (
     VinculoOut,
 )
 from app.schemas.usuario import AreaOut, CursoOut
-from app.services import auditoria, email
+from app.services import acessos, auditoria, email
 from app.services.turmas import pessoa, turma_resumo
+from app.services.usuarios import buscar_por_email
 
 EDITAVEIS = (RASCUNHO, DEVOLVIDO)  # DS-FL01-B: PUT só nessas situações
 VIGENTES = (PENDENTE, ACEITA)  # vínculo que ainda vale
@@ -91,6 +94,10 @@ def _vinculo_out(o: Orientacao | None) -> VinculoOut | None:
         solicitado_em=o.solicitado_em,
         respondido_em=o.respondido_em,
         motivo_recusa=o.motivo_recusa,
+        externo=o.professor.externo is not None,
+        instituicao=o.professor.externo.instituicao if o.professor.externo else None,
+        encerrado_em=o.encerrado_em,
+        justificativa_encerramento=o.justificativa_encerramento,
     )
 
 
@@ -518,7 +525,12 @@ def atualizar(db: Session, tarefas: BackgroundTasks, aluno: Usuario, tcc_id: int
     tcc = _obter_do_aluno(db, tcc_id, aluno)  # passo 12 (RN07)
     if tcc.situacao not in EDITAVEIS:
         raise ErroAPI(409, "O cadastro não pode ser editado nesta situação.", motivo="nao_editavel")
-    _verificar_elegibilidade(db, dados.orientador_id, dados.coorientador_id)  # passo 13
+    externo = _coorientador_externo(tcc)  # A19: o coorientador externo é da coordenação ou do orientador
+    if externo is not None and dados.coorientador_id != externo.professor_id:
+        raise ErroAPI(409, "O coorientador externo é informado e removido pela coordenação ou pelo orientador.",
+                      campo="coorientador_id")
+    coorientador_id = None if externo is not None else dados.coorientador_id
+    _verificar_elegibilidade(db, dados.orientador_id, coorientador_id)  # passo 13
     _area(db, dados.area_id)  # passo 5
     # passos 6 e 14: atualizar mantém protocolo e parecer (RBN03.05); cada campo alterado vai para o log
     novos = {
@@ -559,7 +571,8 @@ def atualizar(db: Session, tarefas: BackgroundTasks, aluno: Usuario, tcc_id: int
     tcc.atualizado_em = agora()
     _salvar_artigo(db, tcc, dados, aluno)  # passo 9
     _salvar_vinculo(db, tarefas, tcc, PAPEL_ORIENTADOR, dados.orientador_id, aluno)  # passos 15 e 16
-    _salvar_vinculo(db, tarefas, tcc, PAPEL_COORIENTADOR, dados.coorientador_id, aluno)
+    if externo is None:  # o vínculo do coorientador externo fica como está (A19)
+        _salvar_vinculo(db, tarefas, tcc, PAPEL_COORIENTADOR, dados.coorientador_id, aluno)
     _reenviar_falhas(db, tarefas, tcc)
     db.commit()
     db.refresh(tcc)
@@ -657,6 +670,8 @@ def _tccs_da_banca(usuario: Usuario):
 
 
 def _pode_ver(db: Session, usuario: Usuario, tcc: Tcc) -> bool:
+    if usuario.externo is not None:  # pessoa externa: só o TCC de um acesso vigente (RBN01.12, RBN01.13)
+        return tcc.id in acessos.tccs_do_escopo(usuario)
     if tcc.aluno_id == usuario.id or PERFIL_COORDENADOR in usuario.perfis:
         return True
     if any(o.professor_id == usuario.id for o in tcc.orientacoes):
@@ -675,8 +690,10 @@ def obter_para(db: Session, usuario: Usuario, tcc_id: int) -> Tcc:
 
 def listar_para(db: Session, usuario: Usuario) -> list[Tcc]:
     """RBN05.01: aluno vê os seus; orientador, os que orienta; professor, os da turma; coordenação, todos.
-    O membro da banca vê os TCCs que avalia (SCRUM-77, D4)."""
+        O membro da banca vê os TCCs que avalia (SCRUM-77, D4); a pessoa externa, só os dos seus acessos vigentes."""
     consulta = select(Tcc).order_by(Tcc.atualizado_em.desc())
+    if usuario.externo is not None:  # pessoa externa: só os TCCs dos acessos vigentes (RBN01.12, RBN01.13)
+        return list(db.scalars(consulta.where(Tcc.id.in_(acessos.tccs_do_escopo(usuario)))))
     if PERFIL_COORDENADOR not in usuario.perfis:
         consulta = (
             consulta.outerjoin(Orientacao, Orientacao.tcc_id == Tcc.id)
@@ -720,6 +737,109 @@ def indicar(
         )
     o = _registrar_vinculo(db, tarefas, tcc, dados.professor_id, dados.papel, aluno)  # DS-FL03-B passos 10 a 13
     db.commit()
+    return o
+
+
+# =================================================================== DS-FL03-D · coorientador pela coordenação ou orientador
+
+MOTIVO_MINIMO = 5  # como na remarcação e no cancelamento da defesa
+
+
+def _coorientador_externo(tcc: Tcc) -> Orientacao | None:
+    """O vínculo vigente do coorientador externo (RBN01.13), se houver."""
+    atual = _vinculo(tcc, PAPEL_COORIENTADOR)
+    return atual if atual and atual.status in VIGENTES and atual.professor.externo is not None else None
+
+
+def _orientador_vigente(tcc: Tcc) -> Orientacao | None:
+    return next((o for o in tcc.orientacoes if o.papel == PAPEL_ORIENTADOR and o.status == ACEITA
+                 and o.encerrado_em is None), None)
+
+
+def _exigir_coordenacao_ou_orientador(db: Session, usuario: Usuario, tcc_id: int) -> Tcc:
+    """DS-FL03-D mensagem 3 (E2 da ficha 33, RN07): só a coordenação ou o orientador do TCC; os demais, 403."""
+    tcc = db.get(Tcc, tcc_id)
+    if tcc is None:
+        raise ErroAPI(404, "Cadastro de TCC não encontrado.")
+    orientador = _orientador_vigente(tcc)
+    if PERFIL_COORDENADOR in usuario.perfis or (orientador is not None and orientador.professor_id == usuario.id):
+        return tcc
+    raise ErroAPI(403, "Só a coordenação ou o orientador do TCC informam ou removem o coorientador.")
+
+
+def indicar_por_perfil(
+    db: Session, tarefas: BackgroundTasks, usuario: Usuario, tcc_id: int, dados: IndicarOrientador
+) -> Orientacao:
+    """POST /tccs/{id}/orientacoes: o aluno indica um docente como antes (DS-FL03-B); a coordenação e o orientador
+    informam o coorientador (DS-FL03-D). O aluno não informa coorientador externo (CT-01.13-06: 403)."""
+    if PERFIL_ALUNO in usuario.perfis and PERFIL_COORDENADOR not in usuario.perfis:
+        if dados.externo is not None:
+            raise ErroAPI(403, "Só a coordenação ou o orientador do TCC informam o coorientador externo.")
+        return indicar(db, tarefas, usuario, tcc_id, dados)
+    return informar_coorientador(db, tarefas, usuario, tcc_id, dados)
+
+
+def informar_coorientador(
+    db: Session, tarefas: BackgroundTasks, usuario: Usuario, tcc_id: int, dados: IndicarOrientador
+) -> Orientacao:
+    """DS-FL03-D mensagens 2 a 12 (RBN01.13): externo → conta sem senha, acesso ao TCC, vínculo pendente, link de
+    ativação e log; interno → só o vínculo, sem conta nova (CA-03)."""
+    tcc = _exigir_coordenacao_ou_orientador(db, usuario, tcc_id)  # mensagem 3
+    if dados.papel != PAPEL_COORIENTADOR:
+        raise ErroAPI(422, "Por aqui a coordenação e o orientador informam só o coorientador.", campo="papel")
+    atual = _vinculo(tcc, PAPEL_COORIENTADOR)
+    if atual and atual.status in VIGENTES:
+        raise ErroAPI(409, "Este TCC já tem coorientador. Remova o atual antes de informar outro.",
+                      motivo="vinculo_vigente")
+    orientador = _orientador_vigente(tcc)
+
+    if dados.externo is None:  # [coorientador já cadastrado (interno)]
+        _verificar_elegibilidade(db, orientador.professor_id if orientador else None, dados.professor_id)  # msg 11
+        o = _registrar_vinculo(db, tarefas, tcc, dados.professor_id, PAPEL_COORIENTADOR, usuario)  # msg 12
+        db.commit()
+        return o
+
+    externo = dados.externo  # [coorientador externo]
+    pessoa_ = buscar_por_email(db, externo.email)  # mensagem 4
+    if pessoa_ is not None and (pessoa_.externo is None or (orientador and pessoa_.id == orientador.professor_id)):
+        raise ErroAPI(409, "Este e-mail já é de alguém da UEA. Para um docente, escolha-o em \"Docente da UEA\".",
+                      campo="email")  # [e-mail do orientador ou de pessoa que já tem conta de outro perfil]
+    if pessoa_ is None:
+        pessoa_ = acessos.criar_externo(db, externo.nome, externo.email, externo.instituicao)  # mensagem 5
+    acessos.conceder_coorientacao(db, usuario, pessoa_, tcc)  # mensagens 6 e 10
+    o = Orientacao(tcc=tcc, professor_id=pessoa_.id, papel=PAPEL_COORIENTADOR, status=PENDENTE)  # mensagem 7
+    db.add(o)
+    db.flush()
+    if pessoa_.senha_hash is not None:  # já ativou a conta antes (outra banca ou TCC): o aceite é agora (33-b)
+        acessos.aceitar_coorientacoes(db, pessoa_)
+    acessos.avisar_coorientador(db, tarefas, usuario, pessoa_, tcc)  # mensagens 8 e 9
+    db.commit()
+    db.refresh(o)
+    return o
+
+
+def encerrar_coorientacao(
+    db: Session, usuario: Usuario, tcc_id: int, orientacao_id: int, dados: EncerrarOrientacao
+) -> Orientacao:
+    """DELETE /tccs/{id}/orientacoes/{orientacao_id} (DS-FL03-D mensagens 13 a 17, CA-04, RN16): encerra o vínculo
+    com data e justificativa, preservando o histórico, e revoga o acesso do externo."""
+    tcc = _exigir_coordenacao_ou_orientador(db, usuario, tcc_id)
+    o = next((v for v in tcc.orientacoes if v.id == orientacao_id and v.papel == PAPEL_COORIENTADOR
+              and v.encerrado_em is None), None)
+    if o is None:
+        raise ErroAPI(404, "Vínculo de coorientação não encontrado.")
+    justificativa = (dados.justificativa or "").strip()
+    if len(justificativa) < MOTIVO_MINIMO:
+        raise ErroAPI(422, f"Informe a justificativa (pelo menos {MOTIVO_MINIMO} caracteres).", campo="justificativa")
+    o.encerrado_em, o.justificativa_encerramento = agora(), justificativa  # mensagem 15
+    if o.professor.externo is not None:
+        acessos.revogar_coorientacao(db, usuario, o.professor, tcc)  # mensagem 16
+    auditoria.registrar(  # mensagem 17
+        db, ator_id=usuario.id, acao="encerrar_coorientacao", entidade="orientacao", entidade_id=o.id,
+        campo="coorientador", anterior=o.professor.nome, novo=justificativa,
+    )
+    db.commit()
+    db.refresh(o)
     return o
 
 

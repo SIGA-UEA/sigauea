@@ -4,25 +4,29 @@
 // da coordenação (DS-FL02-B), banca e defesa (TEL10/TEL11, ver banca.tsx), presença e ocorrências
 // (TEL19, ver presenca.tsx) e histórico de situações (RNF03). Quem pode ver é decidido pela API (404 para
 // os demais, RN07). Para quem está na banca, a seção "Minha avaliação" (TEL12, ver avaliacao.tsx);
-// para o orientador, "Consolidar resultado" (TEL12, ver resultado.tsx).
+// para o orientador, "Consolidar resultado" (TEL12, ver resultado.tsx). A orientação, com as ações da coordenação e
+// do orientador sobre o coorientador (DS-FL03-D), fica em orientacao.tsx. A pessoa externa (RBN01.12 e RBN01.13) vê
+// só os dados do trabalho e, se for da banca, a sua avaliação: a defesa vem dos acessos da sessão (/auth/me).
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Aviso } from "@/components/aviso";
 import { Botao } from "@/components/botao";
-import { SeloOrientacao, SeloSituacao } from "@/components/situacao-tcc";
+import { SeloSituacao } from "@/components/situacao-tcc";
 import { api, ErroApi } from "@/lib/api";
 import { useSessao } from "@/lib/sessao";
 import { SecaoAvaliacao } from "./avaliacao";
 import { SecaoBanca } from "./banca";
+import { SecaoOrientacao } from "./orientacao";
 import { SecaoPresenca } from "./presenca";
 import { SecaoResultado } from "./resultado";
 import { dataHora, NOME_SITUACAO_EDITORIAL, NOME_SITUACAO_TCC, type Banca, type SituacaoTcc, type Tcc } from "@/lib/tipos";
 
 export default function PaginaTcc() {
   const { id } = useParams<{ id: string }>();
-  const { tem } = useSessao();
+  const { tem, usuario } = useSessao();
+  const externo = usuario.tipo === "externo";
   const router = useRouter();
   const [tcc, setTcc] = useState<Tcc | null>(null);
   const [erro, setErro] = useState("");
@@ -31,12 +35,19 @@ export default function PaginaTcc() {
   // Muda a cada avaliação enviada: a consolidação recarrega sem precisar abrir a página de novo.
   const [envios, setEnvios] = useState(0);
 
+  const recarregar = () => api<Tcc>(`/tccs/${id}`).then(setTcc).catch((e: ErroApi) => setErro(e.message));
+
+  // A pessoa externa não abre a banca (403); a defesa dela vem dos acessos da sessão (decisão 32-33-a, opção A).
+  const defesaExterna =
+    usuario.acessos.find((a) => a.escopo === "BANCA" && a.tcc_id === Number(id))?.defesa_id ?? null;
+
   useEffect(() => {
     api<Tcc>(`/tccs/${id}`).then(setTcc).catch((e: ErroApi) => setErro(e.message));
+    if (externo) return;
     api<Banca>(`/tccs/${id}/banca`)
       .then((b) => setDefesaId(b.defesa?.id ?? null))
       .catch(() => setDefesaId(null)); // a seção Banca e defesa mostra o erro
-  }, [id]);
+  }, [id, externo]);
 
   if (erro) return <Aviso tipo="erro">{erro}</Aviso>;
   if (!tcc)
@@ -122,23 +133,7 @@ export default function PaginaTcc() {
         </dl>
       </section>
 
-      <section className="rounded-xl border border-borda bg-superficie p-5">
-        <h2 className="mb-3 font-semibold">Orientação</h2>
-        {!tcc.orientador && !tcc.coorientador ? (
-          <p className="text-sm text-suave">Nenhum orientador indicado ainda.</p>
-        ) : (
-          <ul className="flex flex-col gap-2 text-sm">
-            {[tcc.orientador, tcc.coorientador].filter(Boolean).map((v) => (
-              <li key={v!.id} className="flex flex-wrap items-center gap-2">
-                <span className="font-medium">{v!.papel === "ORIENTADOR" ? "Orientador" : "Coorientador"}:</span>
-                {v!.professor.nome}
-                <SeloOrientacao status={v!.status} />
-                {v!.motivo_recusa && <span className="w-full text-[13px] text-suave">Motivo: {v!.motivo_recusa}</span>}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <SecaoOrientacao tcc={tcc} aoMudar={recarregar} />
 
       {tcc.decisoes.length > 0 && (
         <section className="rounded-xl border border-borda bg-superficie p-5">
@@ -159,12 +154,18 @@ export default function PaginaTcc() {
         </section>
       )}
 
-      <SecaoBanca tccId={id} />
-      {defesaId !== null && (
+      {externo ? (
+        defesaExterna !== null && <SecaoAvaliacao defesaId={defesaExterna} aoEnviar={() => setEnvios((n) => n + 1)} />
+      ) : (
         <>
-          <SecaoPresenca defesaId={defesaId} />
-          <SecaoAvaliacao defesaId={defesaId} aoEnviar={() => setEnvios((n) => n + 1)} />
-          <SecaoResultado defesaId={defesaId} envios={envios} />
+          <SecaoBanca tccId={id} />
+          {defesaId !== null && (
+            <>
+              <SecaoPresenca defesaId={defesaId} />
+              <SecaoAvaliacao defesaId={defesaId} aoEnviar={() => setEnvios((n) => n + 1)} />
+              <SecaoResultado defesaId={defesaId} envios={envios} />
+            </>
+          )}
         </>
       )}
 

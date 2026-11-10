@@ -19,7 +19,7 @@ export type Usuario = {
   nome: string;
   email: string;
   telefone: string | null;
-  tipo: "docente" | "aluno";
+  tipo: "docente" | "aluno" | "externo";
   situacao: Situacao;
   perfis: Perfil[];
   cargo: Cargo | null;
@@ -29,7 +29,11 @@ export type Usuario = {
   email_ativacao: "pendente" | "enviado" | "falha" | null;
   foto_versao: string | null; // nulo = sem foto
   criado_em: string;
+  acessos: Acesso[]; // só para tipo "externo": a defesa ou o TCC que a pessoa pode abrir (RBN01.12 e RBN01.13)
 };
+
+// Acesso limitado vigente da pessoa externa (BANCA: a defesa; COORIENTACAO: o TCC).
+export type Acesso = { escopo: "BANCA" | "COORIENTACAO"; tcc_id: number; defesa_id: number | null };
 
 // A versão na URL faz o navegador buscar a foto de novo quando ela muda.
 export function urlFoto(usuario: Pick<Usuario, "id" | "foto_versao">) {
@@ -145,6 +149,10 @@ export type Vinculo = {
   solicitado_em: string;
   respondido_em: string | null;
   motivo_recusa: string | null;
+  externo: boolean; // coorientador externo (RBN01.13): pendente = aguardando ativação
+  instituicao: string | null;
+  encerrado_em: string | null;
+  justificativa_encerramento: string | null;
 };
 
 export type Artigo = {
