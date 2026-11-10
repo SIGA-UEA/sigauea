@@ -1,0 +1,157 @@
+"""SCRUM-32 (RBN01.12, conta limitada do membro externo da banca) e SCRUM-33 (RBN01.13, conta limitada do
+coorientador externo).
+
+Cada teste cita o caso de teste da ficha (CT-01.12-xx e CT-01.13-xx) ou a decisão registrada no documento de
+divergências (32-a, 32-c...). O cenário é montado pela API: a fixture `banca` da SCRUM-59 (TCC de EC aprovado,
+Olga orienta; Otto, Paulo e Ricardo são docentes ativos). A Ana, da UFAM, é a convidada externa. Os e-mails
+ficam na fixture `caixa`, que guarda o token do link.
+"""
+
+from datetime import timedelta
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import select
+
+from app.database import agora
+from app.main import app
+from app.models import AcessoLimitado, LogAuditoria, TokenUsuario, Usuario
+from tests.conftest import SENHA, ativar
+from tests.test_defesas_banca import _agendar, _membros, banca  # noqa: F401  (banca é fixture)
+from tests.test_tcc import cenario  # noqa: F401  (fixture usada por banca)
+
+ANA = {"nome": "Ana Externa", "email": "ana@ufam.edu.br", "instituicao": "UFAM"}
+MOTIVO = {"justificativa": "A aluna pediu o cancelamento."}
+
+
+def _com_ana(b) -> list[dict]:
+    """Banca com a Olga (orientadora), o Otto e a Ana (avaliadores)."""
+    return _membros(b, avaliadores=("otto",)) + [{"papel": "AVALIADOR", "externo": ANA}]
+
+
+@pytest.fixture
+def defesa(banca):
+    r = _agendar(banca, membros=_com_ana(banca))
+    assert r.status_code == 201, r.json()
+    return {**banca, "defesa": r.json()}
+
+
+def _ana(db) -> Usuario:
+    return db.scalar(select(Usuario).where(Usuario.email == ANA["email"]))
+
+
+def _acessos(db, usuario_id: int) -> list[AcessoLimitado]:
+    db.expire_all()
+    return list(db.scalars(select(AcessoLimitado).where(AcessoLimitado.usuario_id == usuario_id).order_by(AcessoLimitado.id)))
+
+
+def _convites(caixa, email: str) -> list[dict]:
+    return [m for m in caixa if m["para"] == email and m["assunto"].startswith("Convite para banca")]
+
+
+def _vaga(d, quem_id: int) -> dict:
+    return next(m for m in d["defesa"]["membros"] if m["pessoa"]["id"] == quem_id)
+
+
+# ---------------------------------------------------------------- SCRUM-32 · RBN01.12 · geração (CA-01)
+
+
+def test_ct_01_12_01_conta_limitada_criada_e_link_enviado_no_convite(defesa, caixa, db):
+    """CT-01.12-01 (CA-01, decisões 32-a, 32-c e 32-h): a confirmação da defesa cria a conta sem senha e o acesso
+    limitado àquela defesa, e o convite leva o link de ativação; com ele, a Ana define a senha e entra."""
+    ana = _ana(db)
+    assert ana.senha_hash is None and not ana.ativo
+    [acesso] = _acessos(db, ana.id)
+    assert (acesso.escopo, acesso.defesa_id, acesso.tcc_id) == ("BANCA", defesa["defesa"]["id"], None)
+    assert acesso.expira_em is None and acesso.revogado_em is None  # o prazo nasce com o resultado (32-d)
+
+    [convite] = _convites(caixa, ANA["email"])
+    assert convite["token"]  # o link de ativação vai no próprio convite
+    cliente = ativar(caixa, ANA["email"])
+    assert cliente.get("/api/v1/auth/me").json()["email"] == ANA["email"]
+
+
+def test_membro_interno_nao_recebe_acesso_limitado(defesa, db):
+    """Só a pessoa externa tem acesso limitado; os docentes da UEA continuam como estão."""
+    assert db.scalars(select(AcessoLimitado.usuario_id)).all() == [_ana(db).id]
+
+
+def test_ct_01_12_05_aluno_nao_gera_a_conta(banca, db):
+    """CT-01.12-05 (CA-04, decisão 59-f): a conta nasce na confirmação da defesa, que o aluno não faz (403)."""
+    r = _agendar(banca, quem="aluno", membros=_com_ana(banca))
+    assert r.status_code == 403
+    assert _ana(db) is None and db.scalars(select(AcessoLimitado)).all() == []
+
+
+def test_ct_01_12_06_geracao_fica_no_log(defesa, db):
+    """CT-01.12-06 (CA-05, RNF03): responsável, data e hora, defesa e evento."""
+    log = db.scalar(select(LogAuditoria).where(LogAuditoria.acao == "criar_acesso_banca"))
+    assert log.usuario_id == defesa["ids"]["olga"] and log.criado_em is not None
+    assert log.entidade == "acesso_limitado" and log.entidade_id == _acessos(db, _ana(db).id)[0].id
+    assert log.valor_novo.startswith(f"Ana Externa · Defesa {defesa['defesa']['id']} (")
+
+
+# ---------------------------------------------------------------- link vencido, troca e cancelamento
+
+
+def test_link_vencido_e_renovado_pelo_reenvio_do_convite(defesa, caixa, db):
+    """Decisão 32-b: o link vale 48 horas; o reenvio do convite manda um link novo, e o antigo deixa de valer."""
+    antigo = _convites(caixa, ANA["email"])[-1]["token"]
+    for token in db.scalars(select(TokenUsuario).where(TokenUsuario.usuario_id == _ana(db).id)):
+        token.expira_em = agora() - timedelta(minutes=1)
+    db.commit()
+    anonimo = TestClient(app)
+    assert anonimo.post("/api/v1/auth/validar-token", json={"token": antigo, "tipo": "ativacao"}).json() == {
+        "valido": False, "motivo": "expirado"}
+
+    vaga = _vaga(defesa, _ana(db).id)
+    r = defesa["olga"].post(f"/api/v1/defesas/{defesa['defesa']['id']}/banca/{vaga['id']}/convite")
+    assert r.status_code == 200
+    novo = _convites(caixa, ANA["email"])[-1]["token"]
+    assert novo != antigo
+    assert ativar(caixa, ANA["email"]).get("/api/v1/auth/me").status_code == 200
+
+
+def test_quem_ja_ativou_recebe_o_endereco_de_entrada(defesa, caixa, db):
+    """Decisão 32-h: quem já tem senha não recebe outro link de ativação, só o endereço de entrada."""
+    ativar(caixa, ANA["email"])
+    vaga = _vaga(defesa, _ana(db).id)
+    defesa["olga"].post(f"/api/v1/defesas/{defesa['defesa']['id']}/banca/{vaga['id']}/convite")
+    assert _convites(caixa, ANA["email"])[-1]["token"] is None
+
+
+def test_trocar_a_ana_revoga_o_acesso_e_a_volta_cria_outro(defesa, caixa, db):
+    """Decisões 32-c e 32-k: quem sai da banca perde o acesso; quem entra (mesmo com conta) ganha um novo."""
+    ana = _ana(db)
+    url = f"/api/v1/defesas/{defesa['defesa']['id']}/banca/{_vaga(defesa, ana.id)['id']}"
+    assert defesa["olga"].put(url, json={"usuario_id": defesa["ids"]["paulo"]}).status_code == 200
+    [antigo] = _acessos(db, ana.id)
+    assert antigo.revogado_em is not None
+    assert db.scalar(select(LogAuditoria).where(LogAuditoria.acao == "revogar_acesso")).entidade_id == antigo.id
+
+    assert defesa["olga"].put(url, json={"externo": ANA}).status_code == 200
+    antigo, novo = _acessos(db, ana.id)
+    assert novo.revogado_em is None and novo.defesa_id == defesa["defesa"]["id"]
+    assert len(_convites(caixa, ANA["email"])) == 2
+
+
+def test_cancelar_a_defesa_revoga_o_acesso(defesa, db):
+    """Decisão 32-k: a defesa cancelada encerra o acesso de todos os membros externos."""
+    r = defesa["olga"].post(f"/api/v1/defesas/{defesa['defesa']['id']}/cancelamento", json=MOTIVO)
+    assert r.status_code == 200
+    assert [a.revogado_em is not None for a in _acessos(db, _ana(db).id)] == [True]
+
+
+def test_conta_desligada_volta_com_um_acesso_novo(defesa, caixa, db):
+    """Decisão 32-f: a conta desligada por falta de acesso (ativo falso, sem inativação da coordenação) volta a
+    entrar quando a pessoa ganha um acesso novo."""
+    ativar(caixa, ANA["email"])
+    ana = _ana(db)
+    url = f"/api/v1/defesas/{defesa['defesa']['id']}/banca/{_vaga(defesa, ana.id)['id']}"
+    assert defesa["olga"].put(url, json={"usuario_id": defesa["ids"]["paulo"]}).status_code == 200
+    ana.ativo = False  # o desligamento é da rotina de expiração (etapa 3); aqui só o efeito
+    db.commit()
+    entrar = {"email": ANA["email"], "senha": SENHA}
+    assert TestClient(app).post("/api/v1/auth/login", json=entrar).status_code == 401
+    assert defesa["olga"].put(url, json={"externo": ANA}).status_code == 200
+    assert TestClient(app).post("/api/v1/auth/login", json=entrar).status_code == 200
