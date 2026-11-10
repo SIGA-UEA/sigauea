@@ -112,6 +112,12 @@ class Usuario(Base):
     )
     foto: Mapped["FotoUsuario | None"] = relationship(cascade="all, delete-orphan")
 
+    # Pessoa de fora da UEA (RBN01.12 e RBN01.13) e o que ela pode acessar.
+    externo: Mapped["UsuarioExterno | None"] = relationship(back_populates="usuario")
+    acessos_limitados: Mapped[list["AcessoLimitado"]] = relationship(
+        back_populates="usuario", order_by="AcessoLimitado.id"
+    )
+
     @property
     def perfis(self) -> list[str]:
         return sorted(v.perfil.codigo for v in self.vinculos_perfil)
@@ -525,7 +531,7 @@ class UsuarioExterno(Base):
     usuario_id: Mapped[int] = _fk("usuario.id", primary_key=True)
     instituicao: Mapped[str] = mapped_column(String(150))
 
-    usuario: Mapped[Usuario] = relationship()
+    usuario: Mapped[Usuario] = relationship(back_populates="externo")
 
 
 # Escopo da conta limitada (RBN01.12 e RBN01.13): a banca de uma defesa ou a coorientação de um TCC.
@@ -558,7 +564,18 @@ class AcessoLimitado(Base):
     revogado_em: Mapped[datetime | None]
     criado_em: Mapped[datetime] = mapped_column(default=agora)
 
-    usuario: Mapped[Usuario] = relationship()
+    usuario: Mapped[Usuario] = relationship(back_populates="acessos_limitados")
+    defesa: Mapped["Defesa | None"] = relationship()
+
+    @property
+    def vigente(self) -> bool:
+        """Não revogado e dentro do prazo (prazo vazio = ainda sem data de fim)."""
+        return self.revogado_em is None and (self.expira_em is None or self.expira_em > agora())
+
+    @property
+    def tcc_alvo(self) -> int:
+        """O TCC que o acesso mostra: o da defesa (BANCA) ou o próprio (COORIENTACAO)."""
+        return self.defesa.tcc_id if self.escopo == ESCOPO_BANCA else self.tcc_id
 
 
 class LocalDefesa(Base):
