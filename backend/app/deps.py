@@ -12,6 +12,7 @@ from app.database import agora, get_db
 from app.erros import ErroAPI
 from app.models import PERFIL_COORDENADOR, Sessao, Usuario
 from app.security import hash_token
+from app.services import acessos
 
 
 def token_da_requisicao(request: Request) -> str | None:
@@ -23,7 +24,8 @@ def token_da_requisicao(request: Request) -> str | None:
 
 
 def usuario_atual(request: Request, db: Session = Depends(get_db, scope="function")) -> Usuario:
-    """Exige sessão válida. Cada uso renova os 60 minutos (expiração deslizante)."""
+    """Exige sessão válida. Cada uso renova os 60 minutos (expiração deslizante). A conta externa só passa
+    pelas rotas do seu escopo (services/acessos.py, RBN01.12 e RBN01.13)."""
     token = token_da_requisicao(request)
     sessao = (
         db.scalar(select(Sessao).where(Sessao.token_hash == hash_token(token)))
@@ -35,6 +37,7 @@ def usuario_atual(request: Request, db: Session = Depends(get_db, scope="functio
 
     sessao.expira_em = agora() + timedelta(minutes=config.SESSAO_MINUTOS)
     db.commit()
+    acessos.exigir_escopo(sessao.usuario, request)  # conta externa: só a sua defesa ou o seu TCC (RBN01.12 e 01.13)
     return sessao.usuario
 
 

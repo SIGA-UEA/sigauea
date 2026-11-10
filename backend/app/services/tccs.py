@@ -61,7 +61,7 @@ from app.schemas.tcc import (
     VinculoOut,
 )
 from app.schemas.usuario import AreaOut, CursoOut
-from app.services import auditoria, email
+from app.services import acessos, auditoria, email
 from app.services.turmas import pessoa, turma_resumo
 
 EDITAVEIS = (RASCUNHO, DEVOLVIDO)  # DS-FL01-B: PUT só nessas situações
@@ -657,6 +657,8 @@ def _tccs_da_banca(usuario: Usuario):
 
 
 def _pode_ver(db: Session, usuario: Usuario, tcc: Tcc) -> bool:
+    if usuario.externo is not None:  # pessoa externa: só o TCC de um acesso vigente (RBN01.12, RBN01.13)
+        return tcc.id in acessos.tccs_do_escopo(usuario)
     if tcc.aluno_id == usuario.id or PERFIL_COORDENADOR in usuario.perfis:
         return True
     if any(o.professor_id == usuario.id for o in tcc.orientacoes):
@@ -675,8 +677,10 @@ def obter_para(db: Session, usuario: Usuario, tcc_id: int) -> Tcc:
 
 def listar_para(db: Session, usuario: Usuario) -> list[Tcc]:
     """RBN05.01: aluno vê os seus; orientador, os que orienta; professor, os da turma; coordenação, todos.
-    O membro da banca vê os TCCs que avalia (SCRUM-77, D4)."""
+        O membro da banca vê os TCCs que avalia (SCRUM-77, D4); a pessoa externa, só os dos seus acessos vigentes."""
     consulta = select(Tcc).order_by(Tcc.atualizado_em.desc())
+    if usuario.externo is not None:  # pessoa externa: só os TCCs dos acessos vigentes (RBN01.12, RBN01.13)
+        return list(db.scalars(consulta.where(Tcc.id.in_(acessos.tccs_do_escopo(usuario)))))
     if PERFIL_COORDENADOR not in usuario.perfis:
         consulta = (
             consulta.outerjoin(Orientacao, Orientacao.tcc_id == Tcc.id)
