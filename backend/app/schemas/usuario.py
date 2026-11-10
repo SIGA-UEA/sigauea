@@ -106,6 +106,14 @@ class TrocarSenhaEntrada(BaseModel):
     nova_senha: str = Field(min_length=1, max_length=128)
 
 
+class AcessoOut(BaseModel):
+    """Um acesso vigente da pessoa externa (RBN01.12 e RBN01.13): a tela usa para achar a defesa e o TCC."""
+
+    escopo: Literal["BANCA", "COORIENTACAO"]
+    tcc_id: int
+    defesa_id: int | None
+
+
 class UsuarioOut(BaseModel):
     """Um usuário como a tela precisa. Nunca inclui senha nem hash (HU01.04 R7)."""
 
@@ -113,7 +121,7 @@ class UsuarioOut(BaseModel):
     nome: str
     email: str
     telefone: str | None
-    tipo: Literal["docente", "aluno"]
+    tipo: Literal["docente", "aluno", "externo"]
     situacao: Literal["ativo", "aguardando_ativacao", "inativo"]
     perfis: list[str]
     cargo: str | None
@@ -125,3 +133,5 @@ class UsuarioOut(BaseModel):
     # Muda quando a foto muda; a tela usa para buscar /usuarios/{id}/foto?v=... Nulo = sem foto.
     foto_versao: str | None
     criado_em: DataHora
+    # Só para tipo "externo": a defesa ou o TCC que a pessoa pode abrir (decisão 32-33-a, opção A).
+    acessos: list[AcessoOut] = []
