@@ -733,6 +733,23 @@ class DocumentoOficial(Base):
             sqlite_where=text("tipo = 'DECLARACAO_HORAS' AND vigente"),
             postgresql_where=text("tipo = 'DECLARACAO_HORAS' AND vigente"),
         ),
+        # RN15 (RBN09.14 a RBN09.17): uma ata e uma Folha de Aprovação vigentes por defesa e um certificado
+        # por membro, também com dois cliques ao mesmo tempo. Não estão no SQL físico entregue.
+        Index(
+            "uq_documento_oficial_ata_folha_vigente",
+            "defesa_id",
+            "tipo",
+            unique=True,
+            sqlite_where=text("tipo IN ('ATA', 'FOLHA_APROVACAO') AND vigente"),
+            postgresql_where=text("tipo IN ('ATA', 'FOLHA_APROVACAO') AND vigente"),
+        ),
+        Index(
+            "uq_documento_oficial_certificado_vigente",
+            "membro_id",
+            unique=True,
+            sqlite_where=text("tipo = 'CERTIFICADO' AND vigente"),
+            postgresql_where=text("tipo = 'CERTIFICADO' AND vigente"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -893,8 +910,8 @@ class ResultadoDefesa(Base):
     deixa de ser vigente, com quem confirmou, quando e o motivo (RN13). Média e nota final ficam com duas
     casas, o mesmo valor da consolidação (CA-06 do RBN09.11); o modelo físico entregue tem NUMERIC(3,1).
 
-    As colunas da versão final, do prazo, da anuência e do atraso (RBN11.01 a RBN11.04) entram com as
-    histórias das correções."""
+    A anuência (RBN09.15) entra com a ata e a folha; as colunas da versão final, do prazo e do atraso
+    (RBN11.01 a RBN11.04) entram com as histórias das correções."""
 
     __tablename__ = "resultado_defesa"
     __table_args__ = (
@@ -923,6 +940,9 @@ class ResultadoDefesa(Base):
     confirmado_por: Mapped[int] = _fk("usuario.id", index=True)
     confirmado_em: Mapped[datetime] = mapped_column(default=agora)
     motivo_retificacao: Mapped[str | None] = mapped_column(Text)
+    # RBN09.15 CA-03: anuência do aluno às correções exigidas; libera a Folha de Aprovação quando o resultado é
+    # "aprovado com correções". Quem registra é a aba Correções (DS-FL07, SCRUM-81 e SCRUM-82).
+    anuencia_em: Mapped[datetime | None]
 
     defesa: Mapped[Defesa] = relationship()
     autor: Mapped["Usuario"] = relationship()
