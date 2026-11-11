@@ -113,6 +113,7 @@ def test_ct_09_13_02_antes_da_confirmacao_aluno_nao_ve_notas_nem_resultado(reali
     """CA-02."""
     corpo = realizada["aluno"].get(f"{realizada['url']}/resultado").json()
     assert (corpo["resultado"], corpo["consolidacao"], corpo["pendentes"]) == (None, None, [])
+    assert corpo["defesa_realizada"] is True  # E1: "Defesa realizada. Aguarde as avaliações e o resultado"
 
 
 def test_ct_09_13_03_sem_vinculo_recebe_403(realizada, caixa, coord):

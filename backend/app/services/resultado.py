@@ -42,6 +42,7 @@ from app.schemas.resultado import (
 )
 from app.services import acessos, auditoria, avaliacao, avisos_defesa, nota_final
 from app.services.acesso_defesa import vinculo
+from app.services.ocorrencias import pode_emitir  # a defesa já terminou: mesma regra da declaração (RN15)
 from app.services.tccs import obter_para
 from app.services.turmas import pessoa
 
@@ -133,7 +134,8 @@ def consultar_resultado(db: Session, usuario: Usuario, defesa_id: int) -> Result
         return ResultadoConsulta(defesa_id=defesa.id, pendentes=[], consolidacao=None,
                                  resultado=_resultado_out(versoes), pode_confirmar=v.orientador)
     if not v.orientador:  # CA-02 do RBN09.13: antes da confirmação, nem notas nem resultado parcial
-        return ResultadoConsulta(defesa_id=defesa.id, pendentes=[], consolidacao=None, pode_confirmar=False)
+        return ResultadoConsulta(defesa_id=defesa.id, pendentes=[], consolidacao=None, pode_confirmar=False,
+                                 defesa_realizada=pode_emitir(defesa))
     faltam = avaliacao.pendentes(db, defesa)  # "quem já enviou" (RBN10.05)
     if faltam:  # [falta avaliação]: o cálculo não é liberado e as pendências são indicadas (CA-05 do RBN09.11)
         return ResultadoConsulta(defesa_id=defesa.id, pendentes=_pendentes_out(faltam), consolidacao=None,

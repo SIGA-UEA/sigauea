@@ -60,6 +60,7 @@ class ResultadoConsulta(BaseModel):
     resultado: "ResultadoOut | None" = None  # [resultado já confirmado] (A2 do RBN09.12)
     # o orientador confirma e retifica; os demais (aluno, banca e coordenação) só consultam (RBN09.13)
     pode_confirmar: bool = False
+    defesa_realizada: bool = False  # E1 do RBN09.13: "Defesa realizada. Aguarde as avaliações e o resultado"
 
 
 # =================================================================== RBN09.12 · confirmação e retificação
