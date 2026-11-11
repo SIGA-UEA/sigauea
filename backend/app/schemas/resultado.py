@@ -58,6 +58,8 @@ class ResultadoConsulta(BaseModel):
     pendentes: list[MembroPendenteOut]
     consolidacao: NotaFinalOut | None  # só quando não há pendentes (RBN10.05, CA-05) e ainda sem resultado
     resultado: "ResultadoOut | None" = None  # [resultado já confirmado] (A2 do RBN09.12)
+    # o orientador confirma e retifica; os demais (aluno, banca e coordenação) só consultam (RBN09.13)
+    pode_confirmar: bool = False
 
 
 # =================================================================== RBN09.12 · confirmação e retificação

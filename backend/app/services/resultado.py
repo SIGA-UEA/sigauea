@@ -10,8 +10,11 @@ retificarResultado(defesa, resultado, motivo) do ControladorAvaliacaoDefesa (dia
 - POST /defesas/{id}/resultado/retificacao (DS-FL06-D): grava uma nova versão, a anterior deixa de ser
   vigente (de, para, quem, quando, motivo), registra no log e avisa o aluno e a banca.
 
-Quem pode: só o orientador do TCC, o ator do DS-FL06 (RBN09.12, CA-05). Quem vê o TCC sem ser o orientador
-recebe 403 (o avaliador vê só a própria avaliação, RBN10.02 CA-02); quem nem vê o TCC recebe 404 (RN07).
+Quem pode:
+- confirmar e retificar: só o orientador do TCC, o ator do DS-FL06 (RBN09.12, CA-05); os demais recebem 403;
+- consultar (RBN09.13, DS-FL06-E): o orientador vê a consolidação com as notas da banca; o aluno, os membros da
+  banca e a coordenação do núcleo veem só o resultado confirmado, com parecer e nota final, e nada antes da
+  confirmação (CA-02), nem as notas individuais (CA-05). Sem vínculo com o TCC, 403 (E2).
 
 Efeitos da confirmação (CA-04): a ata é gerada a partir do resultado confirmado em "Ata e certificados"
 (RBN09.14) e, em "aprovado com correções", a lista de correções é registrada a partir dele (RBN11.01). A ata
@@ -38,6 +41,7 @@ from app.schemas.resultado import (
     RetificacaoOut,
 )
 from app.services import acessos, auditoria, avaliacao, avisos_defesa, nota_final
+from app.services.acesso_defesa import vinculo
 from app.services.tccs import obter_para
 from app.services.turmas import pessoa
 
@@ -120,17 +124,22 @@ def _pendentes_out(faltam) -> list[MembroPendenteOut]:
 
 
 def consultar_resultado(db: Session, usuario: Usuario, defesa_id: int) -> ResultadoConsulta:
-    """GET /defesas/{idDefesa}/resultado (DS-FL06, mensagens 3 a 9)."""
-    defesa = _defesa_do_orientador(db, usuario, defesa_id)
+    """GET /defesas/{idDefesa}/resultado (DS-FL06, mensagens 3 a 9, e DS-FL06-E, mensagens 1 e 2)."""
+    defesa, v = vinculo(db, usuario, defesa_id)  # E2 do RBN09.13: sem vínculo, 403
+    if defesa.situacao == CANCELADA:
+        raise ErroAPI(409, "Esta defesa foi cancelada.")
     versoes = _versoes(db, defesa)
     if versoes:  # [resultado já confirmado (RN13)]: o resultado, "Retificar resultado" e "Ata e certificados"
         return ResultadoConsulta(defesa_id=defesa.id, pendentes=[], consolidacao=None,
-                                 resultado=_resultado_out(versoes))
+                                 resultado=_resultado_out(versoes), pode_confirmar=v.orientador)
+    if not v.orientador:  # CA-02 do RBN09.13: antes da confirmação, nem notas nem resultado parcial
+        return ResultadoConsulta(defesa_id=defesa.id, pendentes=[], consolidacao=None, pode_confirmar=False)
     faltam = avaliacao.pendentes(db, defesa)  # "quem já enviou" (RBN10.05)
     if faltam:  # [falta avaliação]: o cálculo não é liberado e as pendências são indicadas (CA-05 do RBN09.11)
-        return ResultadoConsulta(defesa_id=defesa.id, pendentes=_pendentes_out(faltam), consolidacao=None)
+        return ResultadoConsulta(defesa_id=defesa.id, pendentes=_pendentes_out(faltam), consolidacao=None,
+                                 pode_confirmar=True)
     # [todas enviadas]: DS-FL06-B
-    return ResultadoConsulta(defesa_id=defesa.id, pendentes=[],
+    return ResultadoConsulta(defesa_id=defesa.id, pendentes=[], pode_confirmar=True,
                              consolidacao=_consolidacao_out(nota_final.calcular_nota_final(db, defesa)))
 
 
