@@ -75,10 +75,11 @@ def caixa(monkeypatch):
     """E-mails "enviados" durante o teste, no lugar do envio real."""
     enviados: list[dict] = []
 
-    def entregar(destinatario, assunto, corpo):
+    def entregar(destinatario, assunto, corpo, anexo=None):
         token = re.search(r"token=(\S+)", corpo)
         enviados.append(
-            {"para": destinatario, "assunto": assunto, "token": token and token[1]})
+            {"para": destinatario, "assunto": assunto, "token": token and token[1],
+             "anexo": anexo and anexo[0], "anexo_pdf": anexo is not None and anexo[1].startswith(b"%PDF")})
 
     monkeypatch.setattr(email, "entregar", entregar)
     return enviados
