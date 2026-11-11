@@ -3,8 +3,10 @@
 Tabelas proposta, proposta_destinatario e comentario_proposta iguais às do modelo físico. A tabela denuncia
 (RBN02.03, moderação por denúncia) fica fora: a história é Won't nesta versão.
 
-Revision ID: 0012
-Revises: 0011
+Número 0013: vem depois da 0012_acesso_limitado (contas limitadas, RBN01.12 e RBN01.13), integrada antes.
+
+Revision ID: 0013
+Revises: 0012
 Create Date: 2026-11-09
 """
 
@@ -14,8 +16,8 @@ from alembic import op
 import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
-revision: str = "0012"
-down_revision: Union[str, Sequence[str], None] = "0011"
+revision: str = "0013"
+down_revision: Union[str, Sequence[str], None] = "0012"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
