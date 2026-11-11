@@ -17,6 +17,8 @@ from app.schemas.ocorrencia import (
     DeclaracaoOut,
     LoteEntrada,
     LoteOut,
+    MembroPresencaOut,
+    PresencaBancaEntrada,
     MatriculaEntrada,
     OcorrenciaEntrada,
     OcorrenciaOut,
@@ -95,3 +97,16 @@ def baixar_declaracao(defesa_id: int, declaracao_id: int, db: Session = Depends(
     conteudo = ocorrencias.arquivo_da_declaracao(db, eu, defesa_id, declaracao_id)
     return Response(conteudo, media_type="application/pdf",
                     headers={"Content-Disposition": f'inline; filename="declaracao-{declaracao_id}.pdf"'})
+
+
+@router.put("/defesas/{defesa_id}/banca/{membro_id}/presenca", response_model=MembroPresencaOut)
+def registrar_presenca_banca(
+    defesa_id: int,
+    membro_id: int,
+    dados: PresencaBancaEntrada,
+    db: Session = Depends(get_db, scope="function"),
+    eu: Usuario = Depends(usuario_atual),
+) -> MembroPresencaOut:
+    """Marca o membro da banca presente ou ausente na sessão (base do certificado, RBN09.17). 403 sem vínculo;
+    404 membro de outra defesa ou suplente não convocado; 409 defesa cancelada ou que ainda não começou."""
+    return ocorrencias.registrar_presenca_banca(db, eu, defesa_id, membro_id, dados)
