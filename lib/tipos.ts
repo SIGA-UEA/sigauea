@@ -532,3 +532,44 @@ export type ResultadoDefesa = {
   confirmado_em: string;
   retificacoes: Retificacao[];
 };
+
+// ---------------------------------------------------------------- SCRUM-34/35 · ideias de TCC (RBN02.01 e RBN02.02)
+// Espelha backend/app/schemas/ideia.py.
+
+export type DestinoProposta = "AREA" | "PROFESSORES";
+
+export type FormularioIdeia = {
+  areas: { id: number; nome: string }[];
+  docentes: { id: number; nome: string }[];
+};
+
+export type PropostaResumo = {
+  id: number;
+  titulo: string;
+  autor: { id: number; nome: string };
+  criado_em: string;
+  area: { id: number; nome: string } | null;
+  destino: DestinoProposta;
+  professores: { id: number; nome: string }[];
+  comentarios: number;
+};
+
+export type ComentarioProposta = {
+  id: number;
+  autor: { id: number; nome: string };
+  texto: string;
+  criado_em: string;
+};
+
+export type PropostaDetalhe = PropostaResumo & {
+  descricao: string;
+  discussao: ComentarioProposta[];
+  pode_comentar: boolean;
+};
+
+// "Enviada para": a área inteira (RN25) ou os professores nomeados.
+export function destinoDaProposta(p: PropostaResumo) {
+  return p.destino === "AREA"
+    ? `Professores da área ${p.area?.nome ?? ""}`.trim()
+    : p.professores.map((x) => x.nome).join(", ");
+}
