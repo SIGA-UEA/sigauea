@@ -247,10 +247,10 @@ def _rodape(pdf: FPDF, linhas: list[str]) -> bytes:
     return bytes(pdf.output())
 
 
-def _emissao(tipo: str, numero: int, versao: int, gerado_em: datetime) -> list[str]:
+def _emissao(tipo: str, numero: int, versao: int, gerado_em: datetime, emitida: str = "emitida") -> list[str]:
     emitido = gerado_em + FUSO_MANAUS
     return [EMISSOR,
-            f"{tipo} nº {numero}, versão {versao}, emitida pelo SIGA UEA às {emitido.strftime('%H:%M:%S')} de "
+            f"{tipo} nº {numero}, versão {versao}, {emitida} pelo SIGA UEA às {emitido.strftime('%H:%M:%S')} de "
             f"{emitido.strftime('%d/%m/%Y')} (horário de Manaus). A integridade do arquivo é conferida pelo SHA-256 "
             "registrado no sistema."]
 
@@ -286,7 +286,11 @@ def _tabela(pdf: FPDF, cabecalho: list[str], linhas: list[list[str]], larguras: 
     pdf.ln(3)
 
 
-def _assinaturas(pdf: FPDF, linhas: list[str]) -> None:
+def _assinaturas(pdf: FPDF, titulo: str, linhas: list[str]) -> None:
+    """Título e linhas de assinatura juntos: se não couberem no fim da página, começam na próxima."""
+    if pdf.get_y() + 8 + 17 * len(linhas) > pdf.h - 44:
+        pdf.add_page()
+    _subtitulo(pdf, titulo)
     pdf.set_font("Times", "", 10.5)
     for texto in linhas:
         if pdf.get_y() > pdf.h - 62:
@@ -361,8 +365,7 @@ def ata_defesa(conteudo: dict, *, numero: int, versao: int, gerado_em: datetime)
             _paragrafo(pdf, linha, 10.5, markdown=False)
     if versao > 1:
         _paragrafo(pdf, f"Esta é a versão {versao} da ata e substitui a versão {versao - 1}.", 10.5)
-    _subtitulo(pdf, "Assinaturas da banca")
-    _assinaturas(pdf, conteudo["assinaturas"])
+    _assinaturas(pdf, "Assinaturas da banca", conteudo["assinaturas"])
     return _rodape(pdf, _emissao("Ata", numero, versao, gerado_em))
 
 
@@ -401,8 +404,7 @@ def folha_aprovacao(conteudo: dict, *, numero: int, versao: int, gerado_em: date
     pdf.cell(0, 6, f"Aprovado em {conteudo['aprovado_em']}. Resultado: {conteudo['resultado']}.", align="C",
              new_x="LMARGIN", new_y="NEXT")
     pdf.ln(3)
-    _subtitulo(pdf, "BANCA EXAMINADORA")
-    _assinaturas(pdf, conteudo["banca"])
+    _assinaturas(pdf, "BANCA EXAMINADORA", conteudo["banca"])
     if versao > 1:
         pdf.ln(4)
         _paragrafo(pdf, f"Esta é a versão {versao} da folha e substitui a versão {versao - 1}.", 10)
@@ -435,4 +437,4 @@ def certificado_participacao(conteudo: dict, *, numero: int, gerado_em: datetime
     _paragrafo(pdf, conteudo["texto"], 14)
     pdf.set_left_margin(22)
     pdf.set_right_margin(22)
-    return _rodape(pdf, _emissao("Certificado", numero, 1, gerado_em))
+    return _rodape(pdf, _emissao("Certificado", numero, 1, gerado_em, "emitido"))
