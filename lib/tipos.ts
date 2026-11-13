@@ -443,6 +443,14 @@ export type Presenca = {
   ocorrencias: Ocorrencia[];
   ouvintes: Ouvinte[];
   prontos: number;
+  banca: MembroPresenca[]; // presença da banca (base do certificado, RBN09.17)
+};
+
+export type MembroPresenca = {
+  membro_id: number;
+  papel: PapelBanca;
+  pessoa: { id: number; nome: string };
+  presente: boolean | null; // null: ainda não marcada
 };
 
 export type LoteOuvintes = {
@@ -500,6 +508,8 @@ export type ConsultaResultado = {
   pendentes: { membro_id: number; papel: PapelAvaliador; pessoa: { id: number; nome: string } }[];
   consolidacao: { notas: NotaDoMembro[]; media: number; regra: RegraExcecao; nota_final: number } | null;
   resultado: ResultadoDefesa | null; // [resultado já confirmado] (RBN09.12)
+  pode_confirmar: boolean; // o orientador confirma e retifica; os demais só consultam (RBN09.13)
+  defesa_realizada: boolean; // "Defesa realizada. Aguarde as avaliações e o resultado" (E1)
 };
 
 // ---------------------------------------------------------------- SCRUM-70 · resultado da defesa (RBN09.12)
@@ -573,3 +583,48 @@ export function destinoDaProposta(p: PropostaResumo) {
     ? `Professores da área ${p.area?.nome ?? ""}`.trim()
     : p.professores.map((x) => x.nome).join(", ");
 }
+
+// ---------------------------------------------------------------- SCRUM-72 a 75 · documentos da defesa
+// Espelha backend/app/schemas/documento.py.
+
+export type VersaoDocumento = {
+  id: number;
+  versao: number;
+  vigente: boolean;
+  gerado_em: string;
+  substituido_em: string | null;
+};
+
+export type DocumentoDefesa = {
+  aplica: boolean;
+  disponivel: boolean;
+  motivo: string | null;
+  faltas: string[];
+  desatualizada: boolean;
+  presenca_mudou: boolean; // desatualizada pela presença da banca, e não pela retificação
+  versoes: VersaoDocumento[];
+};
+
+export type SituacaoEnvio = "NAO_ENVIADO" | "PENDENTE" | "ENVIADO" | "FALHA";
+
+export type CertificadoParticipante = {
+  membro_id: number;
+  papel: PapelBanca;
+  pessoa: { id: number; nome: string };
+  presente: boolean | null;
+  pode_emitir: boolean;
+  motivo: string | null;
+  certificado_id: number | null;
+  emitido_em: string | null;
+  envio: SituacaoEnvio;
+};
+
+export type DocumentosDefesa = {
+  defesa_id: number;
+  pode_gerar: boolean;
+  resultado_confirmado: boolean;
+  ata: DocumentoDefesa;
+  folha: DocumentoDefesa;
+  certificados: CertificadoParticipante[];
+  meus_certificados: VersaoDocumento[];
+};

@@ -7,7 +7,9 @@
 //                                             confirmação, {resultado} com as retificações
 //   POST /defesas/{id}/resultado              {resultado, parecer}: confirma (janela "Confirmar o resultado?")
 //   POST /defesas/{id}/resultado/retificacao  {resultado, motivo}: retifica o resultado confirmado
-// Só o orientador do TCC vê esta seção: para os demais a API responde 403 e nada aparece aqui.
+// O orientador consolida, confirma e retifica. Aluno, banca e coordenação (RBN09.13, DS-FL06-E) veem só o
+// resultado confirmado, com parecer e nota final, ou "Defesa realizada. Aguarde as avaliações e o resultado".
+// Sem vínculo com o TCC, a API responde 403 e nada aparece aqui.
 // A nota final é sempre calculada no servidor; a tela só mostra, com duas casas (CA-06 do RBN09.11).
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
@@ -53,9 +55,11 @@ const textoArea = (erro?: string) =>
 export function SecaoResultado({
   defesaId,
   envios = 0,
+  aoMudar,
 }: {
   defesaId: number;
   envios?: number;
+  aoMudar?: () => void; // o resultado foi confirmado ou retificado: a página atualiza ata e capa
 }) {
   const [dados, setDados] = useState<ConsultaResultado | null>(null);
   const [oculta, setOculta] = useState(false);
@@ -83,14 +87,18 @@ export function SecaoResultado({
   }, [carregar, envios]);
 
   if (oculta) return null;
+  // RBN09.13: aluno, banca e coordenação só veem a seção depois que a defesa acontece
+  if (dados && !dados.pode_confirmar && !dados.resultado && !dados.defesa_realizada) return null;
 
   // Depois de confirmar ou retificar, a tela mostra o que o servidor gravou (H1: estado visível).
   const gravado = (d: ConsultaResultado, mensagem: string) => {
     setDados(d);
     setAviso(mensagem);
+    aoMudar?.();
   };
 
   const resultado = dados?.resultado;
+  const orientador = dados?.pode_confirmar ?? false;
   return (
     <section
       className="rounded-xl border border-borda bg-superficie p-5"
@@ -98,11 +106,11 @@ export function SecaoResultado({
     >
       <div className="mb-1 flex flex-wrap items-center gap-2">
         <h2 id="titulo-resultado" className="font-semibold">
-          {resultado ? "Resultado da defesa" : "Consolidar resultado"}
+          {resultado || (dados && !orientador) ? "Resultado da defesa" : "Consolidar resultado"}
         </h2>
         {resultado && <Selo cor={COR[resultado.resultado]}>{NOME_RESULTADO[resultado.resultado]}</Selo>}
       </div>
-      {!resultado && (
+      {!resultado && orientador && (
         <p className="mb-4 text-[13px] text-suave">
           A nota final é a média das notas do orientador e dos dois avaliadores,
           calculada pelo sistema a partir das avaliações enviadas.
@@ -118,7 +126,10 @@ export function SecaoResultado({
           Carregando…
         </p>
       ) : resultado ? (
-        <Confirmado defesaId={defesaId} r={resultado} aoGravar={gravado} />
+        <Confirmado defesaId={defesaId} r={resultado} aoGravar={gravado} podeRetificar={orientador} />
+      ) : !orientador ? (
+        // E1 do RBN09.13 (DS-FL06-E): sem notas nem resultado parcial antes da confirmação (CA-02)
+        <Aviso tipo="info">Defesa realizada. Aguarde as avaliações e o resultado.</Aviso>
       ) : !dados.consolidacao ? (
         // DS-FL06, [falta avaliação]: "Aguardando avaliações. Faltam: ..." (RBN10.05)
         <Aviso tipo="info">
@@ -339,10 +350,12 @@ function Confirmado({
   defesaId,
   r,
   aoGravar,
+  podeRetificar,
 }: {
   defesaId: number;
   r: ResultadoDefesa;
   aoGravar: (d: ConsultaResultado, mensagem: string) => void;
+  podeRetificar: boolean;
 }) {
   const [retificando, setRetificando] = useState(false);
   return (
@@ -365,7 +378,8 @@ function Confirmado({
 
       {r.resultado === "APROVADO_COM_CORRECOES" && (
         <Aviso tipo="info">
-          O aluno precisa fazer as correções exigidas pela banca. Elas são registradas a partir deste resultado.
+          O aluno precisa fazer as correções exigidas pela banca. A lista de correções e o prazo da versão final
+          são registrados a partir deste resultado.
         </Aviso>
       )}
 
@@ -385,11 +399,13 @@ function Confirmado({
         </div>
       )}
 
-      <div>
-        <Botao variante="contorno" onClick={() => setRetificando(true)}>
-          Retificar resultado
-        </Botao>
-      </div>
+      {podeRetificar && (
+        <div>
+          <Botao variante="contorno" onClick={() => setRetificando(true)}>
+            Retificar resultado
+          </Botao>
+        </div>
+      )}
 
       {retificando && (
         <JanelaRetificacao
@@ -488,4 +504,16 @@ function JanelaRetificacao({
       </form>
     </Modal>
   );
+}
+
+// DS-FL06-E, mensagens 1 e 2: o selo do resultado na capa do TCC, para quem consulta o resultado.
+export function SeloResultadoDefesa({ defesaId, recarga = 0 }: { defesaId: number; recarga?: number }) {
+  const [r, setR] = useState<ResultadoDefesa | null>(null);
+  useEffect(() => {
+    api<ConsultaResultado>(`/defesas/${defesaId}/resultado`)
+      .then((d) => setR(d.resultado))
+      .catch(() => setR(null)); // sem vínculo ou defesa cancelada: sem selo
+  }, [defesaId, recarga]);
+  if (!r) return null;
+  return <Selo cor={COR[r.resultado]}>Defesa: {NOME_RESULTADO[r.resultado]}</Selo>;
 }

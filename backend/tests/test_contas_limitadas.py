@@ -201,10 +201,11 @@ def test_ct_01_12_03_telas_de_gestao_e_agenda_negadas(defesa, ana, rota):
 
 
 def test_rotas_da_propria_defesa_fora_da_lista_tambem_sao_negadas(defesa, ana):
-    """A banca (com e-mails e docentes), a presença e o resultado da própria defesa ficam de fora (32-33-a)."""
+    """A banca (com e-mails e docentes) e a presença da própria defesa ficam de fora (32-33-a). O resultado e os
+    documentos passaram a ser liberados com o PR #19 (ver test_documentos_defesa.py)."""
     tcc, defesa_id = defesa["tcc"]["id"], defesa["defesa"]["id"]
     for rota in (f"/api/v1/tccs/{tcc}/banca", f"/api/v1/defesas/{defesa_id}/ocorrencias",
-                 f"/api/v1/defesas/{defesa_id}/resultado", f"/api/v1/defesas/{defesa_id}/divulgacao"):
+                 f"/api/v1/defesas/{defesa_id}/divulgacao"):
         assert ana.get(rota).status_code == 403, rota
 
 
