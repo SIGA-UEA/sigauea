@@ -32,6 +32,7 @@ from app.models import (
     BancaMembro,
     Defesa,
     DocumentoOficial,
+    LogAuditoria,
     NotificacaoEmail,
     ResultadoDefesa,
     Usuario,
@@ -104,6 +105,14 @@ def _faltas(defesa: Defesa) -> list[str]:
     return faltas
 
 
+def _presenca_mudou_depois(db: Session, defesa: Defesa, documento: DocumentoOficial) -> bool:
+    """A ata e a folha listam a banca presente: mudar a presença depois da geração pede nova versão."""
+    ids = [m.id for m in defesa.membros]
+    return db.scalar(select(LogAuditoria.id).where(
+        LogAuditoria.acao == "registrar_presenca_banca", LogAuditoria.entidade == "banca_membro",
+        LogAuditoria.entidade_id.in_(ids), LogAuditoria.criado_em > documento.gerado_em).limit(1)) is not None
+
+
 def _secao(db: Session, defesa: Defesa, tipo: str, resultado: ResultadoDefesa | None, aplica: bool,
            visivel: bool) -> DocumentoDefesaOut:
     versoes = _versoes(db, defesa, tipo) if visivel else []
@@ -122,9 +131,12 @@ def _secao(db: Session, defesa: Defesa, tipo: str, resultado: ResultadoDefesa | 
     elif faltas:
         motivo = "Faltam dados obrigatórios para gerar o documento."
     vigente = next((v for v in versoes if v.vigente), None)
-    desatualizada = bool(vigente and resultado and resultado.confirmado_em > vigente.gerado_em)
+    # RN15: o resultado foi retificado, ou a presença da banca mudou, depois da versão vigente
+    retificado = bool(vigente and resultado and resultado.confirmado_em > vigente.gerado_em)
+    presenca = bool(vigente and resultado and _presenca_mudou_depois(db, defesa, vigente))
     return DocumentoDefesaOut(aplica=aplica, disponivel=motivo is None, motivo=motivo, faltas=faltas,
-                              desatualizada=desatualizada, versoes=[_versao_out(v) for v in versoes])
+                              desatualizada=retificado or presenca, presenca_mudou=presenca and not retificado,
+                              versoes=[_versao_out(v) for v in versoes])
 
 
 def _envio(db: Session, certificado: DocumentoOficial | None) -> str:

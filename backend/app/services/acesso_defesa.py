@@ -29,11 +29,6 @@ class Vinculo:
         """Gera a ata e a folha e emite certificados: coordenação ou orientador (RBN09.14 e E3 do RBN09.17)."""
         return self.orientador or self.coordenacao
 
-    @property
-    def ve_notas(self) -> bool:
-        """Notas individuais dos avaliadores: só o orientador e a coordenação (CA-05 do RBN09.13, RN13)."""
-        return self.orientador or self.coordenacao
-
 
 def orientador_do_tcc(tcc: Tcc, usuario: Usuario) -> bool:
     return any(

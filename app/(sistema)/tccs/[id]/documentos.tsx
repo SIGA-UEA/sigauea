@@ -184,8 +184,11 @@ function Documento({
       )}
       {doc.desatualizada && (
         <Aviso tipo="alerta">
-          <span className="font-medium">O resultado foi retificado.</span> A versão vigente reflete o resultado
-          anterior.{podeGerar && " Gere uma nova versão; a anterior fica como substituída."}
+          <span className="font-medium">
+            {doc.presenca_mudou ? "A presença da banca mudou." : "O resultado foi retificado."}
+          </span>{" "}
+          A versão vigente reflete {doc.presenca_mudou ? "a presença anterior" : "o resultado anterior"}.
+          {podeGerar && " Gere uma nova versão; a anterior fica como substituída."}
         </Aviso>
       )}
       {falhou && (

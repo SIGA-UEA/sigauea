@@ -25,6 +25,7 @@ from app.erros import ErroAPI
 from app.models import (
     ACEITA,
     CANCELADA,
+    DOC_CERTIFICADO,
     DOC_DECLARACAO,
     PAPEL_ORIENTADOR,
     PAPEL_SUPLENTE,
@@ -176,8 +177,11 @@ def consultar_ocorrencias(db: Session, usuario: Usuario, defesa_id: int) -> Pres
 
 
 def participantes(defesa: Defesa) -> list[BancaMembro]:
-    """Membros que participam da sessão: todos, menos o suplente não convocado (RN20)."""
-    return [m for m in defesa.membros if m.papel != PAPEL_SUPLENTE or m.convocado_em is not None]
+    """Membros que participam da sessão: todos, menos o suplente não convocado e o titular que o suplente
+    convocado substituiu (RN20)."""
+    substituidos = {m.substitui_membro_id for m in defesa.membros if m.convocado_em is not None}
+    return [m for m in defesa.membros
+            if m.id not in substituidos and (m.papel != PAPEL_SUPLENTE or m.convocado_em is not None)]
 
 
 def _presenca_out(m: BancaMembro) -> MembroPresencaOut:
@@ -194,6 +198,10 @@ def registrar_presenca_banca(
     if membro is None:
         raise ErroAPI(404, "Membro da banca não encontrado nesta defesa.")
     anterior = membro.presente
+    if anterior != dados.presente and db.scalar(select(DocumentoOficial.id).where(
+            DocumentoOficial.tipo == DOC_CERTIFICADO, DocumentoOficial.membro_id == membro.id,
+            DocumentoOficial.vigente.is_(True))) is not None:
+        raise ErroAPI(409, "O certificado deste membro já foi emitido; a presença não pode mais ser alterada.")
     membro.presente = dados.presente
     auditoria.registrar(db, ator_id=usuario.id, acao="registrar_presenca_banca", entidade="banca_membro",
                         entidade_id=membro.id, campo="presente",

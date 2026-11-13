@@ -31,7 +31,8 @@ class DocumentoDefesaOut(BaseModel):
     disponivel: bool  # pode gerar agora
     motivo: str | None  # por que ainda não pode ("Indisponível por enquanto", E1 e E3)
     faltas: list[str]  # dados obrigatórios ausentes (RBN09.14 CA-03, RBN09.15 CA-04)
-    desatualizada: bool  # o resultado foi retificado depois da versão vigente (RN15)
+    desatualizada: bool  # o resultado foi retificado ou a presença mudou depois da versão vigente (RN15)
+    presenca_mudou: bool = False  # a causa foi a presença da banca, e não a retificação
     versoes: list[VersaoDocumentoOut]  # da mais nova para a mais antiga
 
 

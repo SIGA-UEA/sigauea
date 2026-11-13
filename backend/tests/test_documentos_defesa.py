@@ -7,6 +7,7 @@ Ricardo suplente não convocado), avaliações enviadas pela API e o relógio de
 """
 
 import hashlib
+import os
 import time
 from datetime import date, datetime, time as hora
 from pathlib import Path
@@ -196,8 +197,10 @@ def test_ct_09_14_04_resultado_nao_confirmado_impede(realizada):
     assert _docs(realizada).json()["ata"]["disponivel"] is False
 
 
+@pytest.mark.skipif(os.environ.get("PULAR_DESEMPENHO") == "1", reason="medição de tempo real (RNF05)")
 def test_ct_09_14_05_p95_da_geracao_ate_5_segundos(realizada):
-    """CA-05 / RNF05: 20 gerações seguidas; o p95 do tempo até o PDF disponível fica abaixo de 5 s."""
+    """CA-05 / RNF05: 20 gerações seguidas; o p95 do tempo até o PDF disponível fica abaixo de 5 s. Mede tempo
+    real: numa máquina ocupada, rode à parte ou pule com PULAR_DESEMPENHO=1."""
     _todos_presentes(realizada)
     _confirmar(realizada)
     tempos = []
@@ -396,15 +399,20 @@ def _emitir(d, *quem, por="olga"):
 
 
 def test_ct_09_17_01_quatro_presentes_quatro_certificados(defesa, depois_da_defesa, monkeypatch, db):  # noqa: F811
-    """CA-01: com o suplente convocado no lugar do Otto, os quatro presentes recebem certificado."""
+    """CA-01 (a ficha fala em 4 presentes): todos os presentes recebem certificado. Aqui o suplente foi convocado
+    no lugar do Otto: Olga, Paulo e Ricardo participam e recebem; o titular substituído fica fora da sessão."""
     monkeypatch.setattr(ocorrencias, "_agora_manaus", lambda: DEPOIS)
     _convocar_ricardo(defesa)
     d = {**defesa, "url": f"/api/v1/defesas/{defesa['defesa']['id']}"}
-    for quem in ("olga", "otto", "paulo", "ricardo"):
+    assert _presenca(d, "otto").status_code == 404  # substituído: não participa da sessão (RN20)
+    for quem in ("olga", "paulo", "ricardo"):
         assert _presenca(d, quem).status_code == 200
-    r = _emitir(d, "olga", "otto", "paulo", "ricardo")
+    nomes = sorted(l["pessoa"]["nome"] for l in _docs(d).json()["certificados"])
+    assert nomes == ["Olga Orientadora", "Paulo Professor", "Ricardo Alves"]
+    r = _emitir(d, "olga", "paulo", "ricardo")
     assert r.status_code == 200, r.json()
-    assert len(db.scalars(select(DocumentoOficial).where(DocumentoOficial.tipo == "CERTIFICADO")).all()) == 4
+    assert len(db.scalars(select(DocumentoOficial).where(DocumentoOficial.tipo == "CERTIFICADO")).all()) == 3
+    assert _emitir(d, "otto").status_code == 404
 
 
 def test_ct_09_17_02_certificado_vai_anexado_por_email_e_o_envio_fica_registrado(realizada, caixa):
@@ -492,6 +500,98 @@ def test_antes_do_fim_da_defesa_nao_emite(defesa, depois_da_defesa, monkeypatch)
     d = {**defesa, "url": f"/api/v1/defesas/{defesa['defesa']['id']}"}
     _presenca(d, "olga")
     assert _emitir(d, "olga").status_code == 409
+
+
+# ---------------------------------------------------------------- revisão do PR #19
+
+
+def test_presenca_nao_muda_depois_do_certificado_emitido(realizada):
+    """Quem já recebeu o certificado não pode ser marcado ausente (409); repetir a mesma presença não dá erro."""
+    _todos_presentes(realizada)
+    _emitir(realizada, "otto")
+    assert _presenca(realizada, "otto", False).status_code == 409
+    assert _presenca(realizada, "otto", True).status_code == 200
+    assert _presenca(realizada, "paulo", False).status_code == 200  # sem certificado, ainda pode mudar
+
+
+def test_presenca_alterada_depois_da_ata_deixa_a_ata_desatualizada(realizada):
+    """A ata lista a presença: mudá-la depois da geração pede nova versão (RN15)."""
+    _todos_presentes(realizada)
+    _confirmar(realizada)
+    _gerar(realizada)
+    assert _docs(realizada).json()["ata"]["desatualizada"] is False
+    _presenca(realizada, "paulo", False)
+    ata = _docs(realizada).json()["ata"]
+    assert (ata["desatualizada"], ata["presenca_mudou"]) == (True, True)
+    ata = _gerar(realizada).json()["ata"]
+    assert ata["desatualizada"] is False and [v["versao"] for v in ata["versoes"]] == [2, 1]
+
+
+# ---------------------------------------------------------------- membro externo da banca (decisão 32-33-a ampliada)
+
+ANA_EXTERNA = {"nome": "Ana Externa", "email": "ana@ufam.edu.br", "instituicao": "UFAM"}
+
+
+@pytest.fixture
+def com_externa(banca, caixa, monkeypatch):  # noqa: F811
+    """Banca com a Olga, o Otto e a Ana Externa (conta limitada do SCRUM-32); defesa terminada, avaliações
+    enviadas, presença marcada e resultado confirmado."""
+    from tests.test_avaliacao import _enviar
+    from tests.test_avaliacao import servico as servico_avaliacao
+    from tests.test_defesas_banca import _agendar, _membros
+
+    membros = _membros(banca, avaliadores=("otto",)) + [{"papel": "AVALIADOR", "externo": ANA_EXTERNA}]
+    r = _agendar(banca, membros=membros)
+    assert r.status_code == 201, r.json()
+    monkeypatch.setattr(servico_avaliacao, "_agora_manaus", lambda: DEPOIS)
+    monkeypatch.setattr(ocorrencias, "_agora_manaus", lambda: DEPOIS)
+    d = {**banca, "defesa": r.json(), "url": f"/api/v1/defesas/{r.json()['id']}", "ana": ativar(caixa, ANA_EXTERNA["email"])}
+    for quem in ("olga", "otto", "ana"):
+        assert _enviar(d, quem).status_code == 200
+    for m in d["defesa"]["membros"]:
+        assert d["olga"].put(f"{d['url']}/banca/{m['id']}/presenca", json={"presente": True}).status_code == 200
+    _confirmar(d)
+    return d
+
+
+def _membro_da_ana(d) -> int:
+    return next(m["id"] for m in d["defesa"]["membros"] if m["pessoa"]["nome"] == "Ana Externa")
+
+
+def test_externa_ve_o_resultado_e_os_documentos_da_sua_defesa(com_externa):
+    """RBN09.13 e RBN09.16: resultado confirmado, sem consolidação nem notas; a ata na seção de documentos."""
+    d = com_externa
+    ata_id = _gerar(d).json()["ata"]["versoes"][0]["id"]
+    r = d["ana"].get(f"{d['url']}/resultado")
+    assert r.status_code == 200 and r.json()["resultado"]["resultado"] == "APROVADO"
+    assert r.json()["consolidacao"] is None and r.json()["pode_confirmar"] is False
+    docs = d["ana"].get(f"{d['url']}/documentos")
+    assert docs.status_code == 200 and docs.json()["pode_gerar"] is False
+    assert docs.json()["ata"]["versoes"][0]["id"] == ata_id and docs.json()["certificados"] == []
+    assert d["ana"].get(f"/api/v1/documentos/{ata_id}/arquivo").status_code == 200
+
+
+def test_externa_baixa_so_o_proprio_certificado(com_externa, db):
+    d = com_externa
+    ids = [m["id"] for m in d["defesa"]["membros"]]
+    assert d["olga"].post(f"{d['url']}/documentos/certificados", json={"ids_membro": ids}).status_code == 200
+    certs = {c.membro_id: c.id for c in db.scalars(select(DocumentoOficial).where(DocumentoOficial.tipo == "CERTIFICADO"))}
+    meu = certs.pop(_membro_da_ana(d))
+    assert [c["id"] for c in d["ana"].get(f"{d['url']}/documentos").json()["meus_certificados"]] == [meu]
+    assert d["ana"].get(f"/api/v1/documentos/{meu}/arquivo").status_code == 200
+    for outro in certs.values():
+        assert d["ana"].get(f"/api/v1/documentos/{outro}/arquivo").status_code == 403
+
+
+def test_externa_nao_alcanca_outra_defesa_nem_gera_documentos(com_externa):
+    """Fora do escopo, 403 (32-33-b); documento inexistente, 404; gerar e emitir continuam fora da lista."""
+    d = com_externa
+    outra = d["defesa"]["id"] + 1
+    assert d["ana"].get(f"/api/v1/defesas/{outra}/resultado").status_code == 403
+    assert d["ana"].get(f"/api/v1/defesas/{outra}/documentos").status_code == 403
+    assert d["ana"].get("/api/v1/documentos/999/arquivo").status_code == 404
+    assert d["ana"].post(f"{d['url']}/documentos/ata").status_code == 403
+    assert d["ana"].post(f"{d['url']}/documentos/certificados", json={"ids_membro": [_membro_da_ana(d)]}).status_code == 403
 
 
 def test_enviar_nota_reaproveita_o_helper():

@@ -601,6 +601,7 @@ export type DocumentoDefesa = {
   motivo: string | null;
   faltas: string[];
   desatualizada: boolean;
+  presenca_mudou: boolean; // desatualizada pela presença da banca, e não pela retificação
   versoes: VersaoDocumento[];
 };
 
