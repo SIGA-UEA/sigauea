@@ -8,6 +8,7 @@ from app.routes import (
     avaliacao,
     cadastros,
     catalogo,
+    correcoes,
     defesas,
     documentos,
     health,
@@ -50,6 +51,7 @@ v1.include_router(instrumento.router)  # instrumento de avaliação (RBN10.01)
 v1.include_router(ocorrencias.router)  # ocorrências, ouvintes e declaração de horas (RBN09.10)
 v1.include_router(resultado.router)  # consolidação da nota final (RBN09.11)
 v1.include_router(documentos.router)  # ata, Folha de Aprovação e certificados (RBN09.14 a RBN09.17)
+v1.include_router(correcoes.router)  # correções, versão final e conclusão do TCC (RBN11.01 a RBN11.04)
 v1.include_router(ideias.router)  # ideias de TCC (RBN02.01 e RBN02.02)
 v1.include_router(avaliacao.router)  # avaliação da defesa (RBN10.02 a RBN10.05)
 v1.include_router(tarefas.router)  # rotinas agendadas: lembrete da defesa (RBN09.06)

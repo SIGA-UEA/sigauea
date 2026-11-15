@@ -943,9 +943,93 @@ class ResultadoDefesa(Base):
     # RBN09.15 CA-03: anuência do aluno às correções exigidas; libera a Folha de Aprovação quando o resultado é
     # "aprovado com correções". Quem registra é a aba Correções (DS-FL07, SCRUM-81 e SCRUM-82).
     anuencia_em: Mapped[datetime | None]
+    # RBN11.01 a RBN11.04 (DS-FL07): prazo da versão final (vem do calendário do período; o professor responsável
+    # pela turma pode mudá-lo com motivo), a versão final enviada e a decisão sobre a entrega com atraso.
+    # Uma retificação copia estes campos para a nova versão do resultado.
+    prazo_versao_final: Mapped[date | None]
+    prazo_motivo: Mapped[str | None] = mapped_column(Text)
+    versao_final_id: Mapped[int | None] = _fk("documento_tcc.id", nullable=True, index=True)
+    entregue_com_atraso: Mapped[bool | None]
+    atraso_aceito: Mapped[bool | None]
+    atraso_decidido_por: Mapped[int | None] = _fk("usuario.id", nullable=True, index=True)
+    atraso_decidido_em: Mapped[datetime | None]
 
     defesa: Mapped[Defesa] = relationship()
+    autor: Mapped["Usuario"] = relationship(foreign_keys=[confirmado_por])
+    versao_final: Mapped["DocumentoTcc | None"] = relationship()
+
+
+# =====================================================================
+# Versões do PDF do TCC (DocumentoTCC · RN11) e correções exigidas pela banca (Correcao · RN17)
+# =====================================================================
+
+FINALIDADE_PRELIMINAR, FINALIDADE_BANCA, FINALIDADE_FINAL = "PRELIMINAR", "BANCA", "FINAL"
+FINALIDADES_DOCUMENTO = (FINALIDADE_PRELIMINAR, FINALIDADE_BANCA, FINALIDADE_FINAL)
+TAMANHO_MAXIMO_PDF = 20 * 1024 * 1024  # 20 MB (RN11)
+
+
+class DocumentoTcc(Base):
+    """Uma versão do PDF do TCC (RN11, modelo físico). Cada envio é uma nova versão; as anteriores ficam.
+
+    Nesta entrega só a versão final (RBN11.02) usa a tabela; o envio das versões preliminar e para a banca
+    (RBN07.01 a RBN07.04) usa a mesma tabela quando for implementado."""
+
+    __tablename__ = "documento_tcc"
+    __table_args__ = (
+        UniqueConstraint("tcc_id", "versao", name="uq_documento_tcc_tcc_versao"),
+        _dominio("documento_tcc", "finalidade", FINALIDADES_DOCUMENTO),
+        CheckConstraint(f"tamanho_bytes BETWEEN 1 AND {TAMANHO_MAXIMO_PDF}", name="ck_documento_tcc_tamanho"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tcc_id: Mapped[int] = _fk("tcc.id", index=True)
+    versao: Mapped[int]
+    finalidade: Mapped[str] = mapped_column(String(12))
+    nome_arquivo: Mapped[str] = mapped_column(String(255))
+    tamanho_bytes: Mapped[int]
+    sha256: Mapped[str] = mapped_column(String(64))
+    caminho: Mapped[str] = mapped_column(String(500))
+    enviado_por: Mapped[int] = _fk("usuario.id", index=True)
+    enviado_em: Mapped[datetime] = mapped_column(default=agora)
+
     autor: Mapped["Usuario"] = relationship()
+
+
+CORRECAO_PENDENTE, CORRECAO_ATENDIDA, CORRECAO_APROVADA, CORRECAO_DEVOLVIDA = (
+    "PENDENTE", "ATENDIDA", "APROVADA", "DEVOLVIDA"
+)
+SITUACOES_CORRECAO = (CORRECAO_PENDENTE, CORRECAO_ATENDIDA, CORRECAO_APROVADA, CORRECAO_DEVOLVIDA)
+
+
+class Correcao(Base):
+    """Correção exigida por um membro da banca quando o resultado é "aprovado com correções" (RBN11.01, RN17).
+
+    O aluno marca como atendida (RBN11.02); o professor responsável pela turma aprova ou devolve com
+    justificativa (RBN11.03). Aponta para a versão do resultado vigente quando foi registrada."""
+
+    __tablename__ = "correcao"
+    __table_args__ = (
+        _dominio("correcao", "situacao", SITUACOES_CORRECAO),
+        CheckConstraint("length(trim(descricao)) > 0", name="ck_correcao_descricao"),
+        CheckConstraint(
+            "situacao <> 'DEVOLVIDA' OR length(trim(justificativa)) > 0", name="ck_correcao_justificativa"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    resultado_id: Mapped[int] = _fk("resultado_defesa.id", index=True)
+    descricao: Mapped[str] = mapped_column(Text)
+    avaliador_id: Mapped[int] = _fk("banca_membro.id", index=True)
+    situacao: Mapped[str] = mapped_column(String(10), default=CORRECAO_PENDENTE)
+    justificativa: Mapped[str | None] = mapped_column(Text)
+    criada_em: Mapped[datetime] = mapped_column(default=agora)
+    atendida_em: Mapped[datetime | None]
+    decidida_por: Mapped[int | None] = _fk("usuario.id", nullable=True, index=True)
+    decidida_em: Mapped[datetime | None]
+
+    resultado: Mapped[ResultadoDefesa] = relationship()
+    avaliador: Mapped[BancaMembro] = relationship()
+    decisor: Mapped["Usuario | None"] = relationship()
 
 
 # =====================================================================

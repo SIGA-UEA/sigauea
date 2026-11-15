@@ -40,7 +40,7 @@ from app.schemas.resultado import (
     RetificacaoEntrada,
     RetificacaoOut,
 )
-from app.services import acessos, auditoria, avaliacao, avisos_defesa, nota_final
+from app.services import acessos, auditoria, avaliacao, avisos_defesa, correcoes, nota_final
 from app.services.acesso_defesa import vinculo
 from app.services.ocorrencias import pode_emitir  # a defesa já terminou: mesma regra da declaração (RN15)
 from app.services.tccs import obter_para
@@ -176,6 +176,8 @@ def confirmar_resultado(
         defesa_id=defesa.id, versao=1, vigente=True, media=calculo.media, nota_final=calculo.nota_final,
         regra_qualis=calculo.regra.aplicada, resultado=dados.resultado, parecer=parecer,
         confirmado_por=usuario.id, confirmado_em=agora(),
+        # RBN11.01 CA-04: o prazo da versão final vem do calendário do período (o professor pode mudá-lo depois)
+        prazo_versao_final=defesa.tcc.periodo.prazo_versao_final,
     )
     db.add(registro)
     try:
@@ -214,6 +216,7 @@ def retificar_resultado(
         regra_qualis=atual.regra_qualis, resultado=dados.resultado, parecer=atual.parecer,
         confirmado_por=usuario.id, confirmado_em=agora(), motivo_retificacao=motivo,
     )
+    correcoes.copiar_para_retificacao(atual, nova)  # prazo, versão final e atraso continuam valendo
     try:
         db.flush()  # a versão anterior deixa de ser vigente antes da nova entrar (índice de resultado vigente)
         db.add(nova)
@@ -225,5 +228,7 @@ def retificar_resultado(
                         entidade_id=nova.id, campo="resultado", anterior=anterior,
                         novo=f"{dados.resultado}; motivo: {motivo}")
     avisos_defesa.avisar_retificacao(db, tarefas, defesa, anterior, nova)  # E6: idem
+    # RBN11.04: retificar para "aprovado" com a versão final já enviada pode ser a última condição que faltava
+    correcoes.verificar_conclusao(db, tarefas, defesa.tcc, usuario)
     _gravar(db)
     return consultar_resultado(db, usuario, defesa_id)
