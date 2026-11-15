@@ -138,8 +138,13 @@ export type Turma = {
   periodo: Periodo;
   professor: Pessoa;
   encerrada: boolean;
+  encerrada_em: string | null;
+  // O professor responsável vê o botão "Encerrar turma" enquanto ela está aberta (RBN08.05).
+  pode_encerrar: boolean;
   alunos: Matricula[];
 };
+// 422 ao encerrar a turma: os alunos que ainda estão Matriculados (RBN08.05 CA-02).
+export type PendenteEncerramento = { matricula_id: number; aluno: string; matricula: string };
 
 export type Vinculo = {
   id: number;
@@ -181,6 +186,7 @@ export type Tcc = {
   orientador: Vinculo | null;
   coorientador: Vinculo | null;
   artigo: Artigo | null;
+  tcc_origem_id?: number | null; // no TCC2, o TCC1 que lhe deu origem (RBN08.04)
   submetido_em: string | null;
   criado_em: string;
   atualizado_em: string;

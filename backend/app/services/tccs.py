@@ -158,6 +158,7 @@ def para_saida(tcc: Tcc) -> TccOut:
             if pub
             else None
         ),
+        tcc_origem_id=tcc.tcc_origem_id,
         submetido_em=tcc.submetido_em,
         criado_em=tcc.criado_em,
         atualizado_em=tcc.atualizado_em,
@@ -248,6 +249,13 @@ def _verificar_elegibilidade(db: Session, orientador_id: int | None, coorientado
 # =================================================================== DS-FL01-A · abrir formulário
 
 
+def tcc1_de_origem(db: Session, aluno_id: int) -> Tcc | None:
+    """RBN08.04: o TCC1 mais recente do aluno, que dá origem ao cadastro de TCC2."""
+    return db.scalar(
+        select(Tcc).where(Tcc.aluno_id == aluno_id, Tcc.etapa == "TCC1").order_by(Tcc.id.desc()).limit(1)
+    )
+
+
 def formulario(db: Session, aluno: Usuario) -> FormularioOut:
     m = _exigir_matriculado(db, aluno.id)  # passo 7 + 403
     tcc = db.scalar(
@@ -255,9 +263,7 @@ def formulario(db: Session, aluno: Usuario) -> FormularioOut:
     )  # passo 8
     origem = None
     if tcc is None and m.turma.disciplina == "TCC2":  # passo 9 (A4, RBN08.04)
-        tcc1 = db.scalar(
-            select(Tcc).where(Tcc.aluno_id == aluno.id, Tcc.etapa == "TCC1").order_by(Tcc.id.desc())
-        )
+        tcc1 = tcc1_de_origem(db, aluno.id)
         if tcc1:
             o = _vinculo(tcc1, PAPEL_ORIENTADOR)
             origem = {
@@ -476,6 +482,9 @@ def criar(db: Session, tarefas: BackgroundTasks, aluno: Usuario, dados: TccSalva
         raise ErroAPI(409, "Você já tem um cadastro de TCC neste período letivo.", motivo="duplicado")
     _verificar_elegibilidade(db, dados.orientador_id, dados.coorientador_id)  # passo 13
     _area(db, dados.area_id)  # passo 5
+    # RBN08.04 CA-05: o TCC2 é um cadastro novo (protocolo próprio) ligado ao TCC1, que não muda.
+    # A ligação vem do servidor, não do formulário, para o aluno não apontar o TCC de outra pessoa.
+    origem = tcc1_de_origem(db, aluno.id) if turma.disciplina == "TCC2" else None
     tcc = Tcc(  # passo 6: RASCUNHO, sem protocolo
         aluno_id=aluno.id,
         turma_id=turma.id,
@@ -487,6 +496,7 @@ def criar(db: Session, tarefas: BackgroundTasks, aluno: Usuario, dados: TccSalva
         resumo=dados.resumo,
         area_id=dados.area_id,
         situacao=RASCUNHO,
+        tcc_origem_id=origem.id if origem else None,
     )
     db.add(tcc)
     try:

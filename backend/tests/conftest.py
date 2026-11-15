@@ -41,10 +41,13 @@ _HASH = gerar_hash_senha(SENHA)
 
 def _soltar_auto_referencias() -> None:
     """No SQLite, DROP TABLE apaga linha a linha conferindo as chaves estrangeiras: o suplente convocado
-    aponta para o titular na mesma tabela (banca_membro.substitui_membro_id, SCRUM-67) e travaria a limpeza."""
+    aponta para o titular na mesma tabela (banca_membro.substitui_membro_id, SCRUM-67) e travaria a limpeza.
+    O mesmo vale para o TCC2 que aponta para o TCC1 de origem (tcc.tcc_origem_id, SCRUM-45)."""
     with engine.begin() as conexao:
         if inspect(conexao).has_table("banca_membro"):
             conexao.execute(text("UPDATE banca_membro SET substitui_membro_id = NULL"))
+        if inspect(conexao).has_table("tcc"):
+            conexao.execute(text("UPDATE tcc SET tcc_origem_id = NULL"))
 
 
 @pytest.fixture(autouse=True)
