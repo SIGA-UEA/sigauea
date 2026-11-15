@@ -628,3 +628,35 @@ export type DocumentosDefesa = {
   certificados: CertificadoParticipante[];
   meus_certificados: VersaoDocumento[];
 };
+
+// ---------------------------------------------------------------- SCRUM-88/89 · indicadores (RBN13.01 e RBN13.02)
+// Espelha backend/app/schemas/indicador.py. Nenhum campo traz nome de aluno (RN18).
+
+export type FiltrosIndicador = {
+  periodo: boolean;
+  curso: boolean;
+  etapa: boolean;
+  turma: boolean;
+  orientador: boolean;
+};
+
+export type EscopoIndicadores = {
+  perfis: string[];
+  descricao: [string, string][];
+  periodo_vigente_id: number | null;
+  filtros: FiltrosIndicador;
+  periodos: { id: number; codigo: string; vigente: boolean }[];
+  cursos: { id: number; sigla: string; nome: string }[];
+  turmas: { id: number; codigo: string }[];
+  orientadores: { id: number; nome: string }[];
+};
+
+export type PorEtapa = { TCC1: number; TCC2: number };
+
+export type IndicadorSituacao = {
+  periodo_id: number | null;
+  total: PorEtapa;
+  situacoes: { situacao: string; total: PorEtapa }[];
+  orientacoes: { orientador: { id: number; nome: string }; total: PorEtapa }[];
+  sem_dados: boolean;
+};
