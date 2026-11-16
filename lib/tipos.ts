@@ -185,7 +185,14 @@ export type Tcc = {
   criado_em: string;
   atualizado_em: string;
   pendencias: string[];
-  historico: { situacao_anterior: string | null; situacao_nova: string; usuario: Pessoa; registrado_em: string }[];
+  desistencia_motivo: string | null;
+  historico: {
+    situacao_anterior: string | null;
+    situacao_nova: string;
+    usuario: Pessoa;
+    registrado_em: string;
+    observacao: string | null;
+  }[];
   decisoes: Decisao[]; // decisões da coordenação, da mais antiga para a mais nova (RBN04.05)
 };
 
@@ -227,6 +234,20 @@ export type Solicitacao = {
   respondido_em: string | null;
   motivo_recusa: string | null;
   tcc: Tcc;
+};
+
+// Acompanhamento do TCC (RAN05): linha do tempo e tarefas do orientador
+export type TipoEvento = "SUBMISSAO" | "PARECER" | "VINCULO" | "SITUACAO";
+export type Evento = { tipo: TipoEvento; descricao: string; detalhe: string | null; autor: Pessoa | null; em: string };
+export type StatusTarefa = "PENDENTE" | "ENTREGUE" | "ATRASADA";
+export type Tarefa = {
+  id: number;
+  descricao: string;
+  prazo: string;
+  status: StatusTarefa;
+  entregue_em: string | null;
+  cadastrada_por: Pessoa;
+  criado_em: string;
 };
 
 export const NOME_SITUACAO_TCC: Record<SituacaoTcc, string> = {

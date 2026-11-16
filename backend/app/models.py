@@ -419,6 +419,27 @@ class HistoricoSituacao(Base):
     usuario: Mapped[Usuario] = relationship()
 
 
+STATUS_TAREFA = ("PENDENTE", "ENTREGUE", "ATRASADA")
+
+
+class TarefaTcc(Base):
+    """Tarefa ou entregável de um TCC aprovado, com prazo (RBN05.05)."""
+
+    __tablename__ = "tarefa_tcc"
+    __table_args__ = (_dominio("tarefa_tcc", "status", STATUS_TAREFA),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tcc_id: Mapped[int] = _fk("tcc.id", index=True)
+    descricao: Mapped[str] = mapped_column(Text)
+    prazo: Mapped[date]
+    cadastrada_por: Mapped[int] = _fk("usuario.id")
+    entregue_em: Mapped[datetime | None]
+    status: Mapped[str] = mapped_column(String(10), default="PENDENTE")
+    criado_em: Mapped[datetime] = mapped_column(default=agora)
+
+    autor: Mapped[Usuario] = relationship()
+
+
 # Resultados da análise do cadastro pela coordenação (RBN04.02 a RBN04.04, RN10)
 RESULTADOS_ANALISE = ("APROVADO", DEVOLVIDO, "REPROVADO")
 
