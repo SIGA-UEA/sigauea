@@ -1,4 +1,4 @@
-"""Períodos letivos, turmas e matrícula de alunos na turma (RBN08.01 a RBN08.03).
+"""Períodos letivos, turmas, matrícula de alunos e encerramento da turma (RBN08.01 a RBN08.05).
 
 A matrícula na turma com situação MATRICULADO é o que libera o cadastro de TCC (RN05).
 """
@@ -72,7 +72,7 @@ def _tcc_da_turma(tcc: Tcc | None) -> TccDaTurma | None:
     )
 
 
-def para_saida(t: Turma) -> TurmaOut:
+def para_saida(t: Turma, usuario: Usuario | None = None) -> TurmaOut:
     tcc_do_aluno = {tcc.aluno_id: tcc for tcc in t.tccs}
     return TurmaOut(
         id=t.id,
@@ -82,6 +82,8 @@ def para_saida(t: Turma) -> TurmaOut:
         periodo=PeriodoOut.model_validate(t.periodo),
         professor=pessoa(t.professor.usuario),
         encerrada=t.encerrada_em is not None,
+        encerrada_em=t.encerrada_em,
+        pode_encerrar=usuario is not None and t.professor_id == usuario.id and t.encerrada_em is None,
         alunos=[
             MatriculaOut(
                 id=m.id,
@@ -301,4 +303,47 @@ def alterar_situacao(db: Session, turma_id: int, matricula_id: int, situacao: st
         m.situacao_alterada_em = agora()
         db.commit()
         db.refresh(turma)
+    return turma
+
+
+def alunos_pendentes(turma: Turma) -> list[MatriculaTurma]:
+    """RBN08.05: quem ainda está MATRICULADO impede o encerramento (DS-FL11-D, mensagem 5)."""
+    return [m for m in turma.matriculas if m.situacao == MATRICULADO]
+
+
+def encerrar(db: Session, turma_id: int, ator: Usuario) -> Turma:
+    """RBN08.05 · DS-FL11-D: o professor responsável encerra a turma no fim do período.
+
+    Só o professor que conduz a turma encerra (RN24); para os demais, inclusive a coordenação,
+    a turma "não existe" (404, CA-04). Encerrar a turma não conclui TCC nenhum (RBN11.04).
+    """
+    turma = db.get(Turma, turma_id, with_for_update=True)  # mensagem 4
+    if turma is None or turma.professor_id != ator.id:
+        raise ErroAPI(404, "Turma não encontrada.")
+    if turma.encerrada_em is not None:  # E2
+        raise ErroAPI(409, "Turma já encerrada.")
+    pendentes = alunos_pendentes(turma)  # mensagem 5
+    if pendentes:  # E3 · CA-02: bloqueia e diz quem falta
+        raise ErroAPI(
+            422,
+            "Para encerrar a turma, nenhum aluno pode estar Matriculado. "
+            "Defina Aprovado, Reprovado ou Desistente para os alunos abaixo.",
+            pendentes=[
+                {"matricula_id": m.id, "aluno": m.aluno.usuario.nome, "matricula": m.aluno.matricula}
+                for m in pendentes
+            ],
+        )
+    turma.encerrada_em = agora()  # mensagem 6
+    auditoria.registrar(  # mensagem 7 · CA-05: quem, quando, anterior e novo
+        db,
+        ator_id=ator.id,
+        acao="encerrar_turma",
+        entidade="turma",
+        entidade_id=turma.id,
+        campo="situacao",
+        anterior="ABERTA",
+        novo="ENCERRADA",
+    )
+    db.commit()
+    db.refresh(turma)
     return turma

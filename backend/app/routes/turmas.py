@@ -1,5 +1,5 @@
-"""Períodos letivos e turmas (RBN08.01 a RBN08.03). Só a coordenação altera;
-professor e aluno veem as próprias turmas em Minhas turmas."""
+"""Períodos letivos e turmas (RBN08.01 a RBN08.05). A coordenação cria e matricula; o professor
+responsável encerra a turma; professor e aluno veem as próprias turmas em Minhas turmas."""
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
@@ -58,7 +58,7 @@ def obter_turma(
     turma_id: int, db: Session = Depends(get_db, scope="function"), eu: Usuario = Depends(usuario_atual)
 ) -> TurmaOut:
     """Coordenação ou o professor responsável pela turma (404 para os demais)."""
-    return turmas.para_saida(turmas.obter_para(db, eu, turma_id))
+    return turmas.para_saida(turmas.obter_para(db, eu, turma_id), eu)
 
 
 @router.post("/turmas/{turma_id}/alunos", response_model=TurmaOut, status_code=201)
@@ -77,3 +77,12 @@ def alterar_situacao(
     ator: Usuario = Depends(coordenador),
 ) -> TurmaOut:
     return turmas.para_saida(turmas.alterar_situacao(db, turma_id, matricula_id, dados.situacao, ator))
+
+
+@router.post("/turmas/{turma_id}/encerramento", response_model=TurmaOut)
+def encerrar_turma(
+    turma_id: int, db: Session = Depends(get_db, scope="function"), eu: Usuario = Depends(usuario_atual)
+) -> TurmaOut:
+    """RBN08.05 · DS-FL11-D: só o professor responsável; 404 para os demais, 409 se já encerrada,
+    422 com a lista de alunos ainda Matriculados."""
+    return turmas.para_saida(turmas.encerrar(db, turma_id, eu), eu)

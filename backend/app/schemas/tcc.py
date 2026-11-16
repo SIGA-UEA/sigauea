@@ -99,6 +99,8 @@ class TurmaOut(BaseModel):
     periodo: PeriodoOut
     professor: PessoaOut
     encerrada: bool
+    encerrada_em: DataHora | None = None
+    pode_encerrar: bool = False  # quem vê é o professor responsável e a turma está aberta (RBN08.05)
     alunos: list[MatriculaOut]
 
 
@@ -223,6 +225,7 @@ class TccOut(BaseModel):
     orientador: VinculoOut | None
     coorientador: VinculoOut | None
     artigo: ArtigoOut | None
+    tcc_origem_id: int | None = None  # no TCC2, o TCC1 que lhe deu origem (RBN08.04)
     submetido_em: DataHora | None
     criado_em: DataHora
     atualizado_em: DataHora

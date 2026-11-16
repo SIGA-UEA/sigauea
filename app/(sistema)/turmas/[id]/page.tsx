@@ -2,19 +2,27 @@
 
 // Turma aberta: faixa com o curso e o professor responsável e a lista de alunos com o
 // TCC de cada um. Só a coordenação e o professor que conduz a turma abrem (RN07, RN24);
-// para os demais a API responde 404.
+// para os demais a API responde 404. O professor responsável encerra a turma quando nenhum
+// aluno estiver Matriculado (RBN08.05, DS-FL11-D).
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Avatar } from "@/components/avatar";
 import { Aviso, Selo } from "@/components/aviso";
+import { Botao } from "@/components/botao";
 import { Icone } from "@/components/icone";
+import { Modal } from "@/components/modal";
 import { SeloOrientacao, SeloSituacao } from "@/components/situacao-tcc";
 import { corDoCurso, Etiqueta, tipoDaTurma } from "@/components/turma";
 import { api, ErroApi } from "@/lib/api";
 import { useSessao } from "@/lib/sessao";
-import { NOME_SITUACAO_MATRICULA, type SituacaoMatricula, type Turma } from "@/lib/tipos";
+import {
+  NOME_SITUACAO_MATRICULA,
+  type PendenteEncerramento,
+  type SituacaoMatricula,
+  type Turma,
+} from "@/lib/tipos";
 
 const COR_MATRICULA: Record<SituacaoMatricula, "verde" | "cinza" | "vermelho"> = {
   MATRICULADO: "verde",
@@ -22,6 +30,87 @@ const COR_MATRICULA: Record<SituacaoMatricula, "verde" | "cinza" | "vermelho"> =
   APROVADO: "verde",
   REPROVADO: "vermelho",
 };
+
+const dataHora = (iso: string) =>
+  new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short", timeZone: "America/Manaus" });
+
+/** DS-FL11-D: pede confirmação (mensagens 1 e 2) e mostra quem ainda está Matriculado (E3). */
+function EncerrarTurma({ turma, aoEncerrar }: { turma: Turma; aoEncerrar: (t: Turma) => void }) {
+  const [aberto, setAberto] = useState(false);
+  const [enviando, setEnviando] = useState(false);
+  const [erro, setErro] = useState("");
+  const [pendentes, setPendentes] = useState<PendenteEncerramento[]>([]);
+  const matriculados = turma.alunos.filter((m) => m.situacao === "MATRICULADO").length;
+
+  function fechar() {
+    setAberto(false);
+    setErro("");
+    setPendentes([]);
+  }
+
+  async function confirmar() {
+    setEnviando(true);
+    setErro("");
+    try {
+      const encerrada = await api<Turma>(`/turmas/${turma.id}/encerramento`, { metodo: "POST" });
+      setAberto(false);
+      aoEncerrar(encerrada);
+    } catch (e) {
+      const falha = e as ErroApi;
+      setErro(falha.message);
+      setPendentes(falha.pendentes ?? []);
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <>
+      <Botao variante="contorno" pequeno onClick={() => setAberto(true)} className="bg-superficie/90">
+        <Icone nome="cadeado" className="size-4" />
+        Encerrar turma
+      </Botao>
+      {aberto && (
+        <Modal titulo="Encerrar turma" aoFechar={fechar}>
+          <div className="flex flex-col gap-4 text-sm">
+            <p>
+              Encerrar a turma <span className="font-mono">{turma.codigo}</span> consolida os resultados: depois disso
+              ela não aceita novos alunos nem mudança de situação. Os TCCs não são concluídos por aqui.
+            </p>
+            {matriculados > 0 && !erro && (
+              <Aviso tipo="alerta">
+                {matriculados === 1 ? "1 aluno ainda está" : `${matriculados} alunos ainda estão`} como Matriculado. A
+                turma só pode ser encerrada quando todos estiverem Aprovado, Reprovado ou Desistente.
+              </Aviso>
+            )}
+            {erro && (
+              <Aviso tipo="erro">
+                <p>{erro}</p>
+                {pendentes.length > 0 && (
+                  <ul className="mt-2 list-disc pl-5">
+                    {pendentes.map((p) => (
+                      <li key={p.matricula_id}>
+                        {p.aluno} <span className="font-mono text-[13px]">({p.matricula})</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Aviso>
+            )}
+            <div className="flex flex-wrap justify-end gap-2">
+              <Botao variante="texto" onClick={fechar}>
+                Voltar
+              </Botao>
+              <Botao variante="destrutivo" onClick={confirmar} carregando={enviando} disabled={pendentes.length > 0}>
+                Confirmar encerramento
+              </Botao>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </>
+  );
+}
 
 export default function PaginaTurma() {
   const { id } = useParams<{ id: string }>();
@@ -70,14 +159,24 @@ export default function PaginaTurma() {
             {turma.encerrada && " · encerrada"}
           </p>
         </div>
-        <div className="flex items-center gap-2.5">
-          <Avatar nome={turma.professor.nome} />
-          <span>
-            <span className="block text-xs opacity-80">Professor responsável</span>
-            <b className="font-semibold">{turma.professor.nome}</b>
-          </span>
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+          <div className="flex items-center gap-2.5">
+            <Avatar nome={turma.professor.nome} />
+            <span>
+              <span className="block text-xs opacity-80">Professor responsável</span>
+              <b className="font-semibold">{turma.professor.nome}</b>
+            </span>
+          </div>
+          {turma.pode_encerrar && <EncerrarTurma turma={turma} aoEncerrar={setTurma} />}
         </div>
       </section>
+
+      {turma.encerrada && (
+        <Aviso tipo="info">
+          Turma encerrada{turma.encerrada_em && ` em ${dataHora(turma.encerrada_em)}`}. Não aceita novos alunos nem
+          mudança de situação.
+        </Aviso>
+      )}
 
       <section className="overflow-hidden rounded-xl border border-borda bg-superficie">
         <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-borda px-4 py-3">
