@@ -1,9 +1,12 @@
-"""Indicadores gerenciais: escopo por perfil e situação dos TCCs e das orientações (RBN13.01 e RBN13.02 ·
-RN01, RN02, RN07, RN10, RN18 · DS-FL08-D, TEL16).
+"""Indicadores gerenciais: escopo por perfil, situação dos TCCs e das orientações, produção científica, desistências
+e participações em banca (RBN13.01 a RBN13.05 · RN01, RN02, RN03, RN07, RN10, RN18, RN20 · DS-FL08-C, DS-FL08-D,
+TEL16).
 
 Faz o papel do ControladorIndicadores do diagrama de classes (MOD06): resolverEscopo, contarPorSituacao e
-contarOrientandos. Desistências (RBN13.04), participações em banca (RBN13.05), produção científica (RBN13.03) e
-o relatório em PDF (RBN13.06) são das histórias SCRUM-90 a SCRUM-93 e usam o mesmo escopo.
+contarOrientandos (SCRUM-88 e 89); contarPorSituacao em PublicacaoArtigo (SCRUM-90); contarDesistencias e
+evolucaoPorPeriodo (SCRUM-91); contarParticipacoes e suplentesConvocados (SCRUM-92); e consultarIndicadores, o painel
+do DS-FL08-C. O relatório em PDF (RBN13.06, SCRUM-93) usa estas mesmas funções. Os filtros de cada indicador por
+perfil ficam em `filtros_indicadores`.
 
 Escopo (RN18, RBN13.01):
 - coordenação: todos os TCCs dos cursos do seu núcleo;
@@ -17,7 +20,7 @@ escopo, recebe 403 (CA-06 do RBN13.01). Nenhuma resposta traz nome de aluno (CA-
 
 from datetime import date
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.erros import ErroAPI
@@ -28,7 +31,10 @@ from app.models import (
     PERFIL_ORIENTADOR,
     PERFIL_PROFESSOR,
     Aluno,
+    BancaMembro,
     Curso,
+    Defesa,
+    Docente,
     Orientacao,
     PeriodoLetivo,
     Tcc,
@@ -36,16 +42,28 @@ from app.models import (
     Usuario,
 )
 from app.schemas.indicador import (
+    BancasOut,
     CursoOut,
+    DesistenciasCursoOut,
+    DesistenciasOut,
     EscopoOut,
+    EvolucaoOut,
+    FiltrosDoIndicador,
+    FiltrosIndicadoresOut,
     FiltrosOut,
+    IndicadoresOut,
     IndicadorSituacaoOut,
     OrientacoesOut,
+    ParticipacoesOut,
     PeriodoOut,
     PorEtapa,
+    PorPapel,
+    ProducaoOut,
+    SituacaoEditorialOut,
     SituacaoOut,
     TurmaOpcaoOut,
 )
+from app.services.defesas import realizada
 from app.services.turmas import pessoa
 
 ETAPAS = ("TCC1", "TCC2")
@@ -76,6 +94,26 @@ def _exigir_perfil(db: Session, usuario: Usuario) -> set[str]:
 def _filtros(perfis: set[str]) -> FiltrosOut:
     coord, prof, orient = (PERFIL_COORDENADOR in perfis, PERFIL_PROFESSOR in perfis, PERFIL_ORIENTADOR in perfis)
     return FiltrosOut(periodo=True, curso=coord or orient, etapa=coord or orient, turma=prof, orientador=coord)
+
+
+def filtros_indicadores(perfis: set[str]) -> FiltrosIndicadoresOut:
+    """Filtros de cada indicador por perfil, como nas fichas; quem tem mais de um perfil tem a soma deles.
+
+    - situação (RBN13.02): os mesmos de `_filtros`;
+    - produção científica (RBN13.03): coordenação curso e período; professor período e turma; orientador período
+      e curso;
+    - desistências (RBN13.04): coordenação curso, intervalo de períodos e etapa; professor período e turma;
+      orientador só período;
+    - participações em banca (RBN13.05): coordenação curso, período, professor e papel; professor e orientador
+      período e papel.
+    """
+    coord, prof, orient = (PERFIL_COORDENADOR in perfis, PERFIL_PROFESSOR in perfis, PERFIL_ORIENTADOR in perfis)
+    return FiltrosIndicadoresOut(
+        situacao=FiltrosDoIndicador(**_filtros(perfis).model_dump()),
+        producao=FiltrosDoIndicador(periodo=True, curso=coord or orient, turma=prof),
+        desistencias=FiltrosDoIndicador(periodo=True, curso=coord, etapa=coord, intervalo=coord, turma=prof),
+        bancas=FiltrosDoIndicador(periodo=True, curso=coord, professor=coord, papel=True),
+    )
 
 
 def periodo_vigente(db: Session) -> PeriodoLetivo | None:
@@ -169,7 +207,18 @@ def consultar_escopo(db: Session, usuario: Usuario) -> EscopoOut:
         cursos=[CursoOut(id=c.id, sigla=c.sigla, nome=c.nome) for c in cursos],
         turmas=[TurmaOpcaoOut(id=t.id, codigo=t.codigo) for t in turmas],
         orientadores=[pessoa(u) for u in orientadores],
+        filtros_indicadores=filtros_indicadores(perfis),
+        professores=[pessoa(u) for u in _professores(db, usuario, perfis)],
     )
+
+
+def _professores(db: Session, usuario: Usuario, perfis: set[str]) -> list[Usuario]:
+    """Opções do filtro "professor" das bancas, que é só da coordenação (RBN13.05): os docentes do núcleo dela."""
+    if PERFIL_COORDENADOR not in perfis or usuario.docente is None:
+        return []
+    consulta = (select(Usuario).join(Docente, Docente.usuario_id == Usuario.id)
+                .where(Docente.nucleo_id == usuario.docente.nucleo_id).order_by(Usuario.nome))
+    return list(db.scalars(consulta))
 
 
 def consultar_situacao(
@@ -226,3 +275,220 @@ def consultar_situacao(
 
     return IndicadorSituacaoOut(periodo_id=periodo, total=por_etapa(selecionados), situacoes=situacoes,
                                 orientacoes=orientacoes, sem_dados=not selecionados)
+
+
+# =================================================================== comum às SCRUM-90 a 92
+
+
+def _conferir_filtros(filtros: FiltrosDoIndicador, **valores) -> None:
+    """Filtro fora do perfil recebe 403 com o campo (CA-06 do RBN13.01), mesmo vindo pela URL. As chaves são os
+    nomes dos parâmetros; `periodo_inicio` e `periodo_fim` são o filtro `intervalo`."""
+    for nome, valor in valores.items():
+        filtro = "intervalo" if nome in ("periodo_inicio", "periodo_fim") else nome
+        if valor is not None and not getattr(filtros, filtro):
+            raise ErroAPI(403, FORA_DO_PERFIL, campo=nome)
+
+
+def _conferir_escopo(usuario: Usuario, perfis: set[str], tccs: dict[int, Tcc], *, curso: int | None = None,
+                     turma: int | None = None) -> None:
+    """Curso ou turma fora do escopo: 403, como na situação (CA-06 do RBN13.01)."""
+    cursos = {t.aluno.curso_id for t in tccs.values()}
+    if curso is not None and PERFIL_COORDENADOR not in perfis and curso not in cursos:
+        raise ErroAPI(403, FORA_DO_ESCOPO, campo="curso")
+    if turma is not None and turma not in {t.turma_id for t in tccs.values() if t.turma.professor_id == usuario.id}:
+        raise ErroAPI(403, FORA_DO_ESCOPO, campo="turma")
+
+
+def _periodo_ou_vigente(db: Session, periodo: int | None) -> int | None:
+    if periodo is not None:
+        return periodo
+    vigente = periodo_vigente(db)
+    return vigente.id if vigente else None
+
+
+# =================================================================== SCRUM-90 · RBN13.03 produção científica
+
+# RN03 e ficha: submetido, em revisão, aceito e publicado; RECUSADO existe no DDL e no PR #23 e fica como 5º grupo,
+# pendente de decisão do PO (D3).
+SITUACOES_EDITORIAIS = ("SUBMETIDO", "EM_REVISAO", "ACEITO", "PUBLICADO", "RECUSADO")
+
+
+def contar_producao(tccs: list[Tcc]) -> list[SituacaoEditorialOut]:
+    """contarPorSituacao em PublicacaoArtigo (DS-FL08-C mensagem 5). Só modalidade artigo (CA-02). Cada TCC conta uma
+    vez, pela situação atual da submissão mais recente, a mesma regra da publicação (PR #23) e da nota final; mudar a
+    situação move o TCC de grupo sem mudar o total (CA-03)."""
+    contagem = dict.fromkeys(SITUACOES_EDITORIAIS, 0)
+    for t in tccs:
+        if t.modalidade == "ARTIGO" and t.publicacoes:
+            contagem[t.publicacoes[-1].situacao_atual] += 1
+    return [SituacaoEditorialOut(situacao=s, total=n) for s, n in contagem.items()]
+
+
+def consultar_producao(db: Session, usuario: Usuario, *, periodo: int | None = None, curso: int | None = None,
+                       turma: int | None = None) -> ProducaoOut:
+    """Produção científica (DS-FL08-C mensagem 5). Filtros: coordenação curso e período; professor período e turma;
+    orientador período e curso (CA-04). Sem nome de aluno (CA-05)."""
+    perfis = _exigir_perfil(db, usuario)
+    _conferir_filtros(filtros_indicadores(perfis).producao, curso=curso, turma=turma)
+    tccs = escopo_tccs(db, usuario, perfis)  # passo 3: resolverEscopo
+    _conferir_escopo(usuario, perfis, tccs, curso=curso, turma=turma)
+    periodo = _periodo_ou_vigente(db, periodo)
+    selecionados = [
+        t for t in tccs.values()
+        if (periodo is None or t.periodo_id == periodo)
+        and (curso is None or t.aluno.curso_id == curso)
+        and (turma is None or t.turma_id == turma)
+    ]
+    situacoes = contar_producao(selecionados)  # passo 5
+    total = sum(s.total for s in situacoes)
+    return ProducaoOut(periodo_id=periodo, total=total, situacoes=situacoes, sem_dados=total == 0)
+
+
+# =================================================================== SCRUM-91 · RBN13.04 desistências
+
+
+def _intervalo(db: Session, periodo_inicio: int | None, periodo_fim: int | None) -> list[PeriodoLetivo]:
+    """Os períodos da evolução, em ordem de início. Sem intervalo, todos; início depois do fim, 400."""
+    periodos = list(db.scalars(select(PeriodoLetivo).order_by(PeriodoLetivo.inicio)))
+    ids = [p.id for p in periodos]
+    campos = {nome: "Escolha um período letivo." for nome, valor in (("periodo_inicio", periodo_inicio),
+                                                                     ("periodo_fim", periodo_fim))
+              if valor is not None and valor not in ids}
+    if campos:
+        raise ErroAPI(400, "Confira os campos destacados.", campos=campos)
+    de = ids.index(periodo_inicio) if periodo_inicio is not None else 0
+    ate = ids.index(periodo_fim) if periodo_fim is not None else len(ids) - 1
+    if de > ate:
+        raise ErroAPI(400, "Confira os campos destacados.",
+                      campos={"periodo_fim": "O fim do intervalo não pode vir antes do início."})
+    return periodos[de:ate + 1]
+
+
+def consultar_desistencias(
+    db: Session, usuario: Usuario, *, periodo: int | None = None, curso: int | None = None, turma: int | None = None,
+    etapa: str | None = None, periodo_inicio: int | None = None, periodo_fim: int | None = None,
+) -> DesistenciasOut:
+    """GET /indicadores/desistencias (DS-FL08-D mensagens 9 a 11). Filtros: coordenação curso, intervalo de períodos
+    e etapa; professor período e turma; orientador só período (CA-05). Só TCC na situação DESISTENCIA conta;
+    reprovado não (CA-04). A evolução por período é só da coordenação (alt do diagrama, CA-02 e CA-03)."""
+    perfis = _exigir_perfil(db, usuario)
+    _conferir_filtros(filtros_indicadores(perfis).desistencias, curso=curso, turma=turma, etapa=etapa,
+                      periodo_inicio=periodo_inicio, periodo_fim=periodo_fim)  # CT-13.04-07: evolução pela URL
+    if etapa is not None and etapa not in ETAPAS:
+        raise ErroAPI(400, "Confira os campos destacados.", campos={"etapa": "Use TCC1 ou TCC2."})
+    tccs = escopo_tccs(db, usuario, perfis)
+    _conferir_escopo(usuario, perfis, tccs, curso=curso, turma=turma)
+    periodo = _periodo_ou_vigente(db, periodo)
+
+    desistentes = [  # mensagem 10: contarDesistencias(escopo, filtros)
+        t for t in tccs.values()
+        if t.situacao == "DESISTENCIA"
+        and (curso is None or t.aluno.curso_id == curso)
+        and (turma is None or t.turma_id == turma)
+        and (etapa is None or t.etapa == etapa)
+    ]
+    no_periodo = [t for t in desistentes if periodo is None or t.periodo_id == periodo]
+    if PERFIL_COORDENADOR in perfis:
+        cursos = list(db.scalars(select(Curso).where(Curso.nucleo_id == usuario.docente.nucleo_id)
+                                 .order_by(Curso.nome))) if usuario.docente else []
+    else:
+        cursos = sorted({t.aluno.curso.id: t.aluno.curso for t in tccs.values()}.values(), key=lambda c: c.nome)
+    por_curso = [DesistenciasCursoOut(curso=CursoOut(id=c.id, sigla=c.sigla, nome=c.nome),
+                                      total=sum(1 for t in no_periodo if t.aluno.curso_id == c.id))
+                 for c in cursos if curso is None or c.id == curso]
+
+    evolucao = None
+    if PERFIL_COORDENADOR in perfis:  # mensagem 11: evolucaoPorPeriodo(intervalo), só na coordenação
+        vigente = periodo_vigente(db)
+        evolucao = [EvolucaoOut(periodo=PeriodoOut(id=p.id, codigo=p.codigo,
+                                                   vigente=vigente is not None and p.id == vigente.id),
+                                total=sum(1 for t in desistentes if t.periodo_id == p.id))
+                    for p in _intervalo(db, periodo_inicio, periodo_fim)]
+    return DesistenciasOut(periodo_id=periodo, total=len(no_periodo), por_curso=por_curso, evolucao=evolucao,
+                           sem_dados=not no_periodo)
+
+
+# =================================================================== SCRUM-92 · RBN13.05 participações em banca
+
+PAPEIS = ("ORIENTADOR", "AVALIADOR", "COORIENTADOR", "SUPLENTE")
+
+
+def _membros_da_banca(db: Session, usuario: Usuario, perfis: set[str]) -> list[BancaMembro]:
+    """O escopo das bancas (CA-03 e CA-04): a coordenação vê os membros das bancas dos TCCs do núcleo; o professor e
+    o orientador, só as próprias participações. Só docentes da UEA (interno) e defesas não canceladas."""
+    donos = []
+    if PERFIL_COORDENADOR in perfis and usuario.docente is not None:
+        donos.append(Curso.nucleo_id == usuario.docente.nucleo_id)
+    if PERFIL_PROFESSOR in perfis or PERFIL_ORIENTADOR in perfis:
+        donos.append(BancaMembro.usuario_id == usuario.id)
+    if not donos:
+        return []
+    consulta = (select(BancaMembro).join(Defesa, Defesa.id == BancaMembro.defesa_id)
+                .join(Tcc, Tcc.id == Defesa.tcc_id).join(Aluno, Aluno.usuario_id == Tcc.aluno_id)
+                .join(Curso, Curso.id == Aluno.curso_id)
+                .where(BancaMembro.interno.is_(True), Defesa.situacao != "CANCELADA", or_(*donos)))
+    return list(db.scalars(consulta))
+
+
+def contar_participacoes(membros: list[BancaMembro]) -> dict[int, tuple[Usuario, dict[str, int]]]:
+    """contarParticipacoes e suplentesConvocados (DS-FL08-D mensagens 14 e 15). Só defesa realizada (a regra da
+    avaliação e da declaração). Um por professor e por papel em cada banca (CA-05; a banca não repete o membro). O
+    suplente só conta se foi convocado, e o titular que ele substituiu deixa de contar (CA-02, RN20)."""
+    grupos: dict[int, tuple[Usuario, dict[str, int]]] = {}
+    for m in membros:
+        if not realizada(m.defesa):
+            continue
+        if m.papel == "SUPLENTE" and m.convocado_em is None:
+            continue
+        if any(s.substitui_membro_id == m.id and s.convocado_em is not None for s in m.defesa.membros):
+            continue
+        grupos.setdefault(m.usuario_id, (m.usuario, dict.fromkeys(PAPEIS, 0)))[1][m.papel] += 1
+    return grupos
+
+
+def consultar_bancas(
+    db: Session, usuario: Usuario, *, periodo: int | None = None, curso: int | None = None,
+    professor: int | None = None, papel: str | None = None,
+) -> BancasOut:
+    """GET /indicadores/bancas (DS-FL08-D mensagens 13 a 15). Filtros: coordenação curso, período, professor e papel;
+    professor e orientador período e papel (CA-03 e CA-04). Período e curso são os do TCC defendido."""
+    perfis = _exigir_perfil(db, usuario)
+    _conferir_filtros(filtros_indicadores(perfis).bancas, curso=curso, professor=professor)
+    if papel is not None and papel not in PAPEIS:
+        raise ErroAPI(400, "Confira os campos destacados.", campos={"papel": "Escolha um dos papéis da banca."})
+    if professor is not None and professor not in {u.id for u in _professores(db, usuario, perfis)}:
+        raise ErroAPI(403, FORA_DO_ESCOPO, campo="professor")
+    periodo = _periodo_ou_vigente(db, periodo)
+    membros = [
+        m for m in _membros_da_banca(db, usuario, perfis)
+        if (periodo is None or m.defesa.tcc.periodo_id == periodo)
+        and (curso is None or m.defesa.tcc.aluno.curso_id == curso)
+        and (professor is None or m.usuario_id == professor)
+        and (papel is None or m.papel == papel)
+    ]
+    grupos = contar_participacoes(membros)
+    if PERFIL_COORDENADOR not in perfis and usuario.id not in grupos:
+        grupos[usuario.id] = (usuario, dict.fromkeys(PAPEIS, 0))  # o professor vê o próprio total, mesmo zerado
+    professores = [ParticipacoesOut(professor=pessoa(u), total=PorPapel(**n))
+                   for u, n in sorted(grupos.values(), key=lambda g: g[0].nome)]
+    total = PorPapel(**{p: sum(n[p] for _, n in grupos.values()) for p in PAPEIS})
+    return BancasOut(periodo_id=periodo, total=total, professores=professores,
+                     sem_dados=not any(total.model_dump().values()))
+
+
+# =================================================================== DS-FL08-C · painel
+
+
+def consultar_indicadores(db: Session, usuario: Usuario, *, periodo: int | None = None, curso: int | None = None,
+                          turma: int | None = None) -> IndicadoresOut:
+    """GET /indicadores?periodo&curso (DS-FL08-C mensagens 2 a 6, consultarIndicadores), com turma para o professor
+    da disciplina. Os filtros são os da produção científica; as bancas recebem o período e, se o perfil filtra
+    bancas por curso, o curso (E2)."""
+    perfis = _exigir_perfil(db, usuario)
+    filtros = filtros_indicadores(perfis)
+    _conferir_filtros(filtros.producao, curso=curso, turma=turma)
+    producao = consultar_producao(db, usuario, periodo=periodo, curso=curso, turma=turma)  # mensagem 5
+    situacao = consultar_situacao(db, usuario, periodo=periodo, curso=curso, turma=turma)  # mensagem 4
+    bancas = consultar_bancas(db, usuario, periodo=periodo,
+                              curso=curso if filtros.bancas.curso else None)  # mensagem 6
+    return IndicadoresOut(periodo_id=producao.periodo_id, situacao=situacao, producao=producao, bancas=bancas)

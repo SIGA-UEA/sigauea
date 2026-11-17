@@ -1,7 +1,9 @@
-"""Rotas dos indicadores gerenciais (TEL16 Indicadores · RBN13.01 e RBN13.02 · DS-FL08-D).
+"""Rotas dos indicadores gerenciais (TEL16 Indicadores · RBN13.01 a RBN13.05 · DS-FL08-C e DS-FL08-D).
 
 GET /indicadores/escopo: escopo e filtros do perfil. GET /indicadores/situacao: situação dos TCCs e orientações,
-por etapa. Quem pode e o escopo são conferidos no serviço.
+por etapa. GET /indicadores: painel do DS-FL08-C (situação, produção científica e bancas). GET
+/indicadores/desistencias: desistências e evolução. GET /indicadores/bancas: participações em banca. Quem pode e o
+escopo são conferidos no serviço.
 """
 
 from typing import Literal
@@ -12,10 +14,24 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.deps import usuario_atual
 from app.models import Usuario
-from app.schemas.indicador import EscopoOut, IndicadorSituacaoOut
+from app.schemas.indicador import BancasOut, DesistenciasOut, EscopoOut, IndicadoresOut, IndicadorSituacaoOut
 from app.services import indicadores
 
 router = APIRouter(tags=["indicadores"])
+Papel = Literal["ORIENTADOR", "AVALIADOR", "COORIENTADOR", "SUPLENTE"]
+
+
+@router.get("/indicadores", response_model=IndicadoresOut)
+def painel(
+    periodo: int | None = Query(default=None),
+    curso: int | None = Query(default=None),
+    turma: int | None = Query(default=None),
+    db: Session = Depends(get_db, scope="function"),
+    eu: Usuario = Depends(usuario_atual),
+):
+    """DS-FL08-C: situação acadêmica, produção científica (RBN13.03) e bancas. Sem período, usa o vigente. 403 para
+    filtro fora do perfil ou curso e turma fora do escopo."""
+    return indicadores.consultar_indicadores(db, eu, periodo=periodo, curso=curso, turma=turma)
 
 
 @router.get("/indicadores/escopo", response_model=EscopoOut)
@@ -39,3 +55,34 @@ def situacao(
     vigente. 403 para filtro fora do perfil ou curso, turma ou orientador fora do escopo."""
     return indicadores.consultar_situacao(db, eu, periodo=periodo, curso=curso, etapa=etapa, turma=turma,
                                           orientador=orientador)
+
+
+@router.get("/indicadores/desistencias", response_model=DesistenciasOut)
+def desistencias(
+    periodo: int | None = Query(default=None),
+    curso: int | None = Query(default=None),
+    turma: int | None = Query(default=None),
+    etapa: Literal["TCC1", "TCC2"] | None = Query(default=None),
+    periodo_inicio: int | None = Query(default=None),
+    periodo_fim: int | None = Query(default=None),
+    db: Session = Depends(get_db, scope="function"),
+    eu: Usuario = Depends(usuario_atual),
+):
+    """RBN13.04: total por período e curso; a evolução no intervalo de períodos só para a coordenação. 403 para
+    filtro fora do perfil (inclusive a evolução pela URL); 400 {campos} para intervalo inválido."""
+    return indicadores.consultar_desistencias(db, eu, periodo=periodo, curso=curso, turma=turma, etapa=etapa,
+                                              periodo_inicio=periodo_inicio, periodo_fim=periodo_fim)
+
+
+@router.get("/indicadores/bancas", response_model=BancasOut)
+def bancas(
+    periodo: int | None = Query(default=None),
+    curso: int | None = Query(default=None),
+    professor: int | None = Query(default=None),
+    papel: Papel | None = Query(default=None),
+    db: Session = Depends(get_db, scope="function"),
+    eu: Usuario = Depends(usuario_atual),
+):
+    """RBN13.05: participações por professor e por papel, com o suplente só se convocado (RN20). 403 para filtro
+    fora do perfil ou professor fora do núcleo."""
+    return indicadores.consultar_bancas(db, eu, periodo=periodo, curso=curso, professor=professor, papel=papel)

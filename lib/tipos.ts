@@ -661,7 +661,7 @@ export type Publicacao = {
 
 export const ESTRATOS_QUALIS = ["A1", "A2", "A3", "A4", "B1", "B2", "B3", "B4", "C"] as const;
 
-// ---------------------------------------------------------------- SCRUM-88/89 · indicadores (RBN13.01 e RBN13.02)
+// ---------------------------------------------------------------- SCRUM-88 a 92 · indicadores (RBN13.01 a RBN13.05)
 // Espelha backend/app/schemas/indicador.py. Nenhum campo traz nome de aluno (RN18).
 
 export type FiltrosIndicador = {
@@ -681,6 +681,16 @@ export type EscopoIndicadores = {
   cursos: { id: number; sigla: string; nome: string }[];
   turmas: { id: number; codigo: string }[];
   orientadores: { id: number; nome: string }[];
+  filtros_indicadores: Record<IndicadorTel16, FiltrosDoIndicador>; // os filtros de cada indicador (SCRUM-90 a 92)
+  professores: { id: number; nome: string }[]; // filtro "professor" das bancas (só coordenação)
+};
+
+export type IndicadorTel16 = "situacao" | "producao" | "desistencias" | "bancas";
+
+export type FiltrosDoIndicador = FiltrosIndicador & {
+  intervalo: boolean;
+  professor: boolean;
+  papel: boolean;
 };
 
 export type PorEtapa = { TCC1: number; TCC2: number };
@@ -691,4 +701,40 @@ export type IndicadorSituacao = {
   situacoes: { situacao: string; total: PorEtapa }[];
   orientacoes: { orientador: { id: number; nome: string }; total: PorEtapa }[];
   sem_dados: boolean;
+};
+
+// SCRUM-90 · RBN13.03: usa SituacaoEditorial e NOME_SITUACAO_EDITORIAL lá de cima; RECUSADO fica como 5º grupo,
+// pendente de decisão do PO (D3)
+export type IndicadorProducao = {
+  periodo_id: number | null;
+  total: number;
+  situacoes: { situacao: SituacaoEditorial; total: number }[];
+  sem_dados: boolean;
+};
+
+// SCRUM-91 · RBN13.04: a evolução só vem para a coordenação (null nos demais perfis)
+export type IndicadorDesistencias = {
+  periodo_id: number | null;
+  total: number;
+  por_curso: { curso: { id: number; sigla: string; nome: string }; total: number }[];
+  evolucao: { periodo: { id: number; codigo: string; vigente: boolean }; total: number }[] | null;
+  sem_dados: boolean;
+};
+
+// SCRUM-92 · RBN13.05: usa PapelBanca lá de cima; o suplente só conta se foi convocado (RN20)
+export type PorPapel = Record<PapelBanca, number>;
+
+export type IndicadorBancas = {
+  periodo_id: number | null;
+  total: PorPapel;
+  professores: { professor: { id: number; nome: string }; total: PorPapel }[];
+  sem_dados: boolean;
+};
+
+// DS-FL08-C: o painel (GET /indicadores)
+export type PainelIndicadores = {
+  periodo_id: number | null;
+  situacao: IndicadorSituacao;
+  producao: IndicadorProducao;
+  bancas: IndicadorBancas;
 };
