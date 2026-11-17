@@ -3,7 +3,8 @@ RN01, RN02, RN07, RN10, RN18 · DS-FL08-D, TEL16).
 
 Faz o papel do ControladorIndicadores do diagrama de classes (MOD06): resolverEscopo, contarPorSituacao e
 contarOrientandos. Desistências (RBN13.04), participações em banca (RBN13.05), produção científica (RBN13.03) e
-o relatório em PDF (RBN13.06) são das histórias SCRUM-90 a SCRUM-93 e usam o mesmo escopo.
+o relatório em PDF (RBN13.06) são das histórias SCRUM-90 a SCRUM-93 e usam o mesmo escopo. Os filtros de cada
+indicador por perfil ficam em `filtros_indicadores` (SCRUM-90 a SCRUM-92).
 
 Escopo (RN18, RBN13.01):
 - coordenação: todos os TCCs dos cursos do seu núcleo;
@@ -29,6 +30,7 @@ from app.models import (
     PERFIL_PROFESSOR,
     Aluno,
     Curso,
+    Docente,
     Orientacao,
     PeriodoLetivo,
     Tcc,
@@ -38,6 +40,8 @@ from app.models import (
 from app.schemas.indicador import (
     CursoOut,
     EscopoOut,
+    FiltrosDoIndicador,
+    FiltrosIndicadoresOut,
     FiltrosOut,
     IndicadorSituacaoOut,
     OrientacoesOut,
@@ -76,6 +80,26 @@ def _exigir_perfil(db: Session, usuario: Usuario) -> set[str]:
 def _filtros(perfis: set[str]) -> FiltrosOut:
     coord, prof, orient = (PERFIL_COORDENADOR in perfis, PERFIL_PROFESSOR in perfis, PERFIL_ORIENTADOR in perfis)
     return FiltrosOut(periodo=True, curso=coord or orient, etapa=coord or orient, turma=prof, orientador=coord)
+
+
+def filtros_indicadores(perfis: set[str]) -> FiltrosIndicadoresOut:
+    """Filtros de cada indicador por perfil, como nas fichas; quem tem mais de um perfil tem a soma deles.
+
+    - situação (RBN13.02): os mesmos de `_filtros`;
+    - produção científica (RBN13.03): coordenação curso e período; professor período e turma; orientador período
+      e curso;
+    - desistências (RBN13.04): coordenação curso, intervalo de períodos e etapa; professor período e turma;
+      orientador só período;
+    - participações em banca (RBN13.05): coordenação curso, período, professor e papel; professor e orientador
+      período e papel.
+    """
+    coord, prof, orient = (PERFIL_COORDENADOR in perfis, PERFIL_PROFESSOR in perfis, PERFIL_ORIENTADOR in perfis)
+    return FiltrosIndicadoresOut(
+        situacao=FiltrosDoIndicador(**_filtros(perfis).model_dump()),
+        producao=FiltrosDoIndicador(periodo=True, curso=coord or orient, turma=prof),
+        desistencias=FiltrosDoIndicador(periodo=True, curso=coord, etapa=coord, intervalo=coord, turma=prof),
+        bancas=FiltrosDoIndicador(periodo=True, curso=coord, professor=coord, papel=True),
+    )
 
 
 def periodo_vigente(db: Session) -> PeriodoLetivo | None:
@@ -169,7 +193,18 @@ def consultar_escopo(db: Session, usuario: Usuario) -> EscopoOut:
         cursos=[CursoOut(id=c.id, sigla=c.sigla, nome=c.nome) for c in cursos],
         turmas=[TurmaOpcaoOut(id=t.id, codigo=t.codigo) for t in turmas],
         orientadores=[pessoa(u) for u in orientadores],
+        filtros_indicadores=filtros_indicadores(perfis),
+        professores=[pessoa(u) for u in _professores(db, usuario, perfis)],
     )
+
+
+def _professores(db: Session, usuario: Usuario, perfis: set[str]) -> list[Usuario]:
+    """Opções do filtro "professor" das bancas, que é só da coordenação (RBN13.05): os docentes do núcleo dela."""
+    if PERFIL_COORDENADOR not in perfis or usuario.docente is None:
+        return []
+    consulta = (select(Usuario).join(Docente, Docente.usuario_id == Usuario.id)
+                .where(Docente.nucleo_id == usuario.docente.nucleo_id).order_by(Usuario.nome))
+    return list(db.scalars(consulta))
 
 
 def consultar_situacao(

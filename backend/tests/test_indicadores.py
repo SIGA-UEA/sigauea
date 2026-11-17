@@ -20,7 +20,7 @@ URL = "/api/v1/indicadores"
 
 def _aluno(coord, n: int, curso: int = 1) -> int:
     r = coord.post("/api/v1/alunos", json={"nome": f"Aluno Indicador {n}", "email": f"ind{n}@uea.edu.br",
-                                            "matricula": f"2599{n:04d}", "curso_id": curso})
+                                           "matricula": f"2599{n:04d}", "curso_id": curso})
     assert r.status_code == 201, r.json()
     return r.json()["id"]
 
@@ -190,3 +190,52 @@ def test_ct_13_02_08_filtro_sem_dados_zera_e_avisa(ind, db):
 def test_professor_ve_os_orientadores_dos_alunos_das_suas_turmas(ind):
     o = _orientacoes(ind["paulo"].get(f"{URL}/situacao").json())
     assert o == {"Olga Orientadora": (6, 2), "Otto Orientador": (0, 1)}  # o TCC de LC não é do Paulo
+
+
+# ---------------------------------------------------------------- SCRUM-90 a 92 · filtros de cada indicador
+
+
+def _filtros_de(cliente) -> dict:
+    """Os filtros ligados de cada indicador, para comparar sem repetir os desligados."""
+    por_indicador = cliente.get(f"{URL}/escopo").json()["filtros_indicadores"]
+    return {nome: {f for f, ligado in filtros.items() if ligado} for nome, filtros in por_indicador.items()}
+
+
+def test_ct_13_04_05_cada_perfil_tem_os_filtros_da_ficha(ind):
+    """CT-13.04-05 (e CA-04 do RBN13.03, CA-03 e CA-04 do RBN13.05): cada indicador traz só os filtros do perfil."""
+    assert _filtros_de(ind["coord"]) == {
+        "situacao": {"periodo", "curso", "etapa", "orientador"},
+        "producao": {"periodo", "curso"},
+        "desistencias": {"periodo", "curso", "etapa", "intervalo"},
+        "bancas": {"periodo", "curso", "professor", "papel"},
+    }
+    assert _filtros_de(ind["paulo"]) == {
+        "situacao": {"periodo", "turma"},
+        "producao": {"periodo", "turma"},
+        "desistencias": {"periodo", "turma"},
+        "bancas": {"periodo", "papel"},
+    }
+    assert _filtros_de(ind["olga"]) == {
+        "situacao": {"periodo", "curso", "etapa"},
+        "producao": {"periodo", "curso"},
+        "desistencias": {"periodo"},
+        "bancas": {"periodo", "papel"},
+    }
+
+
+def test_filtros_de_quem_tem_dois_perfis_somam(ind, db):
+    """CA-04 do RBN13.01: o Otto, orientador e professor da turma de LC, tem os filtros dos dois perfis."""
+    perfil = db.scalar(select(Perfil).where(Perfil.codigo == "professor_disciplina"))
+    db.add(UsuarioPerfil(usuario_id=ind["ids"]["otto"], perfil_id=perfil.id))
+    db.commit()
+    filtros = _filtros_de(ind["otto"])
+    assert filtros["producao"] == {"periodo", "curso", "turma"}
+    assert filtros["desistencias"] == {"periodo", "turma"}  # evolução e etapa continuam só da coordenação
+
+
+def test_so_a_coordenacao_recebe_a_lista_de_professores_das_bancas(ind):
+    """RBN13.05: o filtro "professor" é só da coordenação; os demais perfis não recebem a lista."""
+    nomes = {p["nome"] for p in ind["coord"].get(f"{URL}/escopo").json()["professores"]}
+    assert {"Olga Orientadora", "Otto Orientador"} <= nomes
+    assert ind["paulo"].get(f"{URL}/escopo").json()["professores"] == []
+    assert ind["olga"].get(f"{URL}/escopo").json()["professores"] == []
