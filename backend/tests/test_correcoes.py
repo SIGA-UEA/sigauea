@@ -450,3 +450,36 @@ def test_prazo_novo_nao_pode_ser_anterior_a_hoje(com_correcoes, monkeypatch):
     r = com_correcoes["paulo"].post(url, json={"prazo": "2026-11-30", "motivo": "Teste de prazo passado."})
     assert r.status_code == 422 and r.json()["campo"] == "prazo"
     assert com_correcoes["paulo"].post(url, json={"prazo": "2026-12-01", "motivo": "Hoje vale."}).status_code == 200
+
+
+
+# =================================================================== desistência (RN10, RBN05.02)
+
+
+def _situacao(db, d, situacao):
+    db.expire_all()
+    db.get(Tcc, d["tcc"]["id"]).situacao = situacao
+    db.commit()
+
+
+def test_tcc_em_desistencia_nao_e_concluido_e_fica_fechado(realizada, db):
+    """O TCC em desistência não é concluído pela versão final e as ações das correções respondem 409; reativado,
+    volta ao fluxo normal e conclui."""
+    _confirmar(realizada, "APROVADO")
+    _situacao(db, realizada, "DESISTENCIA")
+    corpo = _consultar(realizada).json()
+    assert corpo["pendencias"] == [servico.FECHADO_POR_DESISTENCIA]
+    assert corpo["permissoes"]["enviar_versao_final"] is False
+    r = _enviar(realizada)
+    assert r.status_code == 409 and "desistência" in r.json()["detail"]
+    assert _tcc(db, realizada).situacao == "DESISTENCIA"
+    _situacao(db, realizada, "APROVADO")
+    assert _enviar(realizada).json()["situacao_tcc"] == "CONCLUIDO"
+
+
+def test_retificacao_nao_conclui_tcc_em_desistencia(com_correcoes, db):
+    """A retificação para "aprovado" com a versão final já enviada não tira o TCC da desistência."""
+    assert _enviar(com_correcoes).status_code == 201
+    _situacao(db, com_correcoes, "DESISTENCIA")
+    _retificar(com_correcoes, "APROVADO")
+    assert _tcc(db, com_correcoes).situacao == "DESISTENCIA"
