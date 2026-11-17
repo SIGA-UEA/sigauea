@@ -635,6 +635,59 @@ export type DocumentosDefesa = {
   meus_certificados: VersaoDocumento[];
 };
 
+// ---------------------------------------------------------------- Sprint S05 · correções e conclusão (TEL14)
+// Espelha backend/app/schemas/correcoes.py (RBN11.01 a RBN11.04 · DS-FL07).
+export type SituacaoCorrecao = "PENDENTE" | "ATENDIDA" | "APROVADA" | "DEVOLVIDA";
+export const NOME_SITUACAO_CORRECAO: Record<SituacaoCorrecao, string> = {
+  PENDENTE: "Pendente",
+  ATENDIDA: "Atendida pelo aluno",
+  APROVADA: "Aprovada",
+  DEVOLVIDA: "Devolvida ao aluno",
+};
+export type CorrecaoTcc = {
+  id: number;
+  descricao: string;
+  avaliador: Pessoa;
+  papel: string;
+  situacao: SituacaoCorrecao;
+  justificativa: string | null;
+  criada_em: string;
+  atendida_em: string | null;
+  decidida_por: Pessoa | null;
+  decidida_em: string | null;
+};
+export type VersaoFinal = {
+  id: number;
+  versao: number;
+  nome_arquivo: string;
+  tamanho_bytes: number;
+  sha256: string;
+  enviado_em: string;
+  entregue_com_atraso: boolean;
+  atraso_aceito: boolean | null;
+};
+export type Correcoes = {
+  tcc_id: number;
+  defesa_id: number | null;
+  resultado: string | null;
+  situacao_tcc: string;
+  concluido_em: string | null;
+  prazo: string | null;
+  prazo_motivo: string | null;
+  anuencia_em: string | null;
+  professor_responsavel: Pessoa;
+  correcoes: CorrecaoTcc[];
+  versao_final: VersaoFinal | null;
+  pendencias: string[];
+  permissoes: {
+    registrar: boolean;
+    marcar_atendida: boolean;
+    enviar_versao_final: boolean;
+    dar_anuencia: boolean;
+    decidir: boolean;
+    alterar_prazo: boolean;
+  };
+};
 // ---------------------------------------------------------------- Sprint S05 · publicação do artigo (TEL15)
 // Espelha backend/app/schemas/publicacao.py.
 

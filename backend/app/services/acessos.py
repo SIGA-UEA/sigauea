@@ -282,6 +282,8 @@ ROTAS_DO_EXTERNO: dict[tuple[str, str], str | None] = {
     ("GET", "/api/v1/defesas/{defesa_id}/avaliacao"): "defesa",
     ("PUT", "/api/v1/defesas/{defesa_id}/avaliacao"): "defesa",
     ("POST", "/api/v1/defesas/{defesa_id}/avaliacao/envio"): "defesa",
+    ("GET", "/api/v1/tccs/{tcc_id}/correcoes"): "tcc",  # decisão 32-i: correções da banca (SCRUM-81)
+    ("POST", "/api/v1/tccs/{tcc_id}/correcoes"): "tcc",
     ("GET", "/api/v1/defesas/{defesa_id}/resultado"): "defesa",  # RBN09.13 (PR #19)
     ("GET", "/api/v1/defesas/{defesa_id}/documentos"): "defesa",  # RBN09.16 e "Seu certificado"
     ("GET", "/api/v1/documentos/{documento_id}/arquivo"): None,  # baixar() confere o vínculo e o próprio certificado

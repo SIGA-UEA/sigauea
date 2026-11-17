@@ -5,7 +5,8 @@
 // (TEL19, ver presenca.tsx) e histórico de situações (RNF03). Quem pode ver é decidido pela API (404 para
 // os demais, RN07). Para quem está na banca, a seção "Minha avaliação" (TEL12, ver avaliacao.tsx);
 // para o orientador, "Consolidar resultado" e, para aluno, banca e coordenação, o resultado confirmado (TEL12, ver
-// resultado.tsx); a ata, a Folha de Aprovação e os certificados ficam em "Ata e certificados" (TEL13, ver documentos.tsx). A orientação, com as ações da coordenação e
+// resultado.tsx); a ata, a Folha de Aprovação e os certificados ficam em "Ata e certificados" (TEL13, ver documentos.tsx); as
+// correções, a versão final e a conclusão do TCC ficam em "Correções e conclusão" (TEL14, ver correcoes.tsx). A orientação, com as ações da coordenação e
 // do orientador sobre o coorientador (DS-FL03-D), fica em orientacao.tsx. A pessoa externa (RBN01.12 e RBN01.13) vê
 // só os dados do trabalho e, se for da banca, a sua avaliação: a defesa vem dos acessos da sessão (/auth/me).
 
@@ -20,6 +21,7 @@ import { useSessao } from "@/lib/sessao";
 import { SecaoArtigo } from "./artigo";
 import { SecaoAvaliacao } from "./avaliacao";
 import { SecaoBanca } from "./banca";
+import { SecaoCorrecoes } from "./correcoes";
 import { SecaoDocumentos } from "./documentos";
 import { SecaoOrientacao } from "./orientacao";
 import { SecaoPresenca } from "./presenca";
@@ -187,6 +189,7 @@ export default function PaginaTcc() {
                 aoMudar={() => setVersaoResultado((n) => n + 1)}
               />
               <SecaoDocumentos defesaId={defesaId} recarga={versaoResultado} />
+              <SecaoCorrecoes tccId={id} recarga={versaoResultado} aoConcluir={recarregar} />
             </>
           )}
         </>

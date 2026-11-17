@@ -497,3 +497,20 @@ def test_a19_aluno_nao_troca_nem_tira_o_coorientador_externo(beto, db):
     assert beto["aluno"].put(url, json=corpo).status_code == 409
     assert beto["aluno"].put(url, json={**corpo, "coorientador_id": beto["ids"]["ricardo"]}).status_code == 409
     assert beto["olga"].get(url).json()["coorientador"]["id"] == beto["vinculo"]["id"]
+
+# ---------------------------------------------------------------- decisão 32-i · correções da banca (SCRUM-81)
+
+
+def test_avaliadora_externa_registra_e_ve_as_correcoes(defesa, ana, depois_da_defesa, db):
+    """Decisão 32-i: com a SCRUM-81, a Ana (avaliadora externa) vê a aba Correções e registra a exigência."""
+    d = {**defesa, "ana": ana}
+    for quem in ("olga", "otto", "ana"):
+        assert _enviar(d, quem).status_code == 200, quem
+    tcc = defesa["tcc"]["id"]
+    r = defesa["olga"].post(f"/api/v1/defesas/{defesa['defesa']['id']}/resultado",
+                            json={**RESULTADO, "resultado": "APROVADO_COM_CORRECOES"})
+    assert r.status_code == 200, r.json()
+    assert ana.get(f"/api/v1/tccs/{tcc}/correcoes").status_code == 200
+    r = ana.post(f"/api/v1/tccs/{tcc}/correcoes", json={"descricao": "Revisar a análise dos resultados."})
+    assert r.status_code == 201, r.json()
+    assert [c["avaliador"]["nome"] for c in r.json()["correcoes"]] == ["Ana Externa"]
