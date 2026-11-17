@@ -1,7 +1,5 @@
 """Acompanhamento do TCC: situação pelo orientador (RBN05.02), histórico (RBN05.04) e tarefas (RBN05.05)."""
 
-from datetime import timedelta
-
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -11,6 +9,8 @@ from app.models import (
     ACEITA,
     EM_ANALISE,
     PAPEL_ORIENTADOR,
+    FINALIDADE_BANCA,
+    DocumentoTcc,
     HistoricoSituacao,
     Tcc,
     TarefaTcc,
@@ -18,11 +18,21 @@ from app.models import (
 )
 from app.schemas.tcc import EventoOut, SituacaoAlterar, TarefaCriar, TarefaOut
 from app.services import auditoria, tccs
+from app.services.defesas import agora_manaus, defesa_vigente, realizada
 from app.services.turmas import pessoa
 
 DESISTENCIA, APROVADO = "DESISTENCIA", "APROVADO"
 TRANSICOES = {(APROVADO, DESISTENCIA), (DESISTENCIA, APROVADO)}  # a análise e a conclusão têm donos próprios
-MANAUS = timedelta(hours=-4)
+NOME_FINALIDADE = {"PRELIMINAR": "preliminar", "BANCA": "para a banca", "FINAL": "final"}
+NOME_SITUACAO = {
+    "RASCUNHO": "Rascunho",
+    "EM_ANALISE": "Em análise",
+    "APROVADO": "Aprovado",
+    "DEVOLVIDO": "Devolvido para correção",
+    "REPROVADO": "Reprovado",
+    "CONCLUIDO": "Concluído",
+    "DESISTENCIA": "Desistência",
+}
 
 
 def _campo_invalido(campo: str, mensagem: str) -> ErroAPI:
@@ -30,7 +40,7 @@ def _campo_invalido(campo: str, mensagem: str) -> ErroAPI:
 
 
 def _hoje():
-    return (agora() + MANAUS).date()
+    return agora_manaus().date()
 
 
 def _orientador_do(tcc: Tcc, usuario: Usuario) -> bool:
@@ -47,10 +57,10 @@ def _responsavel_pela_turma(tcc: Tcc, usuario: Usuario) -> bool:
 
 
 def alterar_situacao(db: Session, orientador: Usuario, tcc_id: int, dados: SituacaoAlterar) -> Tcc:
-    """Só o orientador do TCC registra a desistência ou a reativa; cada mudança fica no histórico e no log."""
+    """O orientador do TCC e o professor da turma registram a desistência ou a reativam; fica no histórico e no log."""
     tcc = db.get(Tcc, tcc_id)
-    if tcc is None or not _orientador_do(tcc, orientador):
-        raise ErroAPI(403, "Só o orientador do TCC atualiza a situação.")
+    if tcc is None or not (_orientador_do(tcc, orientador) or _responsavel_pela_turma(tcc, orientador)):
+        raise ErroAPI(403, "Só o orientador ou o professor da turma atualiza a situação.")
     motivo = (dados.motivo or "").strip()
     if not motivo:
         mensagem = "Informe o motivo da desistência." if dados.situacao == DESISTENCIA else "Informe o motivo."
@@ -58,6 +68,10 @@ def alterar_situacao(db: Session, orientador: Usuario, tcc_id: int, dados: Situa
     anterior = tcc.situacao
     if (anterior, dados.situacao) not in TRANSICOES:
         raise ErroAPI(409, "Não é possível passar da situação atual para a escolhida.", motivo="transicao_invalida")
+    if dados.situacao == DESISTENCIA:
+        defesa = defesa_vigente(tcc.id, db)
+        if defesa is not None and not realizada(defesa):
+            raise ErroAPI(409, "Cancele a defesa agendada antes de registrar a desistência.", motivo="defesa_agendada")
     tcc.situacao = dados.situacao
     tcc.desistencia_motivo = motivo if dados.situacao == DESISTENCIA else None
     tcc.atualizado_em = agora()
@@ -99,7 +113,8 @@ def historico(db: Session, usuario: Usuario, tcc_id: int) -> list[EventoOut]:
         elif h.situacao_anterior is None:
             descricao, tipo = "Cadastro iniciado como rascunho.", "SITUACAO"
         else:
-            descricao, tipo = f"Situação alterada de {h.situacao_anterior} para {h.situacao_nova}.", "SITUACAO"
+            anterior, nova = NOME_SITUACAO[h.situacao_anterior], NOME_SITUACAO[h.situacao_nova]
+            descricao, tipo = f"Situação alterada de {anterior} para {nova}.", "SITUACAO"
         eventos.append(
             EventoOut(tipo=tipo, descricao=descricao, detalhe=h.observacao, autor=pessoa(h.usuario), em=h.registrado_em)
         )
@@ -107,10 +122,24 @@ def historico(db: Session, usuario: Usuario, tcc_id: int) -> list[EventoOut]:
         eventos.append(
             EventoOut(
                 tipo="PARECER",
-                descricao=f"Parecer da coordenação: {a.resultado}.",
+                descricao=f"Parecer da coordenação: {NOME_SITUACAO.get(a.resultado, a.resultado)}.",
                 detalhe=a.parecer,
                 autor=pessoa(a.coordenador.usuario),
                 em=a.decidido_em,
+            )
+        )
+    ocultar_banca = usuario.id == tcc.aluno_id  # a versão destinada só à banca não aparece para o aluno
+    versoes = db.scalars(select(DocumentoTcc).where(DocumentoTcc.tcc_id == tcc.id).order_by(DocumentoTcc.versao))
+    for v in versoes:
+        if v.finalidade == FINALIDADE_BANCA and ocultar_banca:
+            continue
+        eventos.append(
+            EventoOut(
+                tipo="VERSAO",
+                descricao=f"Versão {v.versao} do TCC enviada ({NOME_FINALIDADE[v.finalidade]}).",
+                detalhe=v.nome_arquivo,
+                autor=pessoa(v.autor),
+                em=v.enviado_em,
             )
         )
     for o in tcc.orientacoes:

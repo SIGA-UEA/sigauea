@@ -364,7 +364,7 @@ class SituacaoAlterar(BaseModel):
     """RBN05.02: o orientador registra a desistência ou reativa o TCC, sempre com o motivo."""
 
     situacao: Literal["DESISTENCIA", "APROVADO"]
-    motivo: Annotated[str, StringConstraints(strip_whitespace=True, max_length=1000)] | None = None
+    motivo: Annotated[str, StringConstraints(strip_whitespace=True, max_length=500)] | None = None
 
 
 class TarefaCriar(BaseModel):
@@ -385,7 +385,7 @@ class TarefaOut(BaseModel):
 class EventoOut(BaseModel):
     """Um acontecimento do histórico do TCC, na ordem em que ocorreu (RBN05.04)."""
 
-    tipo: Literal["SUBMISSAO", "PARECER", "VINCULO", "SITUACAO"]
+    tipo: Literal["SUBMISSAO", "PARECER", "VINCULO", "VERSAO", "SITUACAO"]
     descricao: str
     detalhe: str | None
     autor: PessoaOut | None

@@ -243,7 +243,7 @@ export type Solicitacao = {
 };
 
 // Acompanhamento do TCC (RAN05): linha do tempo e tarefas do orientador
-export type TipoEvento = "SUBMISSAO" | "PARECER" | "VINCULO" | "SITUACAO";
+export type TipoEvento = "SUBMISSAO" | "PARECER" | "VINCULO" | "VERSAO" | "SITUACAO";
 export type Evento = { tipo: TipoEvento; descricao: string; detalhe: string | null; autor: Pessoa | null; em: string };
 export type StatusTarefa = "PENDENTE" | "ENTREGUE" | "ATRASADA";
 export type Tarefa = {

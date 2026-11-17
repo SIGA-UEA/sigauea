@@ -10,9 +10,9 @@ import pytest
 from sqlalchemy import select
 
 from app.database import agora
-from app.models import LogAuditoria, Tcc
+from app.models import DocumentoTcc, LogAuditoria, Tcc
 from tests.conftest import ativar
-from tests.test_defesas_banca import banca  # noqa: F401  (fixture: TCC aprovado da Olga na turma do Paulo)
+from tests.test_defesas_banca import _agendar, banca  # noqa: F401  (fixture: TCC aprovado da Olga na turma do Paulo)
 from tests.test_tcc import _aceitar, _rascunho, cenario  # noqa: F401  (fixture usada por banca)
 
 URL = "/api/v1/tccs"
@@ -131,12 +131,31 @@ def test_ct_05_02_02_desistencia_sem_motivo_e_bloqueada(banca):
     assert banca["olga"].get(f"{URL}/{banca['tcc']['id']}").json()["situacao"] == "APROVADO"
 
 
+def test_desistencia_com_defesa_agendada_e_recusada_ate_cancelar(banca):
+    tcc_id = banca["tcc"]["id"]
+    defesa = _agendar(banca)
+    assert defesa.status_code == 201, defesa.json()
+    r = _situacao(banca, "olga", tcc_id, "DESISTENCIA", "A aluna trancou o curso.")
+    assert r.status_code == 409 and r.json()["motivo"] == "defesa_agendada"
+    assert banca["olga"].get(f"{URL}/{tcc_id}").json()["situacao"] == "APROVADO"
+    cancelada = banca["olga"].post(f"/api/v1/defesas/{defesa.json()['id']}/cancelamento", json={"justificativa": "Desistência."})
+    assert cancelada.status_code == 200, cancelada.json()
+    assert _situacao(banca, "olga", tcc_id, "DESISTENCIA", "A aluna trancou o curso.").status_code == 200
+
+
 def test_ct_05_02_03_reativacao_com_motivo_limpa_a_desistencia(banca):
     tcc_id = banca["tcc"]["id"]
     _situacao(banca, "olga", tcc_id, "DESISTENCIA", "Trancou o curso.")
     r = _situacao(banca, "olga", tcc_id, "APROVADO", "A aluna voltou ao curso.")
     assert r.status_code == 200 and r.json()["situacao"] == "APROVADO" and r.json()["desistencia_motivo"] is None
     assert [h["situacao_nova"] for h in r.json()["historico"]][-2:] == ["DESISTENCIA", "APROVADO"]
+
+
+def test_professor_da_turma_tambem_registra_desistencia_e_reativacao(banca):
+    tcc_id = banca["tcc"]["id"]
+    assert _situacao(banca, "paulo", tcc_id, "DESISTENCIA", "Pedido da coordenação do curso.").status_code == 200
+    r = _situacao(banca, "paulo", tcc_id, "APROVADO", "Matrícula regularizada.")
+    assert r.status_code == 200 and r.json()["historico"][-1]["usuario"]["id"] == banca["ids"]["paulo"]
 
 
 def test_ct_05_02_04_outro_orientador_e_aluno_recebem_403(banca):
@@ -192,9 +211,25 @@ def test_ct_05_04_02_cobre_submissao_parecer_vinculo_e_situacao(trajetoria):
     eventos = trajetoria["aluno"].get(f"{URL}/{trajetoria['tcc']['id']}/historico").json()
     assert {e["tipo"] for e in eventos} == {"SUBMISSAO", "PARECER", "VINCULO", "SITUACAO"}
     parecer = next(e for e in eventos if e["tipo"] == "PARECER")
-    assert parecer["detalhe"] == "Cadastro completo." and "APROVADO" in parecer["descricao"]
+    assert parecer["detalhe"] == "Cadastro completo." and "Aprovado" in parecer["descricao"]
     vinculos = [e["descricao"] for e in eventos if e["tipo"] == "VINCULO"]
     assert any("solicitada" in d for d in vinculos) and any("aceita" in d for d in vinculos)
+
+
+def _versao(db, banca, numero, finalidade):
+    db.add(DocumentoTcc(tcc_id=banca["tcc"]["id"], versao=numero, finalidade=finalidade, nome_arquivo=f"v{numero}.pdf",
+                        tamanho_bytes=10, sha256="0" * 64, caminho=f"x/v{numero}.pdf", enviado_por=banca["ids"]["olga"]))
+    db.commit()
+
+
+def test_ct_05_04_03_versao_da_banca_nao_aparece_para_o_aluno(banca, db):
+    _versao(db, banca, 1, "FINAL")
+    _versao(db, banca, 2, "BANCA")
+    url = f"{URL}/{banca['tcc']['id']}/historico"
+    do_aluno = [e["descricao"] for e in banca["aluno"].get(url).json() if e["tipo"] == "VERSAO"]
+    do_orientador = [e["descricao"] for e in banca["olga"].get(url).json() if e["tipo"] == "VERSAO"]
+    assert do_aluno == ["Versão 1 do TCC enviada (final)."]
+    assert do_orientador == ["Versão 1 do TCC enviada (final).", "Versão 2 do TCC enviada (para a banca)."]
 
 
 def test_ct_05_04_04_historico_nao_tem_alteracao_nem_exclusao(trajetoria):

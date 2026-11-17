@@ -18,15 +18,17 @@ const COR_TAREFA: Record<StatusTarefa, "ambar" | "verde" | "vermelho"> = {
   ATRASADA: "vermelho",
 };
 const NOME_TAREFA: Record<StatusTarefa, string> = { PENDENTE: "Pendente", ENTREGUE: "Entregue", ATRASADA: "Atrasada" };
-const ROTULO_EVENTO = { SUBMISSAO: "Envio", PARECER: "Parecer", VINCULO: "Orientação", SITUACAO: "Situação" } as const;
+const ROTULO_EVENTO = { SUBMISSAO: "Envio", PARECER: "Parecer", VINCULO: "Orientação", VERSAO: "Versão", SITUACAO: "Situação" } as const;
 
 const textoErro = (e: unknown) => (e as ErroApi).message;
 
-/** Situação com motivo: só o orientador que aceitou o vínculo registra a desistência ou a reativação. */
+/** Situação com motivo: o orientador que aceitou o vínculo e o professor da turma registram a desistência ou a reativação. */
 export function SecaoSituacao({ tcc, aoMudar }: { tcc: Tcc; aoMudar: () => void }) {
   const { usuario } = useSessao();
   const [aberto, setAberto] = useState(false);
-  const orientou = tcc.orientador?.status === "ACEITA" && tcc.orientador.professor.id === usuario.id;
+  const orientou =
+    (tcc.orientador?.status === "ACEITA" && tcc.orientador.professor.id === usuario.id) ||
+    tcc.turma.professor.id === usuario.id;
   const desistiu = tcc.situacao === "DESISTENCIA";
   const podeAlterar = orientou && (tcc.situacao === "APROVADO" || desistiu);
 
