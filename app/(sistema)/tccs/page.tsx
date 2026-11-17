@@ -6,11 +6,24 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Aviso } from "@/components/aviso";
+import { Botao } from "@/components/botao";
+import { Entrada, Selecao } from "@/components/campo";
 import { Icone } from "@/components/icone";
 import { SeloOrientacao, SeloSituacao } from "@/components/situacao-tcc";
 import { api, ErroApi } from "@/lib/api";
 import { useSessao } from "@/lib/sessao";
-import { dataHora, NOME_SITUACAO_EDITORIAL, type Formulario, type Tcc } from "@/lib/tipos";
+import {
+  dataHora,
+  NOME_SITUACAO_EDITORIAL,
+  NOME_SITUACAO_TCC,
+  type Curso,
+  type Formulario,
+  type Periodo,
+  type SituacaoTcc,
+  type Tcc,
+} from "@/lib/tipos";
+
+const FILTROS_VAZIOS = { busca: "", curso_id: "", periodo_id: "", orientador_id: "", situacao: "" };
 
 export default function PaginaTccs() {
   const { tem } = useSessao();
@@ -19,15 +32,48 @@ export default function PaginaTccs() {
   const [form, setForm] = useState<Formulario | null>(null);
   const [semMatricula, setSemMatricula] = useState("");
   const [erro, setErro] = useState("");
+  const [filtros, setFiltros] = useState(FILTROS_VAZIOS);
+  const [busca, setBusca] = useState(""); // o texto só vai à API depois de uma pausa na digitação
+  const [cursos, setCursos] = useState<Curso[]>([]);
+  const [periodos, setPeriodos] = useState<Periodo[]>([]);
+  const [orientadores, setOrientadores] = useState<Map<number, string>>(new Map());
+  const filtrando = Object.values(filtros).some(Boolean);
 
   useEffect(() => {
-    api<Tcc[]>("/tccs").then(setLista).catch((e: ErroApi) => setErro(e.message));
+    const t = setTimeout(() => setFiltros((f) => (f.busca === busca.trim() ? f : { ...f, busca: busca.trim() })), 350);
+    return () => clearTimeout(t);
+  }, [busca]);
+
+  useEffect(() => {
+    if (aluno) return;
+    api<Curso[]>("/cursos").then(setCursos).catch(() => {});
+    api<Periodo[]>("/periodos").then(setPeriodos).catch(() => {});
+  }, [aluno]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(Object.entries(filtros).filter(([, v]) => v));
+    api<Tcc[]>(`/tccs${params.size ? `?${params}` : ""}`)
+      .then((l) => {
+        setErro("");
+        setLista(l);
+        // As opções de orientador vêm dos TCCs já carregados, sem filtro, para a lista de opções não encolher.
+        if (!filtrando)
+          setOrientadores(new Map(l.flatMap((t) => (t.orientador && t.orientador.status !== "RECUSADA" ? [[t.orientador.professor.id, t.orientador.professor.nome] as const] : []))));
+      })
+      .catch((e: ErroApi) => setErro(e.message));
+  }, [filtros, filtrando]);
+
+  useEffect(() => {
     if (aluno) {
       api<Formulario>("/tccs/formulario")
         .then(setForm)
         .catch((e: ErroApi) => e.status === 403 && setSemMatricula(e.message));
     }
   }, [aluno]);
+
+  const mudar = (campo: keyof typeof FILTROS_VAZIOS) => (e: { target: { value: string } }) =>
+    setFiltros((f) => ({ ...f, [campo]: e.target.value }));
+  const limpar = () => (setBusca(""), setFiltros(FILTROS_VAZIOS));
 
   const meu = form?.tcc;
   const editavel = !meu || meu.situacao === "RASCUNHO" || meu.situacao === "DEVOLVIDO";
@@ -67,6 +113,70 @@ export default function PaginaTccs() {
         </Aviso>
       )}
 
+      {!aluno && (
+        <section aria-label="Filtros" className="flex flex-wrap items-end gap-3 rounded-xl border border-borda bg-superficie p-4">
+          <label className="flex min-w-56 flex-1 flex-col gap-1 text-sm font-medium">
+            Buscar
+            <Entrada
+              type="search"
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              placeholder="Título, protocolo ou aluno"
+              maxLength={100}
+            />
+          </label>
+          <label className="flex w-44 flex-col gap-1 text-sm font-medium">
+            Curso
+            <Selecao value={filtros.curso_id} onChange={mudar("curso_id")}>
+              <option value="">Todos</option>
+              {cursos.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.sigla}
+                </option>
+              ))}
+            </Selecao>
+          </label>
+          <label className="flex w-36 flex-col gap-1 text-sm font-medium">
+            Período
+            <Selecao value={filtros.periodo_id} onChange={mudar("periodo_id")}>
+              <option value="">Todos</option>
+              {periodos.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.codigo}
+                </option>
+              ))}
+            </Selecao>
+          </label>
+          <label className="flex w-52 flex-col gap-1 text-sm font-medium">
+            Orientador
+            <Selecao value={filtros.orientador_id} onChange={mudar("orientador_id")}>
+              <option value="">Todos</option>
+              {[...orientadores].map(([id, nome]) => (
+                <option key={id} value={id}>
+                  {nome}
+                </option>
+              ))}
+            </Selecao>
+          </label>
+          <label className="flex w-48 flex-col gap-1 text-sm font-medium">
+            Situação
+            <Selecao value={filtros.situacao} onChange={mudar("situacao")}>
+              <option value="">Todas</option>
+              {(Object.keys(NOME_SITUACAO_TCC) as SituacaoTcc[]).map((s) => (
+                <option key={s} value={s}>
+                  {NOME_SITUACAO_TCC[s]}
+                </option>
+              ))}
+            </Selecao>
+          </label>
+          {filtrando && (
+            <Botao variante="texto" onClick={limpar}>
+              Limpar filtros
+            </Botao>
+          )}
+        </section>
+      )}
+
       <section className="overflow-hidden rounded-xl border border-borda bg-superficie">
         {!lista ? (
           <p role="status" className="p-6 text-sm text-suave">
@@ -74,7 +184,11 @@ export default function PaginaTccs() {
           </p>
         ) : lista.length === 0 ? (
           <p className="p-6 text-sm text-suave">
-            {aluno ? "Você ainda não cadastrou o seu TCC." : "Nenhum TCC para acompanhar ainda."}
+            {aluno
+              ? "Você ainda não cadastrou o seu TCC."
+              : filtrando
+                ? "Nenhum TCC encontrado para estes filtros. Limpe os filtros para ver todos."
+                : "Nenhum TCC para acompanhar ainda."}
           </p>
         ) : (
           <ul className="divide-y divide-borda">

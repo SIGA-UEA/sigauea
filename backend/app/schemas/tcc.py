@@ -188,6 +188,7 @@ class HistoricoOut(BaseModel):
     situacao_nova: str
     usuario: PessoaOut
     registrado_em: DataHora
+    observacao: str | None = None
 
 
 class TurmaResumo(BaseModel):
@@ -231,6 +232,7 @@ class TccOut(BaseModel):
     atualizado_em: DataHora
     # O que ainda falta para poder submeter (vazio = pode submeter).
     pendencias: list[str]
+    desistencia_motivo: str | None = None
     historico: list[HistoricoOut]
     # Decisões da coordenação, da mais antiga para a mais nova (RBN04.05 CA-07).
     decisoes: list[DecisaoOut]
@@ -353,3 +355,38 @@ class DecisaoEntrada(BaseModel):
 
     resultado: ResultadoAnalise
     parecer: Annotated[str, StringConstraints(strip_whitespace=True, max_length=1000)] = ""
+
+
+# ---------------------------------------------------------------- acompanhamento (RAN05)
+
+
+class SituacaoAlterar(BaseModel):
+    """RBN05.02: o orientador registra a desistência ou reativa o TCC, sempre com o motivo."""
+
+    situacao: Literal["DESISTENCIA", "APROVADO"]
+    motivo: Annotated[str, StringConstraints(strip_whitespace=True, max_length=1000)] | None = None
+
+
+class TarefaCriar(BaseModel):
+    descricao: Annotated[str, StringConstraints(strip_whitespace=True, max_length=1000)]
+    prazo: date
+
+
+class TarefaOut(BaseModel):
+    id: int
+    descricao: str
+    prazo: date
+    status: Literal["PENDENTE", "ENTREGUE", "ATRASADA"]
+    cadastrada_por: PessoaOut
+    criado_em: DataHora
+    entregue_em: DataHora | None
+
+
+class EventoOut(BaseModel):
+    """Um acontecimento do histórico do TCC, na ordem em que ocorreu (RBN05.04)."""
+
+    tipo: Literal["SUBMISSAO", "PARECER", "VINCULO", "SITUACAO"]
+    descricao: str
+    detalhe: str | None
+    autor: PessoaOut | None
+    em: DataHora
