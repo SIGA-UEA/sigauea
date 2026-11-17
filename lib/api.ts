@@ -14,6 +14,7 @@ export class ErroApi extends Error {
   // link que não vale mais; ou o motivo de uma recusa do cadastro de TCC (sem matrícula, duplicado...)
   motivo?: "invalido" | "expirado" | "usado" | "sem_matricula" | "duplicado" | "nao_editavel" | string;
   campos_pendentes?: string[]; // 422 na submissão do TCC: o que ainda falta
+  pendentes?: { matricula_id: number; aluno: string; matricula: string }[]; // 422 ao encerrar a turma
 
   constructor(status: number, corpo: Record<string, unknown>) {
     super(

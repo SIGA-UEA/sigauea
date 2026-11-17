@@ -138,8 +138,13 @@ export type Turma = {
   periodo: Periodo;
   professor: Pessoa;
   encerrada: boolean;
+  encerrada_em: string | null;
+  // O professor responsável vê o botão "Encerrar turma" enquanto ela está aberta (RBN08.05).
+  pode_encerrar: boolean;
   alunos: Matricula[];
 };
+// 422 ao encerrar a turma: os alunos que ainda estão Matriculados (RBN08.05 CA-02).
+export type PendenteEncerramento = { matricula_id: number; aluno: string; matricula: string };
 
 export type Vinculo = {
   id: number;
@@ -181,6 +186,7 @@ export type Tcc = {
   orientador: Vinculo | null;
   coorientador: Vinculo | null;
   artigo: Artigo | null;
+  tcc_origem_id?: number | null; // no TCC2, o TCC1 que lhe deu origem (RBN08.04)
   submetido_em: string | null;
   criado_em: string;
   atualizado_em: string;
@@ -681,4 +687,61 @@ export type Correcoes = {
     decidir: boolean;
     alterar_prazo: boolean;
   };
+};
+// ---------------------------------------------------------------- Sprint S05 · publicação do artigo (TEL15)
+// Espelha backend/app/schemas/publicacao.py.
+
+export type TipoVeiculo = Artigo["tipo_veiculo"];
+
+export type RegistroPublicacao = {
+  id: number;
+  situacao: SituacaoEditorial;
+  data: string; // AAAA-MM-DD
+  responsavel: Pessoa | null;
+  registrado_em: string;
+  veiculo: string;
+  tipo_veiculo: TipoVeiculo;
+  qualis: string | null;
+  link: string | null;
+};
+
+export type Publicacao = {
+  tcc_id: number;
+  pode_registrar: boolean;
+  atual: { veiculo: string; tipo_veiculo: TipoVeiculo; qualis: string | null; link: string | null; situacao: SituacaoEditorial } | null;
+  historico: RegistroPublicacao[]; // do mais recente para o mais antigo
+};
+
+export const ESTRATOS_QUALIS = ["A1", "A2", "A3", "A4", "B1", "B2", "B3", "B4", "C"] as const;
+
+// ---------------------------------------------------------------- SCRUM-88/89 · indicadores (RBN13.01 e RBN13.02)
+// Espelha backend/app/schemas/indicador.py. Nenhum campo traz nome de aluno (RN18).
+
+export type FiltrosIndicador = {
+  periodo: boolean;
+  curso: boolean;
+  etapa: boolean;
+  turma: boolean;
+  orientador: boolean;
+};
+
+export type EscopoIndicadores = {
+  perfis: string[];
+  descricao: [string, string][];
+  periodo_vigente_id: number | null;
+  filtros: FiltrosIndicador;
+  periodos: { id: number; codigo: string; vigente: boolean }[];
+  cursos: { id: number; sigla: string; nome: string }[];
+  turmas: { id: number; codigo: string }[];
+  orientadores: { id: number; nome: string }[];
+};
+
+export type PorEtapa = { TCC1: number; TCC2: number };
+
+export type IndicadorSituacao = {
+  periodo_id: number | null;
+  total: PorEtapa;
+  situacoes: { situacao: string; total: PorEtapa }[];
+  orientacoes: { orientador: { id: number; nome: string }; total: PorEtapa }[];
+  sem_dados: boolean;
 };

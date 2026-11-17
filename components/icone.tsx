@@ -31,6 +31,7 @@ const DESENHOS = {
   enviar: "M22 2 11 13M22 2l-7 20-4-9-9-4z",
   voltar: "M15 18l-6-6 6-6",
   relogio: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18M12 7v5l3 2",
+  grafico: "M4 20h16M7 16v-5M12 16V6M17 16v-8",
 } as const;
 
 export type NomeIcone = keyof typeof DESENHOS;

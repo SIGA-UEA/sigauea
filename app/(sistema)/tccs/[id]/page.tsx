@@ -18,6 +18,7 @@ import { Botao } from "@/components/botao";
 import { SeloSituacao } from "@/components/situacao-tcc";
 import { api, ErroApi } from "@/lib/api";
 import { useSessao } from "@/lib/sessao";
+import { SecaoArtigo } from "./artigo";
 import { SecaoAvaliacao } from "./avaliacao";
 import { SecaoBanca } from "./banca";
 import { SecaoCorrecoes } from "./correcoes";
@@ -145,6 +146,9 @@ export default function PaginaTcc() {
       </section>
 
       <SecaoOrientacao tcc={tcc} aoMudar={recarregar} />
+
+      {/* TEL15 (DS-FL08): só na modalidade artigo */}
+      {tcc.modalidade === "ARTIGO" && !externo && <SecaoArtigo tccId={id} aoMudar={recarregar} />}
 
       {tcc.decisoes.length > 0 && (
         <section className="rounded-xl border border-borda bg-superficie p-5">
