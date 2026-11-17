@@ -32,6 +32,12 @@ const AREA_TEXTO =
   "w-full min-w-0 rounded-lg border bg-superficie px-3 py-2 text-[14px] leading-relaxed placeholder:text-suave";
 const LIMITE_PDF = 20 * 1024 * 1024;
 
+/** Tamanho do arquivo em KB abaixo de 1 MB (um PDF pequeno não aparece como "0.0 MB"). */
+const tamanho = (bytes: number) =>
+  bytes < 1024 * 1024
+    ? `${Math.max(1, Math.round(bytes / 1024)).toLocaleString("pt-BR")} KB`
+    : `${(bytes / 1024 / 1024).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} MB`;
+
 const COR: Record<SituacaoCorrecao, "cinza" | "azul" | "verde" | "ambar"> = {
   PENDENTE: "cinza",
   ATENDIDA: "azul",
@@ -163,11 +169,17 @@ function Prazo({ dados, tccId, agir }: { dados: Correcoes; tccId: string; agir: 
   const [prazo, setPrazo] = useState(dados.prazo ?? "");
   const [motivo, setMotivo] = useState("");
   const [erro, setErro] = useState("");
+  const [erroPrazo, setErroPrazo] = useState("");
   const [enviando, setEnviando] = useState(false);
+  // hoje no horário de Manaus (AAAA-MM-DD), a mesma referência da API para recusar prazo já passado
+  const hoje = new Date().toLocaleDateString("en-CA", { timeZone: "America/Manaus" });
 
   async function salvar(e: FormEvent) {
     e.preventDefault();
-    if (!prazo) return setErro("Escolha a nova data.");
+    setErro("");
+    setErroPrazo("");
+    if (!prazo) return setErroPrazo("Escolha a nova data.");
+    if (prazo < hoje) return setErroPrazo("O novo prazo não pode ser anterior a hoje.");
     if (!motivo.trim()) return setErro("Informe o motivo da alteração do prazo.");
     setEnviando(true);
     const ok = await agir(`/tccs/${tccId}/correcoes/prazo`, { prazo, motivo }, "Prazo da versão final alterado.");
@@ -196,8 +208,8 @@ function Prazo({ dados, tccId, agir }: { dados: Correcoes; tccId: string; agir: 
       {aberto && (
         <Modal titulo="Alterar o prazo da versão final" aoFechar={() => setAberto(false)}>
           <form onSubmit={salvar} className="flex flex-col gap-4">
-            <Campo rotulo="Novo prazo" obrigatorio>
-              <Entrada type="date" value={prazo} onChange={(e) => setPrazo(e.target.value)} />
+            <Campo rotulo="Novo prazo" obrigatorio erro={erroPrazo}>
+              <Entrada type="date" min={hoje} value={prazo} onChange={(e) => setPrazo(e.target.value)} />
             </Campo>
             <Campo rotulo="Motivo" obrigatorio erro={erro}>
               <textarea
@@ -460,7 +472,7 @@ function VersaoFinalBloco({
             {v.nome_arquivo}
           </a>
           <span className="text-suave">
-            versão {v.versao} · enviada em {dataHora(v.enviado_em)} · {(v.tamanho_bytes / 1024 / 1024).toFixed(1)} MB
+            versão {v.versao} · enviada em {dataHora(v.enviado_em)} · {tamanho(v.tamanho_bytes)}
           </span>
           {v.entregue_com_atraso && (
             <Selo cor={v.atraso_aceito === null ? "ambar" : v.atraso_aceito ? "verde" : "vermelho"}>

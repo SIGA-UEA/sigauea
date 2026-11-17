@@ -18,7 +18,7 @@ Quem é o professor responsável (RN24, RN26): o da turma do TCC; no TCC2 é o o
 disciplina. Concluir o TCC não encerra a turma (RBN08.05) nem mexe na situação editorial do artigo (RN10).
 """
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import date
 
 from fastapi import BackgroundTasks, UploadFile
 from sqlalchemy import func, select
@@ -49,7 +49,7 @@ from app.models import (
 from app.schemas.correcoes import CorrecaoOut, CorrecoesOut, PermissoesOut, VersaoFinalOut
 from app.services import auditoria, documentos, email
 from app.services.avaliacao import membros_que_avaliam
-from app.services.defesas import defesa_vigente
+from app.services.defesas import agora_manaus, defesa_vigente
 from app.services.tccs import _pode_ver
 from app.services.turmas import pessoa
 
@@ -59,7 +59,6 @@ TIPO_CORRECAO_DEVOLVIDA = "CORRECAO_DEVOLVIDA"
 TIPO_ENTREGA_ATRASO = "VERSAO_FINAL_ATRASO"
 TIPO_TCC_CONCLUIDO = "TCC_CONCLUIDO"
 MIN_DESCRICAO = 10  # DS-FL07-A mensagem 5
-FUSO_MANAUS = timedelta(hours=-4)  # America/Manaus não tem horário de verão (RNF03)
 
 SEM_VINCULO = "Só quem tem vínculo com o TCC consulta as correções."
 SO_O_ALUNO = "Só o aluno autor do TCC faz esta ação."
@@ -68,8 +67,9 @@ SO_A_BANCA = "Só os membros da banca que avaliaram a defesa registram correçõ
 
 
 def _hoje_manaus() -> date:
-    """Data de hoje em America/Manaus; os testes trocam esta função para simular o prazo."""
-    return (datetime.now(timezone.utc) + FUSO_MANAUS).date()
+    """Data de hoje em America/Manaus, pela regra única de services/defesas.py; os testes trocam esta função para
+    simular o prazo."""
+    return agora_manaus().date()
 
 
 # =================================================================== contexto
@@ -134,7 +134,8 @@ def _correcao_do_tcc(db: Session, correcao_id: int, usuario: Usuario) -> tuple[C
     correcao = db.get(Correcao, correcao_id, with_for_update=True)
     if correcao is None:
         raise ErroAPI(404, "Correção não encontrada.")
-    tcc = _obter_tcc(db, usuario, correcao.resultado.defesa.tcc_id)
+    # trava o TCC: duas decisões do mesmo TCC ao mesmo tempo passam uma de cada vez, e a última conclui (DS-FL07-C)
+    tcc = _obter_tcc(db, usuario, correcao.resultado.defesa.tcc_id, travar=True)
     return correcao, tcc
 
 
@@ -305,6 +306,8 @@ def alterar_prazo(db: Session, usuario: Usuario, tcc_id: int, prazo: date, motiv
     _, resultado = _resultado_exigido(db, tcc)
     if not motivo:  # E4
         raise ErroAPI(422, "Informe o motivo da alteração do prazo.", campo="motivo")
+    if prazo < _hoje_manaus():  # o atraso é decidido no envio; um prazo já passado não faz sentido
+        raise ErroAPI(422, "O novo prazo não pode ser anterior a hoje.", campo="prazo")
     anterior = resultado.prazo_versao_final
     resultado.prazo_versao_final, resultado.prazo_motivo = prazo, motivo
     auditoria.registrar(  # mensagem 9: anterior, novo e motivo
@@ -483,8 +486,8 @@ def decidir_atraso(db: Session, tarefas: BackgroundTasks, usuario: Usuario, tcc_
 
 
 def copiar_para_retificacao(atual: ResultadoDefesa, nova: ResultadoDefesa) -> None:
-    """A retificação grava uma nova versão do resultado; o prazo, a versão final e a decisão sobre o atraso
-    continuam valendo (as correções ficam ligadas à defesa)."""
-    for campo in ("prazo_versao_final", "prazo_motivo", "versao_final_id", "entregue_com_atraso", "atraso_aceito",
-                  "atraso_decidido_por", "atraso_decidido_em"):
+    """A retificação grava uma nova versão do resultado; o prazo, a anuência do aluno, a versão final e a decisão
+    sobre o atraso continuam valendo (as correções ficam ligadas à defesa)."""
+    for campo in ("prazo_versao_final", "prazo_motivo", "anuencia_em", "versao_final_id", "entregue_com_atraso",
+                  "atraso_aceito", "atraso_decidido_por", "atraso_decidido_em"):
         setattr(nova, campo, getattr(atual, campo))

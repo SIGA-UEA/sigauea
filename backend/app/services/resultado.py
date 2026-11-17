@@ -203,6 +203,8 @@ def retificar_resultado(
     atual = vigente(db, defesa)
     if atual is None:
         raise ErroAPI(409, "O resultado desta defesa ainda não foi confirmado.")
+    if defesa.tcc.situacao == "CONCLUIDO":  # RBN11.04: o TCC concluído não volta atrás
+        raise ErroAPI(409, "O TCC já foi concluído: o resultado não pode mais ser retificado.")
     motivo = dados.motivo.strip()
     if not motivo:  # E5 (RN13)
         raise ErroAPI(422, "Informe o motivo da retificação.", campo="motivo")

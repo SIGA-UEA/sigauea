@@ -418,3 +418,35 @@ def test_retificacao_mantem_prazo_e_versao_final_e_pode_concluir(com_correcoes, 
     assert corpo["situacao_tcc"] == "CONCLUIDO"
     # as correções registradas antes continuam visíveis
     assert len(corpo["correcoes"]) == 2 and db.scalar(select(Correcao.resultado_id)) is not None
+
+
+# =================================================================== ajustes da revisão do PR #22
+
+
+def test_tcc_concluido_nao_tem_o_resultado_retificado(realizada, db):
+    """RBN11.04: depois da conclusão, a retificação é recusada; o TCC não fica Concluído com resultado Reprovado."""
+    _confirmar(realizada, "APROVADO")
+    assert _enviar(realizada).json()["situacao_tcc"] == "CONCLUIDO"
+    r = realizada["olga"].post(f"{realizada['url']}/resultado/retificacao",
+                               json={"resultado": "REPROVADO", "motivo": "Erro na digitação do resultado."})
+    assert r.status_code == 409 and "concluído" in r.json()["detail"]
+    db.expire_all()
+    assert db.scalar(select(ResultadoDefesa.resultado).where(ResultadoDefesa.vigente.is_(True))) == "APROVADO"
+
+
+def test_anuencia_continua_valendo_depois_da_retificacao(com_correcoes, db):
+    """A anuência do aluno passa para a nova versão do resultado, e a Folha de Aprovação não volta a travar."""
+    assert com_correcoes["aluno"].post(f"{_url(com_correcoes)}/anuencia").status_code == 200
+    _retificar(com_correcoes, "APROVADO")
+    _retificar(com_correcoes, "APROVADO_COM_CORRECOES")
+    corpo = _consultar(com_correcoes).json()
+    assert corpo["anuencia_em"] and corpo["permissoes"]["dar_anuencia"] is False
+
+
+def test_prazo_novo_nao_pode_ser_anterior_a_hoje(com_correcoes, monkeypatch):
+    """O atraso é decidido no envio: o professor não marca um prazo já passado."""
+    monkeypatch.setattr(servico, "_hoje_manaus", lambda: date(2026, 12, 1))
+    url = f"{_url(com_correcoes)}/prazo"
+    r = com_correcoes["paulo"].post(url, json={"prazo": "2026-11-30", "motivo": "Teste de prazo passado."})
+    assert r.status_code == 422 and r.json()["campo"] == "prazo"
+    assert com_correcoes["paulo"].post(url, json={"prazo": "2026-12-01", "motivo": "Hoje vale."}).status_code == 200
