@@ -490,6 +490,8 @@ class PublicacaoArtigo(Base):
     situacao_atual: Mapped[str] = mapped_column(String(12))
     criado_em: Mapped[datetime] = mapped_column(default=agora)
 
+    historico: Mapped[list["HistoricoPublicacao"]] = relationship(order_by="HistoricoPublicacao.id")
+
 
 class HistoricoPublicacao(Base):
     __tablename__ = "historico_publicacao"
@@ -501,6 +503,8 @@ class HistoricoPublicacao(Base):
     data: Mapped[date]
     usuario_id: Mapped[int | None] = _fk("usuario.id", nullable=True)  # nulo = sistema
     registrado_em: Mapped[datetime] = mapped_column(default=agora)
+
+    usuario: Mapped[Usuario | None] = relationship()
 
 
 # =====================================================================

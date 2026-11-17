@@ -635,6 +635,32 @@ export type DocumentosDefesa = {
   meus_certificados: VersaoDocumento[];
 };
 
+// ---------------------------------------------------------------- Sprint S05 · publicação do artigo (TEL15)
+// Espelha backend/app/schemas/publicacao.py.
+
+export type TipoVeiculo = Artigo["tipo_veiculo"];
+
+export type RegistroPublicacao = {
+  id: number;
+  situacao: SituacaoEditorial;
+  data: string; // AAAA-MM-DD
+  responsavel: Pessoa | null;
+  registrado_em: string;
+  veiculo: string;
+  tipo_veiculo: TipoVeiculo;
+  qualis: string | null;
+  link: string | null;
+};
+
+export type Publicacao = {
+  tcc_id: number;
+  pode_registrar: boolean;
+  atual: { veiculo: string; tipo_veiculo: TipoVeiculo; qualis: string | null; link: string | null; situacao: SituacaoEditorial } | null;
+  historico: RegistroPublicacao[]; // do mais recente para o mais antigo
+};
+
+export const ESTRATOS_QUALIS = ["A1", "A2", "A3", "A4", "B1", "B2", "B3", "B4", "C"] as const;
+
 // ---------------------------------------------------------------- SCRUM-88/89 · indicadores (RBN13.01 e RBN13.02)
 // Espelha backend/app/schemas/indicador.py. Nenhum campo traz nome de aluno (RN18).
 
