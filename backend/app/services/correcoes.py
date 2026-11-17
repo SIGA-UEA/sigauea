@@ -16,6 +16,7 @@ Faz o papel do ControladorCorrecoes do diagrama de classes (MOD04):
 
 Quem é o professor responsável (RN24, RN26): o da turma do TCC; no TCC2 é o orientador, no TCC1 o professor da
 disciplina. Concluir o TCC não encerra a turma (RBN08.05) nem mexe na situação editorial do artigo (RN10).
+O TCC em desistência (RN10, RBN05.02) fica fechado para as correções e não é concluído até ser reativado.
 """
 
 from datetime import date
@@ -54,6 +55,8 @@ from app.services.tccs import _pode_ver
 from app.services.turmas import pessoa
 
 CONCLUIDO = "CONCLUIDO"
+DESISTENCIA = "DESISTENCIA"
+FECHADO_POR_DESISTENCIA = "O TCC está em desistência: ele só volta às correções e à conclusão depois de reativado."
 TIPO_CORRECAO_EXIGIDA = "CORRECAO_EXIGIDA"
 TIPO_CORRECAO_DEVOLVIDA = "CORRECAO_DEVOLVIDA"
 TIPO_ENTREGA_ATRASO = "VERSAO_FINAL_ATRASO"
@@ -104,6 +107,8 @@ def _resultado_exigido(db: Session, tcc: Tcc) -> tuple[Defesa, ResultadoDefesa]:
 def _exigir_aberto(tcc: Tcc) -> None:
     if tcc.situacao == CONCLUIDO:
         raise ErroAPI(409, "O TCC já foi concluído.")
+    if tcc.situacao == DESISTENCIA:  # RN10: a desistência suspende o acompanhamento
+        raise ErroAPI(409, FECHADO_POR_DESISTENCIA)
 
 
 def _responsavel(tcc: Tcc, usuario: Usuario) -> bool:
@@ -146,6 +151,8 @@ def pendencias(db: Session, tcc: Tcc, defesa: Defesa | None, resultado: Resultad
     """O que ainda falta para concluir o TCC (RBN11.04 CA-02), na ordem do DS-FL07-C. Vazio = pode concluir."""
     if tcc.situacao == CONCLUIDO:
         return []
+    if tcc.situacao == DESISTENCIA:  # a conclusão automática não tira um TCC da desistência
+        return [FECHADO_POR_DESISTENCIA]
     if resultado is None:
         return ["Resultado da defesa confirmado pelo orientador."]
     if resultado.resultado == REPROVADO_DEFESA:  # CA-04
@@ -234,7 +241,7 @@ def consultar(db: Session, usuario: Usuario, tcc_id: int) -> CorrecoesOut:
     tcc = _obter_tcc(db, usuario, tcc_id)
     defesa = defesa_vigente(tcc.id, db)
     resultado = _vigente(db, defesa)
-    aberto = tcc.situacao != CONCLUIDO
+    aberto = tcc.situacao not in (CONCLUIDO, DESISTENCIA)
     aluno = tcc.aluno_id == usuario.id
     com_correcoes = resultado is not None and resultado.resultado == APROVADO_COM_CORRECOES
     aprovado = resultado is not None and resultado.resultado != REPROVADO_DEFESA
