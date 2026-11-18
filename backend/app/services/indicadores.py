@@ -1,11 +1,11 @@
 """Indicadores gerenciais: escopo por perfil, situação dos TCCs e das orientações, produção científica, desistências
-e participações em banca (RBN13.01 a RBN13.05 · RN01, RN02, RN03, RN07, RN10, RN18, RN20 · DS-FL08-C, DS-FL08-D,
+e participações em banca, com o relatório em PDF (RBN13.01 a RBN13.06 · RN01, RN02, RN03, RN07, RN10, RN18, RN20 · DS-FL08-C, DS-FL08-D,
 TEL16).
 
 Faz o papel do ControladorIndicadores do diagrama de classes (MOD06): resolverEscopo, contarPorSituacao e
 contarOrientandos (SCRUM-88 e 89); contarPorSituacao em PublicacaoArtigo (SCRUM-90); contarDesistencias e
 evolucaoPorPeriodo (SCRUM-91); contarParticipacoes e suplentesConvocados (SCRUM-92); e consultarIndicadores, o painel
-do DS-FL08-C. O relatório em PDF (RBN13.06, SCRUM-93) usa estas mesmas funções. Os filtros de cada indicador por
+do DS-FL08-C. O relatório em PDF (RBN13.06, SCRUM-93, relatorio_pdf) usa estas mesmas funções. Os filtros de cada indicador por
 perfil ficam em `filtros_indicadores`.
 
 Escopo (RN18, RBN13.01):
@@ -23,6 +23,7 @@ from datetime import date
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from app.database import agora
 from app.erros import ErroAPI
 from app.models import (
     ACEITA,
@@ -63,6 +64,7 @@ from app.schemas.indicador import (
     SituacaoOut,
     TurmaOpcaoOut,
 )
+from app.services import auditoria, documentos
 from app.services.defesas import realizada
 from app.services.turmas import pessoa
 
@@ -492,3 +494,99 @@ def consultar_indicadores(db: Session, usuario: Usuario, *, periodo: int | None 
     bancas = consultar_bancas(db, usuario, periodo=periodo,
                               curso=curso if filtros.bancas.curso else None)  # mensagem 6
     return IndicadoresOut(periodo_id=producao.periodo_id, situacao=situacao, producao=producao, bancas=bancas)
+
+
+# =================================================================== SCRUM-93 · RBN13.06 relatório em PDF
+
+NOME_SITUACAO = {"RASCUNHO": "Rascunho", "EM_ANALISE": "Em análise", "APROVADO": "Aprovado",
+                 "DEVOLVIDO": "Devolvido para correção", "REPROVADO": "Reprovado", "DESISTENCIA": "Desistência",
+                 "CONCLUIDO": "Concluído"}
+NOME_EDITORIAL = {"SUBMETIDO": "Submetido", "EM_REVISAO": "Em revisão", "ACEITO": "Aceito",
+                  "PUBLICADO": "Publicado", "RECUSADO": "Recusado"}
+NOME_PAPEL = {"ORIENTADOR": "Orientador(a)", "AVALIADOR": "Avaliador(a)", "COORIENTADOR": "Coorientador(a)",
+              "SUPLENTE": "Suplente convocado"}
+
+
+def _so_permitidos(filtros: FiltrosDoIndicador, valores: dict) -> dict:
+    """Os filtros da tela que valem para um indicador: o mesmo recorte que a tela faz em cada aba."""
+    def permitido(nome):
+        return getattr(filtros, "intervalo" if nome in ("periodo_inicio", "periodo_fim") else nome)
+    return {k: v for k, v in valores.items() if v is not None and permitido(k)}
+
+
+def _rotulos_dos_filtros(db: Session, valores: dict, periodo_id: int | None) -> list[tuple[str, str]]:
+    """O que o relatório imprime no início: período letivo, curso e os demais filtros usados (CA do RBN13.06)."""
+    periodo = db.get(PeriodoLetivo, periodo_id) if periodo_id else None
+    curso = db.get(Curso, valores["curso"]) if valores.get("curso") else None
+    linhas = [("Período letivo", periodo.codigo if periodo else "nenhum cadastrado"),
+              ("Curso", curso.nome if curso else "todos do escopo")]
+    extras = []
+    if valores.get("etapa"):
+        extras.append(f"etapa {valores['etapa']}")
+    if valores.get("turma"):
+        turma = db.get(Turma, valores["turma"])
+        extras.append(f"turma {turma.codigo if turma else valores['turma']}")
+    for chave, rotulo in (("orientador", "orientador"), ("professor", "professor")):
+        if valores.get(chave):
+            pessoa_ = db.get(Usuario, valores[chave])
+            extras.append(f"{rotulo} {pessoa_.nome if pessoa_ else valores[chave]}")
+    if valores.get("papel"):
+        extras.append(f"papel na banca {NOME_PAPEL[valores['papel']].lower()}")
+    if valores.get("periodo_inicio") or valores.get("periodo_fim"):
+        ini = db.get(PeriodoLetivo, valores["periodo_inicio"]) if valores.get("periodo_inicio") else None
+        fim = db.get(PeriodoLetivo, valores["periodo_fim"]) if valores.get("periodo_fim") else None
+        extras.append(f"evolução de {ini.codigo if ini else 'início'} a {fim.codigo if fim else 'hoje'}")
+    linhas.append(("Outros filtros", "; ".join(extras) if extras else "nenhum"))
+    return linhas
+
+
+def relatorio_pdf(db: Session, usuario: Usuario, **valores) -> tuple[bytes, str]:
+    """GET /indicadores/relatorio (RBN13.06): os indicadores RBN13.02 a 13.05 com os filtros escolhidos na tela, cada um
+    com os filtros que o perfil tem nele, no mesmo escopo da tela (RBN13.01, RN18) e sem nome de aluno. Filtro que
+    o perfil não tem em nenhum indicador recebe 403; a geração fica no log (RNF03)."""
+    perfis = _exigir_perfil(db, usuario)
+    por_indicador = filtros_indicadores(perfis)
+    for nome, valor in valores.items():
+        if valor is not None and nome != "periodo" and not any(
+                _so_permitidos(getattr(por_indicador, ind), {nome: valor})
+                for ind in ("situacao", "producao", "desistencias", "bancas")):
+            raise ErroAPI(403, FORA_DO_PERFIL, campo=nome)
+
+    situacao = consultar_situacao(db, usuario, **_so_permitidos(por_indicador.situacao, valores))
+    producao = consultar_producao(db, usuario, **_so_permitidos(por_indicador.producao, valores))
+    desistencias = consultar_desistencias(db, usuario, **_so_permitidos(por_indicador.desistencias, valores))
+    bancas = consultar_bancas(db, usuario, **_so_permitidos(por_indicador.bancas, valores))
+
+    def etapas(t: PorEtapa) -> list[str]:
+        return [str(t.TCC1), str(t.TCC2), str(t.TCC1 + t.TCC2)]
+
+    secoes = [
+        ("1. Situação dos TCCs", ["Situação", "TCC1", "TCC2", "Total"],
+         [[NOME_SITUACAO[s.situacao], *etapas(s.total)] for s in situacao.situacoes]
+         + [["Total", *etapas(situacao.total)]], (88, 27, 27, 24), None),
+        ("Orientandos por orientador", ["Orientador(a)", "TCC1", "TCC2", "Total"],
+         [[o.orientador.nome, *etapas(o.total)] for o in situacao.orientacoes], (88, 27, 27, 24), None),
+        ("2. Produção científica", ["Situação editorial", "TCCs"],
+         [[NOME_EDITORIAL[s.situacao], str(s.total)] for s in producao.situacoes] + [["Total", str(producao.total)]],
+         (120, 46), "Só TCCs na modalidade artigo, pela situação da submissão mais recente."),
+        ("3. Desistências", ["Curso", "Desistências"],
+         [[c.curso.nome, str(c.total)] for c in desistencias.por_curso] + [["Total", str(desistencias.total)]],
+         (120, 46), None),
+    ]
+    if desistencias.evolucao is not None:
+        secoes.append(("Evolução das desistências por período", ["Período letivo", "Desistências"],
+                       [[e.periodo.codigo, str(e.total)] for e in desistencias.evolucao], (120, 46), None))
+    papeis = list(NOME_PAPEL)
+    secoes.append((
+        "4. Participações em banca", ["Professor(a)", *[NOME_PAPEL[p] for p in papeis], "Total"],
+        [[p.professor.nome, *[str(getattr(p.total, k)) for k in papeis], str(sum(p.total.model_dump().values()))]
+         for p in bancas.professores],
+        (50, 22, 22, 24, 26, 22), "Só defesas realizadas; o suplente conta apenas quando convocado."))
+
+    usados = {k: v for k, v in valores.items() if v is not None}
+    conteudo = documentos.indicadores_pdf(secoes, filtros=_rotulos_dos_filtros(db, usados, situacao.periodo_id),
+                                          gerado_por=usuario.nome, gerado_em=agora())
+    auditoria.registrar(db, ator_id=usuario.id, acao="relatorio_indicadores_gerado", entidade="indicadores",
+                        novo="; ".join(f"{k}={v}" for k, v in usados.items()) or "sem filtros")
+    db.commit()
+    return conteudo, f"relatorio-indicadores-{date.today().isoformat()}.pdf"
