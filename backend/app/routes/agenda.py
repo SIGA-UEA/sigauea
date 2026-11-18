@@ -1,6 +1,6 @@
 """Agenda de apresentações (TEL17 · RAN14). Qualquer usuário autenticado consulta (DS-FL05-A) e filtra por curso e
-período de datas (RBN14.02). GET /agenda/pdf exporta a agenda filtrada (RBN14.03), só para a coordenação, os
-professores da disciplina e os orientadores.
+período: próximas, próximos 7 dias, todas ou datas escolhidas (RBN14.02). GET /agenda/pdf exporta a agenda filtrada
+(RBN14.03), só para a coordenação, os professores da disciplina e os orientadores.
 
 Divulgação na agenda (TEL18, DS-FL05): GET /defesas/{id}/divulgacao, POST .../publicacao e POST .../retirada.
 """
@@ -23,7 +23,7 @@ router = APIRouter(tags=["agenda"])
 
 @router.get("/agenda", response_model=list[ApresentacaoOut])
 def consultar_agenda(
-    periodo: Literal["proximos", "todas"] = "proximos",
+    periodo: Literal["proximos", "semana", "todas"] = "proximos",
     curso: int | None = Query(default=None),
     de: date | None = Query(default=None),
     ate: date | None = Query(default=None),
@@ -38,7 +38,7 @@ def consultar_agenda(
 @router.get("/agenda/pdf", response_class=Response,
             responses={200: {"content": {"application/pdf": {}}, "description": "Agenda filtrada em PDF"}})
 def exportar_agenda(
-    periodo: Literal["proximos", "todas"] = "proximos",
+    periodo: Literal["proximos", "semana", "todas"] = "proximos",
     curso: int | None = Query(default=None),
     de: date | None = Query(default=None),
     ate: date | None = Query(default=None),

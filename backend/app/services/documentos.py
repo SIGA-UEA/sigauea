@@ -485,8 +485,7 @@ def _filtros_usados(pdf: FPDF, linhas: list[tuple[str, str]]) -> None:
     pdf.ln(3)
 
 
-def agenda_pdf(itens, *, curso: str | None, de, ate, so_proximas: bool, gerado_por: str,
-               gerado_em: datetime) -> bytes:
+def agenda_pdf(itens, *, curso: str | None, de, ate, gerado_por: str, gerado_em: datetime) -> bytes:
     """RBN14.03: a agenda filtrada em tabela, em paisagem, para imprimir, afixar no mural ou mandar nos grupos. Só os
     campos que a agenda já divulga (RN08): sem contato, matrícula, nota ou banca."""
     pdf = _pdf("Agenda de apresentações", paisagem=True)
@@ -496,9 +495,9 @@ def agenda_pdf(itens, *, curso: str | None, de, ate, so_proximas: bool, gerado_p
     elif de:
         periodo = f"a partir de {_data(de)}"
     elif ate:
-        periodo = f"de hoje até {_data(ate)}" if so_proximas else f"até {_data(ate)}"
+        periodo = f"até {_data(ate)}"
     else:
-        periodo = "próximas apresentações, a partir de hoje" if so_proximas else "todas as apresentações publicadas"
+        periodo = "todas as apresentações publicadas, inclusive as passadas"
     _filtros_usados(pdf, [("Curso", curso or "todos os cursos"), ("Período", periodo),
                           ("Gerada por", f"{gerado_por}, em {_quando(gerado_em)}")])
     if not itens:

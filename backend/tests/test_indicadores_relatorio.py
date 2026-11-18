@@ -18,6 +18,11 @@ from tests.test_tcc import cenario  # noqa: F401  (fixture usada por banca)
 URL = "/api/v1/indicadores/relatorio"
 
 
+def _gerar(cliente, **filtros):
+    """O botão "Gerar relatório em PDF" (DS-FL08-D): POST com os filtros da tela."""
+    return cliente.post(URL, json=filtros)
+
+
 @pytest.fixture
 def espiao(monkeypatch):
     recebido = {}
@@ -38,7 +43,7 @@ def _total_situacao(recebido):
 
 def test_ct_13_06_01_coordenacao_gera_as_quatro_tabelas(ind, espiao):
     """CA: o PDF começa com período, curso, filtros, quem gerou, data e hora, e traz as quatro tabelas."""
-    r = ind["coord"].get(URL)
+    r = _gerar(ind["coord"])
     assert r.status_code == 200, r.text
     assert r.headers["content-type"] == "application/pdf" and r.content.startswith(b"%PDF")
     assert "attachment" in r.headers["content-disposition"]
@@ -55,14 +60,14 @@ def test_ct_13_06_01_coordenacao_gera_as_quatro_tabelas(ind, espiao):
 
 def test_ct_13_06_02_usa_os_filtros_escolhidos(ind, espiao):
     """Exemplo da ficha: a coordenação escolhe o curso e o relatório sai só com ele."""
-    assert ind["coord"].get(f"{URL}?curso=2").status_code == 200
+    assert _gerar(ind["coord"], curso=2).status_code == 200
     assert _total_situacao(espiao) == ["1", "0", "1"]
     assert dict(espiao["filtros"])["Curso"] != "todos do escopo"
 
 
 def test_ct_13_06_03_orientador_recebe_so_os_seus_orientandos(ind, espiao):
     """Exemplo da ficha: o orientador gera o PDF e recebe os totais dos seus orientandos."""
-    assert ind["olga"].get(URL).status_code == 200
+    assert _gerar(ind["olga"]).status_code == 200
     assert _total_situacao(espiao) == ["6", "2", "8"]
     orientadores = [linha[0] for linha in espiao["secoes"]["Orientandos por orientador"]]
     assert orientadores == [ind["orientador"]["nome"]]
@@ -70,38 +75,38 @@ def test_ct_13_06_03_orientador_recebe_so_os_seus_orientandos(ind, espiao):
 
 
 def test_ct_13_06_04_professor_filtra_pela_turma(ind, espiao):
-    assert ind["paulo"].get(f"{URL}?turma={ind['turma_tcc2']}").status_code == 200
+    assert _gerar(ind["paulo"], turma=ind["turma_tcc2"]).status_code == 200
     assert _total_situacao(espiao) == ["0", "3", "3"]
 
 
 def test_ct_13_06_05_nenhum_nome_de_aluno(ind):
     """RN18: o arquivo não traz nome de aluno."""
     for cliente in (ind["coord"], ind["paulo"], ind["olga"]):
-        texto = _texto_pdf(cliente.get(URL).content)
+        texto = _texto_pdf(_gerar(cliente).content)
         assert "Aluno Indicador" not in texto and "Ana Ribeiro" not in texto
 
 
 def test_ct_13_06_06_filtro_fora_do_perfil_e_escopo(ind):
     """O mesmo recorte da tela: filtro que o perfil não tem em nenhum indicador ou fora do escopo, 403."""
-    r = ind["olga"].get(f"{URL}?orientador={ind['ids']['otto']}")
+    r = _gerar(ind["olga"], orientador=ind["ids"]["otto"])
     assert r.status_code == 403 and r.json()["campo"] == "orientador"
-    assert ind["paulo"].get(f"{URL}?curso=1").status_code == 403
-    assert ind["paulo"].get(f"{URL}?turma={ind['turma_lc']}").status_code == 403
+    assert _gerar(ind["paulo"], curso=1).status_code == 403
+    assert _gerar(ind["paulo"], turma=ind["turma_lc"]).status_code == 403
 
 
 def test_ct_13_06_07_filtro_de_um_indicador_so_vale_nele(ind, espiao):
     """O papel é filtro das bancas: a orientadora pode usá-lo, e a situação não muda por isso."""
-    assert ind["olga"].get(f"{URL}?papel=AVALIADOR").status_code == 200
+    assert _gerar(ind["olga"], papel="AVALIADOR").status_code == 200
     assert _total_situacao(espiao) == ["6", "2", "8"]
     assert "papel na banca" in dict(espiao["filtros"])["Outros filtros"]
 
 
 def test_ct_13_06_08_aluno_nao_gera(ind):
-    assert ind["aluno"].get(URL).status_code == 403
+    assert _gerar(ind["aluno"]).status_code == 403
 
 
 def test_ct_13_06_09_geracao_fica_no_log(ind, db):
     """RNF03: quem gerou e com quais filtros."""
-    assert ind["coord"].get(f"{URL}?curso=2").status_code == 200
+    assert _gerar(ind["coord"], curso=2).status_code == 200
     log = db.query(LogAuditoria).filter_by(acao="relatorio_indicadores_gerado").one()
     assert "curso=2" in log.valor_novo
