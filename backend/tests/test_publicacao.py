@@ -15,8 +15,12 @@ from tests.conftest import ativar
 from tests.test_tcc import _aceitar, _rascunho, cenario  # noqa: F401  (cenario é fixture)
 
 REVISTA = "Revista de Computação Aplicada"
-HOJE = date.today().isoformat()
 OUTRO = {"nome": "Bruno Batista", "email": "bruno@uea.edu.br", "matricula": "24159999", "curso_id": 1}
+
+
+def hoje() -> str:
+    """A data de hoje no momento do teste: a suíte completa pode atravessar a meia-noite."""
+    return date.today().isoformat()
 
 
 @pytest.fixture
@@ -29,7 +33,7 @@ def artigo(cenario, db):
 
 
 def _registrar(d, quem="aluno", **campos):
-    corpo = {"veiculo": REVISTA, "situacao": "EM_REVISAO", "data": HOJE, **campos}
+    corpo = {"veiculo": REVISTA, "situacao": "EM_REVISAO", "data": hoje(), **campos}
     return d[quem].post(d["url"], json=corpo)
 
 
@@ -41,7 +45,7 @@ def test_ct_12_01_01_aluno_registra_situacao_veiculo_e_data(artigo):
     assert r.status_code == 201, r.json()
     atual = r.json()["atual"]
     assert (atual["situacao"], atual["veiculo"]) == ("EM_REVISAO", REVISTA)
-    assert r.json()["historico"][0]["situacao"] == "EM_REVISAO" and r.json()["historico"][0]["data"] == HOJE
+    assert r.json()["historico"][0]["situacao"] == "EM_REVISAO" and r.json()["historico"][0]["data"] == hoje()
 
 
 def test_ct_12_01_02_dados_do_cadastro_vem_preenchidos(artigo):
@@ -82,7 +86,7 @@ def test_ct_12_01_07_sem_vinculo_e_negado(artigo, caixa, coord):
     assert coord.post("/api/v1/alunos", json=OUTRO).status_code == 201
     bruno = ativar(caixa, OUTRO["email"])
     assert bruno.get(artigo["url"]).status_code == 403
-    assert bruno.post(artigo["url"], json={"veiculo": REVISTA, "situacao": "ACEITO", "data": HOJE}).status_code == 403
+    assert bruno.post(artigo["url"], json={"veiculo": REVISTA, "situacao": "ACEITO", "data": hoje()}).status_code == 403
 
 
 def test_ct_12_01_08_orientador_registra_com_responsavel(artigo, db):
@@ -98,7 +102,7 @@ def test_monografia_nao_tem_publicacao(cenario):
     r = _rascunho(cenario)
     url = f"/api/v1/tccs/{r.json()['id']}/publicacao"
     assert cenario["aluno"].get(url).status_code == 409
-    assert cenario["aluno"].post(url, json={"veiculo": REVISTA, "situacao": "ACEITO", "data": HOJE}).status_code == 409
+    assert cenario["aluno"].post(url, json={"veiculo": REVISTA, "situacao": "ACEITO", "data": hoje()}).status_code == 409
 
 
 def test_outro_orientador_nao_registra(artigo):
