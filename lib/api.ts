@@ -69,11 +69,16 @@ export async function api<T>(caminho: string, opcoes: Opcoes = {}): Promise<T> {
 }
 
 // Baixa um PDF gerado na hora (agenda e relatório dos indicadores): salva com o nome que a API manda ou o padrão.
-// Erro da API vira ErroApi, como em api().
-export async function baixarPdf(caminho: string, nomePadrao: string): Promise<void> {
+// Com corpo, vai como POST em JSON. Erro da API vira ErroApi, como em api().
+export async function baixarPdf(caminho: string, nomePadrao: string, corpo?: unknown): Promise<void> {
   let resposta: Response;
   try {
-    resposta = await fetch(`/api/v1${caminho}`);
+    resposta = await fetch(
+      `/api/v1${caminho}`,
+      corpo === undefined
+        ? undefined
+        : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corpo) },
+    );
   } catch {
     throw new ErroApi(0, { detail: "Sem conexão com o servidor." });
   }

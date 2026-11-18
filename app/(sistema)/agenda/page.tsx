@@ -15,13 +15,36 @@ import { api, baixarPdf, ErroApi } from "@/lib/api";
 import { useSessao } from "@/lib/sessao";
 import { NOME_FORMATO, type Apresentacao, type Curso } from "@/lib/tipos";
 
-type Filtros = { curso: string; de: string; ate: string };
-const SEM_FILTRO: Filtros = { curso: "", de: "", ate: "" };
+// Período como no protótipo da TEL17 (DS-FL05-A), mais "Escolher datas" para o período de datas da ficha (RBN14.02)
+type Periodo = "proximos" | "semana" | "todas" | "datas";
+type Filtros = { curso: string; periodo: Periodo; de: string; ate: string };
+const SEM_FILTRO: Filtros = { curso: "", periodo: "proximos", de: "", ate: "" };
+const PERIODOS: [Periodo, string][] = [
+  ["proximos", "Próximas apresentações"],
+  ["semana", "Próximos 7 dias"],
+  ["todas", "Todas (inclui passadas)"],
+  ["datas", "Escolher datas"],
+];
 
 const dataCurta = (iso: string) => iso.split("-").reverse().join("/");
 
 function consulta(f: Filtros) {
-  return new URLSearchParams(Object.entries(f).filter(([, v]) => v !== "")).toString();
+  const pares: [string, string][] =
+    f.periodo === "datas"
+      ? [
+          ["de", f.de],
+          ["ate", f.ate],
+        ]
+      : [["periodo", f.periodo]];
+  if (f.curso) pares.unshift(["curso", f.curso]);
+  return new URLSearchParams(pares.filter(([, v]) => v !== "")).toString();
+}
+
+function rotuloPeriodo(f: Filtros) {
+  if (f.periodo !== "datas") return PERIODOS.find(([p]) => p === f.periodo)?.[1] ?? "";
+  if (f.de && f.ate) return `De ${dataCurta(f.de)} a ${dataCurta(f.ate)}`;
+  if (f.de) return `A partir de ${dataCurta(f.de)}`;
+  return f.ate ? `Até ${dataCurta(f.ate)}` : "Todas as datas";
 }
 
 const hora = (t: string) => t.slice(0, 5);
@@ -67,9 +90,11 @@ export default function PaginaAgenda() {
 
   // RBN14.02: a data final não pode vir antes da inicial; com o erro, a consulta não sai
   const erroData =
-    filtros.de && filtros.ate && filtros.ate < filtros.de ? "A data final deve ser igual ou posterior à inicial." : "";
+    filtros.periodo === "datas" && filtros.de && filtros.ate && filtros.ate < filtros.de
+      ? "A data final deve ser igual ou posterior à inicial."
+      : "";
   const chave = erroData ? null : consulta(filtros);
-  const filtrando = consulta(filtros) !== "";
+  const filtrando = filtros.curso !== "" || filtros.periodo !== "proximos";
 
   useEffect(() => {
     api<Curso[]>("/cursos")
@@ -90,7 +115,7 @@ export default function PaginaAgenda() {
   const lista = resposta && resposta.chave === chave ? resposta.lista : null;
 
   const mudar = (campo: keyof Filtros) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
-    setFiltros((f) => ({ ...f, [campo]: e.target.value }));
+    setFiltros((f) => ({ ...f, [campo]: e.target.value }) as Filtros);
   const limpar = () => setFiltros(SEM_FILTRO);
 
   async function exportar() {
@@ -104,14 +129,16 @@ export default function PaginaAgenda() {
     setExportando(false);
   }
 
+  // filtros ativos (ficha do RBN14.02): cada um sai sozinho; "Limpar filtros" volta às próximas de todos os cursos
   const nomeCurso = cursos.find((c) => String(c.id) === filtros.curso)?.nome ?? filtros.curso;
-  const ativos = (
-    [
-      ["curso", `Curso: ${nomeCurso}`],
-      ["de", `De ${dataCurta(filtros.de)}`],
-      ["ate", `Até ${dataCurta(filtros.ate)}`],
-    ] as [keyof Filtros, string][]
-  ).filter(([campo]) => filtros[campo] !== "");
+  const ativos: [string, string, () => void][] = [];
+  if (filtros.curso) ativos.push(["curso", nomeCurso, () => setFiltros((f) => ({ ...f, curso: "" }))]);
+  if (filtros.periodo !== "proximos")
+    ativos.push([
+      "periodo",
+      rotuloPeriodo(filtros),
+      () => setFiltros((f) => ({ ...f, periodo: "proximos", de: "", ate: "" })),
+    ]);
 
   return (
     <div className="flex flex-col gap-5">
@@ -119,7 +146,7 @@ export default function PaginaAgenda() {
         <div>
           <p className="text-xs font-semibold tracking-widest text-suave uppercase">Defesas</p>
           <h1 className="text-2xl font-semibold">Agenda de apresentações</h1>
-          <p className="mt-1 text-sm text-suave">As defesas programadas, em ordem de data e horário.</p>
+          <p className="mt-1 text-sm text-suave">Programação das apresentações autorizadas para divulgação.</p>
         </div>
         {podeExportar && (
           <Botao variante="contorno" onClick={exportar} carregando={exportando} disabled={!!erroData}>
@@ -130,7 +157,7 @@ export default function PaginaAgenda() {
       </header>
 
       <section aria-label="Filtros" className="rounded-xl border border-borda bg-superficie p-5">
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Campo rotulo="Curso">
             <Selecao value={filtros.curso} onChange={mudar("curso")}>
               <option value="">Todos os cursos</option>
@@ -141,20 +168,39 @@ export default function PaginaAgenda() {
               ))}
             </Selecao>
           </Campo>
-          <Campo rotulo="De" dica="data inicial">
-            <Entrada type="date" value={filtros.de} onChange={mudar("de")} />
+          <Campo rotulo="Período">
+            <Selecao value={filtros.periodo} onChange={mudar("periodo")}>
+              {PERIODOS.map(([valor, rotulo]) => (
+                <option key={valor} value={valor}>
+                  {rotulo}
+                </option>
+              ))}
+            </Selecao>
           </Campo>
-          <Campo rotulo="Até" dica="data final" erro={erroData}>
-            <Entrada type="date" value={filtros.ate} min={filtros.de || undefined} onChange={mudar("ate")} erro={erroData} />
-          </Campo>
+          {filtros.periodo === "datas" && (
+            <>
+              <Campo rotulo="De" dica="data inicial">
+                <Entrada type="date" value={filtros.de} onChange={mudar("de")} />
+              </Campo>
+              <Campo rotulo="Até" dica="data final" erro={erroData}>
+                <Entrada
+                  type="date"
+                  value={filtros.ate}
+                  min={filtros.de || undefined}
+                  onChange={mudar("ate")}
+                  erro={erroData}
+                />
+              </Campo>
+            </>
+          )}
         </div>
-        {ativos.length > 0 ? (
+        {ativos.length > 0 && (
           <div className="mt-3 flex flex-wrap items-center gap-2" aria-label="Filtros ativos">
-            {ativos.map(([campo, rotulo]) => (
+            {ativos.map(([campo, rotulo, remover]) => (
               <button
                 key={campo}
                 type="button"
-                onClick={() => setFiltros((f) => ({ ...f, [campo]: "" }))}
+                onClick={remover}
                 aria-label={`Remover o filtro ${rotulo}`}
                 className="inline-flex items-center gap-1 rounded-full bg-azul-claro px-3 py-1 text-xs font-medium text-azul-forte"
               >
@@ -166,8 +212,6 @@ export default function PaginaAgenda() {
               Limpar filtros
             </Botao>
           </div>
-        ) : (
-          <p className="mt-3 text-xs text-suave">Sem período escolhido, a agenda mostra as apresentações a partir de hoje.</p>
         )}
       </section>
 
@@ -182,21 +226,16 @@ export default function PaginaAgenda() {
         )
       ) : lista.length === 0 ? (
         <div className="rounded-xl border border-borda bg-superficie p-6 text-sm">
-          {filtrando ? (
-            <>
-              <p className="font-medium">Nenhuma apresentação para os filtros escolhidos</p>
-              <p className="mt-1 text-suave">Mude o curso ou o período, ou limpe os filtros para ver a agenda toda.</p>
-              <div className="mt-3">
-                <Botao variante="contorno" pequeno onClick={limpar}>
-                  Limpar filtros
-                </Botao>
-              </div>
-            </>
-          ) : (
-            <>
-              <p className="font-medium">Nenhuma apresentação programada</p>
-              <p className="mt-1 text-suave">Quando uma defesa for agendada, ela aparece aqui.</p>
-            </>
+          <p className="font-medium">Nenhuma apresentação encontrada</p>
+          <p className="mt-1 text-suave">
+            {filtrando ? "Nada corresponde aos filtros escolhidos." : "Ainda não há apresentações publicadas."}
+          </p>
+          {filtrando && (
+            <div className="mt-3">
+              <Botao variante="contorno" pequeno onClick={limpar}>
+                Limpar filtros
+              </Botao>
+            </div>
           )}
         </div>
       ) : (

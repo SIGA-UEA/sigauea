@@ -541,7 +541,7 @@ def _rotulos_dos_filtros(db: Session, valores: dict, periodo_id: int | None) -> 
 
 
 def relatorio_pdf(db: Session, usuario: Usuario, **valores) -> tuple[bytes, str]:
-    """GET /indicadores/relatorio (RBN13.06): os indicadores RBN13.02 a 13.05 com os filtros escolhidos na tela, cada um
+    """gerarRelatorio(filtros), POST /indicadores/relatorio (RBN13.06, DS-FL08-D): os indicadores RBN13.02 a 13.05 com os filtros escolhidos na tela, cada um
     com os filtros que o perfil tem nele, no mesmo escopo da tela (RBN13.01, RN18) e sem nome de aluno. Filtro que
     o perfil não tem em nenhum indicador recebe 403; a geração fica no log (RNF03)."""
     perfis = _exigir_perfil(db, usuario)

@@ -6,7 +6,7 @@ da agenda seguem o DS-FL05: a defesa continua marcada ao ser retirada. Os filtro
 (RBN14.02) valem para a lista e para o PDF exportado (RBN14.03), que só traz o que a agenda já divulga (RN08).
 """
 
-from datetime import date
+from datetime import date, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -64,16 +64,28 @@ def _conferir_datas(de: date | None, ate: date | None) -> None:
                       campos={"ate": "A data final deve ser igual ou posterior à inicial."})
 
 
+def intervalo(periodo: str, de: date | None, ate: date | None) -> tuple[date | None, date | None]:
+    """O período da TEL17 (DS-FL05-A, protótipo): "proximos" a partir de hoje, "semana" os próximos 7 dias e
+    "todas" inclusive as passadas. Datas escolhidas (RBN14.02) substituem o período."""
+    _conferir_datas(de, ate)
+    if de is not None or ate is not None:
+        return de, ate
+    hoje = date.today()
+    if periodo == "proximos":
+        return hoje, None
+    if periodo == "semana":
+        return hoje, hoje + timedelta(days=7)
+    return None, None
+
+
 def listar(db: Session, periodo: str = "proximos", *, curso: int | None = None, de: date | None = None,
            ate: date | None = None) -> list[ApresentacaoOut]:
-    """RBN14.01 CA-01: ordem crescente de data e horário. "proximos" (DS-FL05-A passo 2) começa hoje; com data
-    inicial, o período escolhido manda (RBN14.02). Curso e datas filtram; sem resultado, a lista vem vazia."""
-    _conferir_datas(de, ate)
+    """consultarAgenda(curso, periodo): ordem crescente de data e horário (RBN14.01 CA-01), com os filtros de curso
+    e período (RBN14.02); sem resultado, a lista vem vazia."""
+    de, ate = intervalo(periodo, de, ate)
     consulta = select(Defesa).where(Defesa.situacao.in_(VISIVEIS), Defesa.publicada.is_(True))
     if de is not None:
         consulta = consulta.where(Defesa.data >= de)
-    elif periodo == "proximos":
-        consulta = consulta.where(Defesa.data >= date.today())
     if ate is not None:
         consulta = consulta.where(Defesa.data <= ate)
     if curso is not None:
@@ -89,18 +101,19 @@ PERFIS_EXPORTACAO = (PERFIL_COORDENADOR, PERFIL_PROFESSOR, PERFIL_ORIENTADOR)
 
 def exportar_pdf(db: Session, usuario: Usuario, periodo: str = "proximos", *, curso: int | None = None,
                  de: date | None = None, ate: date | None = None) -> tuple[bytes, str]:
-    """RBN14.03: a agenda com os filtros da tela, para imprimir ou compartilhar. Só coordenação, professor da
-    disciplina e orientador (403 aos demais). O arquivo usa os mesmos dados da agenda, sem contato, matrícula ou
-    nota (RN08), e a exportação fica no log (RNF03)."""
+    """gerarPdfAgenda(curso, de, ate) (RBN14.03): a agenda com os filtros da tela, para imprimir ou compartilhar. Só
+    coordenação, professor da disciplina e orientador (403 aos demais). O arquivo usa os mesmos dados da agenda, sem
+    contato, matrícula ou nota (RN08), e a exportação fica no log (RNF03)."""
     if not any(p in usuario.perfis for p in PERFIS_EXPORTACAO):
         raise ErroAPI(403, "A exportação da agenda é da coordenação, dos professores da disciplina e dos orientadores.")
+    de, ate = intervalo(periodo, de, ate)
     itens = listar(db, periodo, curso=curso, de=de, ate=ate)
     nome_curso = None
     if curso is not None:
         c = db.get(Curso, curso)
         nome_curso = c.nome if c else None
-    conteudo = documentos.agenda_pdf(itens, curso=nome_curso, de=de, ate=ate, so_proximas=periodo == "proximos",
-                                     gerado_por=usuario.nome, gerado_em=agora())
+    conteudo = documentos.agenda_pdf(itens, curso=nome_curso, de=de, ate=ate, gerado_por=usuario.nome,
+                                     gerado_em=agora())
     auditoria.registrar(db, ator_id=usuario.id, acao="agenda_exportada", entidade="agenda",
                         novo=f"curso={curso or 'todos'}; de={de or '-'}; ate={ate or '-'}; itens={len(itens)}")
     db.commit()

@@ -8,7 +8,7 @@
 //   GET /indicadores/bancas        participações por professor e por papel (RBN13.05)
 // O usuário escolhe o indicador nas abas (alt do DS-FL08-D). Cada aba só mostra os filtros do perfil para aquele
 // indicador (filtros_indicadores); nenhum número traz nome de aluno (RN18).
-//   GET /indicadores/relatorio     as quatro tabelas em PDF com os filtros escolhidos (RBN13.06, SCRUM-93)
+//   POST /indicadores/relatorio    as quatro tabelas em PDF com os filtros escolhidos (RBN13.06, SCRUM-93)
 
 import { useEffect, useState } from "react";
 import { Aviso } from "@/components/aviso";
@@ -97,14 +97,16 @@ function parametros(escopo: EscopoIndicadores, aba: IndicadorTel16, filtros: Fil
   return new URLSearchParams(pares).toString();
 }
 
-// RBN13.06: o relatório leva os filtros escolhidos que valem em algum indicador; o backend aplica a cada indicador
-// só os que ele tem, como as abas fazem.
-function parametrosRelatorio(escopo: EscopoIndicadores, filtros: Filtros): string {
-  const juntos = new URLSearchParams();
+// RBN13.06 (DS-FL08-D): o relatório leva os filtros escolhidos que valem em algum indicador; o backend aplica a cada
+// indicador só os que ele tem, como as abas fazem.
+function filtrosRelatorio(escopo: EscopoIndicadores, filtros: Filtros): Record<string, string | number> {
+  const juntos: Record<string, string | number> = {};
   for (const [aba] of ABAS) {
-    new URLSearchParams(parametros(escopo, aba, filtros)).forEach((valor, chave) => juntos.set(chave, valor));
+    new URLSearchParams(parametros(escopo, aba, filtros)).forEach((valor, chave) => {
+      juntos[chave] = chave === "etapa" || chave === "papel" ? valor : Number(valor);
+    });
   }
-  return juntos.toString();
+  return juntos;
 }
 
 export default function PaginaIndicadores() {
@@ -151,16 +153,16 @@ export default function PaginaIndicadores() {
     setFiltros({ periodo: escopo?.periodo_vigente_id ? String(escopo.periodo_vigente_id) : "", ...VAZIO });
 
   const [gerando, setGerando] = useState(false);
-  const [erroPdf, setErroPdf] = useState("");
+  const [pdf, setPdf] = useState<{ tipo: "sucesso" | "erro"; texto: string } | null>(null);
   async function gerarPdf() {
     if (!escopo || !filtros) return;
-    setErroPdf("");
+    setPdf(null);
     setGerando(true);
-    const q = parametrosRelatorio(escopo, filtros);
     try {
-      await baixarPdf(`/indicadores/relatorio${q ? `?${q}` : ""}`, "relatorio-indicadores.pdf");
+      await baixarPdf("/indicadores/relatorio", "relatorio-indicadores.pdf", filtrosRelatorio(escopo, filtros));
+      setPdf({ tipo: "sucesso", texto: "Relatório em PDF gerado com os filtros atuais." });
     } catch (e) {
-      setErroPdf((e as ErroApi).message);
+      setPdf({ tipo: "erro", texto: (e as ErroApi).message });
     }
     setGerando(false);
   }
@@ -179,15 +181,15 @@ export default function PaginaIndicadores() {
           <Botao
             variante="contorno"
             onClick={gerarPdf}
-            carregando={gerando}
+            disabled={gerando || !dados}
             title="Situação, produção científica, desistências e bancas, com os filtros escolhidos"
           >
             <Icone nome="documento" className="size-4" />
-            Gerar PDF
+            {gerando ? "Gerando…" : "Gerar relatório em PDF"}
           </Botao>
         )}
       </header>
-      {erroPdf && <Aviso tipo="erro">{erroPdf}</Aviso>}
+      {pdf && <Aviso tipo={pdf.tipo}>{pdf.texto}</Aviso>}
 
       {erro && !escopo ? (
         <Aviso tipo="erro">{erro}</Aviso>

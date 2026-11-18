@@ -188,3 +188,13 @@ def test_titulo_com_caracteres_fora_do_latin1_nao_quebra_o_pdf(banca, coord, db)
 
 def test_exportar_exige_login(anonimo):
     assert anonimo.get(f"{URL}/pdf").status_code == 401
+
+
+def test_periodos_do_prototipo(banca, coord, db):
+    """DS-FL05-A e protótipo da TEL17: "Próximas apresentações", "Próximos 7 dias" e "Todas (inclui passadas)"."""
+    _cenario(banca, db, coord)  # EC em 2 e 10 dias; LC em 5
+    _defesa(db, banca, _outro_tcc(banca, db, coord, 3, "Já realizada"), dia(-2), "09:00")
+    assert _titulos(banca["aluno"], "periodo=semana") == [banca["tcc"]["titulo"], "Jogos no ensino de lógica"]
+    assert len(_titulos(banca["aluno"], "periodo=proximos")) == 3
+    assert _titulos(banca["aluno"], "periodo=todas")[0] == "Já realizada"
+    assert _titulos(banca["aluno"], "periodo=semana&curso=2") == ["Jogos no ensino de lógica"]

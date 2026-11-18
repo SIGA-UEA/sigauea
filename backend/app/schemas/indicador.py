@@ -1,13 +1,16 @@
-"""Formato dos indicadores gerenciais (RBN13.01 a RBN13.05 · DS-FL08-C, DS-FL08-D, TEL16).
+"""Formato dos indicadores gerenciais (RBN13.01 a RBN13.06 · DS-FL08-C, DS-FL08-D, TEL16).
 
 - GET /indicadores/escopo: escopo e filtros do perfil (DS-FL08-D mensagens 2 e 3);
 - GET /indicadores/situacao: situação dos TCCs e orientações, por etapa (mensagens 5 a 7);
 - GET /indicadores/desistencias: desistências e evolução (mensagens 9 a 11);
 - GET /indicadores/bancas: participações em banca (mensagens 13 a 15);
-- GET /indicadores: o painel do DS-FL08-C (situação, produção científica e bancas).
+- GET /indicadores: o painel do DS-FL08-C (situação, produção científica e bancas);
+- POST /indicadores/relatorio {filtros}: o relatório em PDF (RBN13.06, DS-FL08-D).
 Cada indicador tem os seus filtros por perfil (fichas RBN13.02 a RBN13.05), em `filtros_indicadores`. Nenhuma
 resposta traz nome de aluno (RN18, CA-05 do RBN13.01): só números, cursos, turmas e o nome dos docentes.
 """
+
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -183,3 +186,17 @@ class IndicadoresOut(BaseModel):
     situacao: IndicadorSituacaoOut
     producao: ProducaoOut
     bancas: BancasOut
+
+
+class FiltrosRelatorio(BaseModel):
+    """Os filtros escolhidos na TEL16 para o relatório em PDF (RBN13.06). Cada indicador usa só os que tem."""
+
+    periodo: int | None = None
+    curso: int | None = None
+    etapa: Literal["TCC1", "TCC2"] | None = None
+    turma: int | None = None
+    orientador: int | None = None
+    professor: int | None = None
+    papel: Literal["ORIENTADOR", "AVALIADOR", "COORIENTADOR", "SUPLENTE"] | None = None
+    periodo_inicio: int | None = None
+    periodo_fim: int | None = None
