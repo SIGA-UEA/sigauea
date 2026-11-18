@@ -18,6 +18,7 @@ import { Botao } from "@/components/botao";
 import { SeloSituacao } from "@/components/situacao-tcc";
 import { api, ErroApi } from "@/lib/api";
 import { useSessao } from "@/lib/sessao";
+import { SecaoHistorico, SecaoSituacao, SecaoTarefas } from "./acompanhamento";
 import { SecaoArtigo } from "./artigo";
 import { SecaoAvaliacao } from "./avaliacao";
 import { SecaoBanca } from "./banca";
@@ -146,6 +147,7 @@ export default function PaginaTcc() {
       </section>
 
       <SecaoOrientacao tcc={tcc} aoMudar={recarregar} />
+      {!externo && <SecaoSituacao tcc={tcc} aoMudar={recarregar} />}
 
       {/* TEL15 (DS-FL08): só na modalidade artigo */}
       {tcc.modalidade === "ARTIGO" && !externo && <SecaoArtigo tccId={id} aoMudar={recarregar} />}
@@ -195,6 +197,11 @@ export default function PaginaTcc() {
         </>
       )}
 
+      {!externo && <SecaoTarefas tcc={tcc} />}
+
+      {!externo && <SecaoHistorico tccId={tcc.id} versao={tcc.atualizado_em} />}
+
+      {externo && (
       <section className="rounded-xl border border-borda bg-superficie p-5">
         <h2 className="mb-3 font-semibold">Histórico</h2>
         {tcc.historico.length === 0 ? (
@@ -214,6 +221,7 @@ export default function PaginaTcc() {
           </ol>
         )}
       </section>
+      )}
     </div>
   );
 }

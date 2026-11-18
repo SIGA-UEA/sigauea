@@ -2,6 +2,7 @@ from fastapi import APIRouter, FastAPI
 
 from app.erros import registrar_tratadores
 from app.routes import (
+    acompanhamento,
     agenda,
     areas,
     auth,
@@ -46,6 +47,7 @@ v1.include_router(catalogo.router)
 v1.include_router(turmas.router)
 # /tccs/formulario antes de /tccs/{id} (ordem no arquivo)
 v1.include_router(tccs.router)
+v1.include_router(acompanhamento.router)  # situação, histórico e tarefas do TCC (RAN05)
 v1.include_router(cadastros.router)
 v1.include_router(defesas.router)  # banca e defesa (RAN09)
 v1.include_router(agenda.router)  # agenda de apresentações (RAN14)

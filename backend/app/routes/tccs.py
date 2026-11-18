@@ -7,12 +7,14 @@ DS-FL03-D (RBN01.13): a coordenação e o orientador também usam POST /tccs/{id
 coorientador (interno ou externo) e DELETE /tccs/{id}/orientacoes/{orientacao_id} para encerrar o vínculo.
 """
 
+from typing import Literal
+
 from fastapi import APIRouter, BackgroundTasks, Depends
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.deps import exigir_perfil, usuario_atual
-from app.models import PERFIL_ALUNO, PERFIL_ORIENTADOR, PERFIL_PROFESSOR, Usuario
+from app.models import PERFIL_ALUNO, PERFIL_ORIENTADOR, PERFIL_PROFESSOR, SITUACOES_TCC, Usuario
 from app.schemas.tcc import (
     EncerrarOrientacao,
     FormularioOut,
@@ -39,8 +41,18 @@ def abrir_formulario(db: Session = Depends(get_db, scope="function"), eu: Usuari
 
 
 @router.get("/tccs", response_model=list[TccOut])
-def listar(db: Session = Depends(get_db, scope="function"), eu: Usuario = Depends(usuario_atual)) -> list[TccOut]:
-    return [tccs.para_saida(t) for t in tccs.listar_para(db, eu)]
+def listar(
+    busca: str | None = None,
+    curso_id: int | None = None,
+    periodo_id: int | None = None,
+    orientador_id: int | None = None,
+    situacao: Literal[SITUACOES_TCC] | None = None,
+    db: Session = Depends(get_db, scope="function"),
+    eu: Usuario = Depends(usuario_atual),
+) -> list[TccOut]:
+    """Busca por título, aluno ou protocolo e filtros combinados, sempre dentro do que a pessoa pode consultar."""
+    filtro = tccs.FiltroTcc(busca, curso_id, periodo_id, orientador_id, situacao)
+    return [tccs.para_saida(t) for t in tccs.listar_para(db, eu, filtro)]
 
 
 @router.post("/tccs", response_model=TccOut, status_code=201)
