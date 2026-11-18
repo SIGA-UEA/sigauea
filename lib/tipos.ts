@@ -384,7 +384,7 @@ export type Apresentacao = {
   titulo: string;
   autor: string;
   orientador: string | null;
-  curso: { sigla: string; nome: string };
+  curso: Curso; // o id serve ao filtro por curso (RBN14.02)
   formato: FormatoDefesa;
   data: string;
   inicio: string;

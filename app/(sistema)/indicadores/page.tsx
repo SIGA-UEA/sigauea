@@ -1,19 +1,21 @@
 "use client";
 
-// TEL16 · Indicadores (DS-FL08-C, DS-FL08-D · RBN13.01 a RBN13.05, RN18).
+// TEL16 · Indicadores (DS-FL08-C, DS-FL08-D · RBN13.01 a RBN13.06, RN18).
 //   GET /indicadores/escopo        escopo, período vigente e os filtros de cada indicador
 //   GET /indicadores/situacao      TCCs por situação acadêmica e orientandos por orientador, por etapa (RBN13.02)
 //   GET /indicadores               painel do DS-FL08-C; a aba Produção científica usa o bloco "producao" (RBN13.03)
 //   GET /indicadores/desistencias  total por período e curso; evolução só para a coordenação (RBN13.04)
 //   GET /indicadores/bancas        participações por professor e por papel (RBN13.05)
 // O usuário escolhe o indicador nas abas (alt do DS-FL08-D). Cada aba só mostra os filtros do perfil para aquele
-// indicador (filtros_indicadores); nenhum número traz nome de aluno (RN18). O PDF entra com o SCRUM-93.
+// indicador (filtros_indicadores); nenhum número traz nome de aluno (RN18).
+//   GET /indicadores/relatorio     as quatro tabelas em PDF com os filtros escolhidos (RBN13.06, SCRUM-93)
 
 import { useEffect, useState } from "react";
 import { Aviso } from "@/components/aviso";
 import { Botao } from "@/components/botao";
 import { Campo, Selecao } from "@/components/campo";
-import { api, ErroApi } from "@/lib/api";
+import { Icone } from "@/components/icone";
+import { api, baixarPdf, ErroApi } from "@/lib/api";
 import {
   NOME_PAPEL_BANCA,
   NOME_SITUACAO_EDITORIAL,
@@ -95,6 +97,16 @@ function parametros(escopo: EscopoIndicadores, aba: IndicadorTel16, filtros: Fil
   return new URLSearchParams(pares).toString();
 }
 
+// RBN13.06: o relatório leva os filtros escolhidos que valem em algum indicador; o backend aplica a cada indicador
+// só os que ele tem, como as abas fazem.
+function parametrosRelatorio(escopo: EscopoIndicadores, filtros: Filtros): string {
+  const juntos = new URLSearchParams();
+  for (const [aba] of ABAS) {
+    new URLSearchParams(parametros(escopo, aba, filtros)).forEach((valor, chave) => juntos.set(chave, valor));
+  }
+  return juntos.toString();
+}
+
 export default function PaginaIndicadores() {
   const [escopo, setEscopo] = useState<EscopoIndicadores | null>(null);
   const [aba, setAba] = useState<IndicadorTel16>("situacao");
@@ -138,15 +150,44 @@ export default function PaginaIndicadores() {
   const limpar = () =>
     setFiltros({ periodo: escopo?.periodo_vigente_id ? String(escopo.periodo_vigente_id) : "", ...VAZIO });
 
+  const [gerando, setGerando] = useState(false);
+  const [erroPdf, setErroPdf] = useState("");
+  async function gerarPdf() {
+    if (!escopo || !filtros) return;
+    setErroPdf("");
+    setGerando(true);
+    const q = parametrosRelatorio(escopo, filtros);
+    try {
+      await baixarPdf(`/indicadores/relatorio${q ? `?${q}` : ""}`, "relatorio-indicadores.pdf");
+    } catch (e) {
+      setErroPdf((e as ErroApi).message);
+    }
+    setGerando(false);
+  }
+
   return (
     <div className="flex flex-col gap-5">
-      <header>
-        <p className="text-xs font-semibold tracking-widest text-suave uppercase">Gestão</p>
-        <h1 className="text-2xl font-semibold">Indicadores</h1>
-        <p className="mt-1 text-sm text-suave">
-          Acompanhe os TCCs dentro do seu escopo. Os indicadores não mostram nomes de alunos.
-        </p>
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold tracking-widest text-suave uppercase">Gestão</p>
+          <h1 className="text-2xl font-semibold">Indicadores</h1>
+          <p className="mt-1 text-sm text-suave">
+            Acompanhe os TCCs dentro do seu escopo. Os indicadores não mostram nomes de alunos.
+          </p>
+        </div>
+        {escopo && filtros && (
+          <Botao
+            variante="contorno"
+            onClick={gerarPdf}
+            carregando={gerando}
+            title="Situação, produção científica, desistências e bancas, com os filtros escolhidos"
+          >
+            <Icone nome="documento" className="size-4" />
+            Gerar PDF
+          </Botao>
+        )}
       </header>
+      {erroPdf && <Aviso tipo="erro">{erroPdf}</Aviso>}
 
       {erro && !escopo ? (
         <Aviso tipo="erro">{erro}</Aviso>

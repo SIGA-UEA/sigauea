@@ -1,14 +1,15 @@
-"""Rotas dos indicadores gerenciais (TEL16 Indicadores · RBN13.01 a RBN13.05 · DS-FL08-C e DS-FL08-D).
+"""Rotas dos indicadores gerenciais (TEL16 Indicadores · RBN13.01 a RBN13.06 · DS-FL08-C e DS-FL08-D).
 
 GET /indicadores/escopo: escopo e filtros do perfil. GET /indicadores/situacao: situação dos TCCs e orientações,
 por etapa. GET /indicadores: painel do DS-FL08-C (situação, produção científica e bancas). GET
-/indicadores/desistencias: desistências e evolução. GET /indicadores/bancas: participações em banca. Quem pode e o
-escopo são conferidos no serviço.
+/indicadores/desistencias: desistências e evolução. GET /indicadores/bancas: participações em banca. GET
+/indicadores/relatorio: os quatro indicadores em PDF (RBN13.06). Quem pode e o escopo são conferidos no serviço.
 """
 
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -86,3 +87,27 @@ def bancas(
     """RBN13.05: participações por professor e por papel, com o suplente só se convocado (RN20). 403 para filtro
     fora do perfil ou professor fora do núcleo."""
     return indicadores.consultar_bancas(db, eu, periodo=periodo, curso=curso, professor=professor, papel=papel)
+
+
+@router.get("/indicadores/relatorio", response_class=Response,
+            responses={200: {"content": {"application/pdf": {}}, "description": "Relatório dos indicadores em PDF"}})
+def relatorio(
+    periodo: int | None = Query(default=None),
+    curso: int | None = Query(default=None),
+    etapa: Literal["TCC1", "TCC2"] | None = Query(default=None),
+    turma: int | None = Query(default=None),
+    orientador: int | None = Query(default=None),
+    professor: int | None = Query(default=None),
+    papel: Papel | None = Query(default=None),
+    periodo_inicio: int | None = Query(default=None),
+    periodo_fim: int | None = Query(default=None),
+    db: Session = Depends(get_db, scope="function"),
+    eu: Usuario = Depends(usuario_atual),
+) -> Response:
+    """RBN13.06: situação, produção científica, desistências e bancas com os filtros da tela, cada indicador com os
+    filtros que o perfil tem nele. 403 para filtro que o perfil não tem em nenhum indicador ou fora do escopo."""
+    conteudo, nome = indicadores.relatorio_pdf(
+        db, eu, periodo=periodo, curso=curso, etapa=etapa, turma=turma, orientador=orientador, professor=professor,
+        papel=papel, periodo_inicio=periodo_inicio, periodo_fim=periodo_fim)
+    return Response(content=conteudo, media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{nome}"'})

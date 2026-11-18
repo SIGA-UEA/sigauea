@@ -438,3 +438,103 @@ def certificado_participacao(conteudo: dict, *, numero: int, gerado_em: datetime
     pdf.set_left_margin(22)
     pdf.set_right_margin(22)
     return _rodape(pdf, _emissao("Certificado", numero, 1, gerado_em, "emitido"))
+
+
+# =================================================================== relatórios para distribuição (RBN13.06 e RBN14.03)
+# Não são documentos oficiais: não ficam gravados nem numerados. Saem na hora, com os filtros da tela, quem gerou e
+# quando. O texto vem do banco e pode ter caracteres fora do Latin-1 das fontes padrão do PDF; `_latin` troca os
+# comuns (aspas e travessões) e põe "?" no resto, em vez de falhar.
+
+_TROCAS = str.maketrans({"“": '"', "”": '"', "‘": "'", "’": "'", "–": "-", "—": "-", "…": "...", "•": "-",
+                         " ": " "})
+
+
+def _latin(texto) -> str:
+    return str(texto).translate(_TROCAS).encode("latin-1", "replace").decode("latin-1")
+
+
+def _quando(gerado_em: datetime) -> str:
+    local = gerado_em + FUSO_MANAUS
+    return f"{local.strftime('%d/%m/%Y')} às {local.strftime('%H:%M')} (horário de Manaus)"
+
+
+def _quadro(pdf: FPDF, cabecalho: list[str], linhas: list[list[str]], larguras: tuple[float, ...],
+            tamanho: float = 9.5) -> None:
+    """Tabela com quebra de linha nas células e o cabeçalho repetido em cada página."""
+    pdf.set_font("Times", "", tamanho)
+    pdf.set_draw_color(120, 120, 120)
+    with pdf.table(col_widths=larguras, text_align="LEFT", line_height=4.8, padding=1.2,
+                   headings_style=_estilo_cabecalho(), first_row_as_headings=True) as tabela:
+        tabela.row([_latin(c) for c in cabecalho])
+        for linha in linhas:
+            tabela.row([_latin(c) for c in linha])
+    pdf.ln(4)
+
+
+def _estilo_cabecalho():
+    from fpdf.fonts import FontFace
+
+    return FontFace(family="Times", emphasis="BOLD", fill_color=(230, 230, 230))
+
+
+def _filtros_usados(pdf: FPDF, linhas: list[tuple[str, str]]) -> None:
+    pdf.set_font("Times", "", 10.5)
+    for rotulo, valor in linhas:
+        pdf.multi_cell(0, 5.4, f"**{_latin(rotulo)}:** {_latin(valor).replace('*', '')}", markdown=True,
+                       new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(3)
+
+
+def agenda_pdf(itens, *, curso: str | None, de, ate, so_proximas: bool, gerado_por: str,
+               gerado_em: datetime) -> bytes:
+    """RBN14.03: a agenda filtrada em tabela, em paisagem, para imprimir, afixar no mural ou mandar nos grupos. Só os
+    campos que a agenda já divulga (RN08): sem contato, matrícula, nota ou banca."""
+    pdf = _pdf("Agenda de apresentações", paisagem=True)
+    _titulo(pdf, "AGENDA DE APRESENTAÇÕES DE TCC")
+    if de and ate:
+        periodo = f"de {_data(de)} a {_data(ate)}"
+    elif de:
+        periodo = f"a partir de {_data(de)}"
+    elif ate:
+        periodo = f"de hoje até {_data(ate)}" if so_proximas else f"até {_data(ate)}"
+    else:
+        periodo = "próximas apresentações, a partir de hoje" if so_proximas else "todas as apresentações publicadas"
+    _filtros_usados(pdf, [("Curso", curso or "todos os cursos"), ("Período", periodo),
+                          ("Gerada por", f"{gerado_por}, em {_quando(gerado_em)}")])
+    if not itens:
+        _paragrafo(pdf, "Nenhuma apresentação programada para os filtros escolhidos.", markdown=False)
+    else:
+        linhas = []
+        for a in itens:
+            onde = a.local or ("Remota" if a.formato == "REMOTO" else "Local a confirmar")
+            if a.link:
+                onde = f"{onde} - {a.link}" if a.local else a.link
+            situacao = " (remarcada)" if a.remarcada else ""
+            linhas.append([_data(a.data), f"{_hora(a.inicio)} às {_hora(a.fim)}{situacao}", a.titulo, a.autor,
+                           a.orientador or "-", a.curso.sigla, NOME_FORMATO[a.formato].capitalize(), onde])
+        _quadro(pdf, ["Data", "Horário", "Título", "Autor(a)", "Orientador(a)", "Curso", "Formato", "Local ou link"],
+                linhas, (20, 27, 68, 32, 32, 13, 19, 42))
+    return _rodape(pdf, [EMISSOR, "Agenda emitida pelo SIGA UEA para divulgação. Traz só o que a agenda do sistema "
+                                  "divulga, sem contatos, matrículas ou notas; mudanças posteriores aparecem no sistema."])
+
+
+def indicadores_pdf(secoes, *, filtros: list[tuple[str, str]], gerado_por: str, gerado_em: datetime) -> bytes:
+    """RBN13.06: as tabelas dos indicadores (RBN13.02 a 13.05) com os filtros da tela. `secoes` é uma lista de
+    (título, cabeçalho, linhas, larguras, observação). Nenhuma tabela traz nome de aluno (RN18)."""
+    pdf = _pdf("Relatório de indicadores")
+    _titulo(pdf, "RELATÓRIO DE INDICADORES DE TCC")
+    _filtros_usados(pdf, [*filtros, ("Gerado por", f"{gerado_por}, em {_quando(gerado_em)}")])
+    for titulo, cabecalho, linhas, larguras, observacao in secoes:
+        if pdf.get_y() > pdf.h - 80:
+            pdf.add_page()
+        _subtitulo(pdf, _latin(titulo))
+        if observacao:
+            pdf.set_font("Times", "I", 9.5)
+            pdf.multi_cell(0, 4.8, _latin(observacao), new_x="LMARGIN", new_y="NEXT")
+            pdf.ln(1)
+        if linhas:
+            _quadro(pdf, cabecalho, linhas, larguras, 10)
+        else:
+            _paragrafo(pdf, "Sem dados para os filtros escolhidos.", 10.5, markdown=False)
+    return _rodape(pdf, [EMISSOR, "Relatório gerado pelo SIGA UEA com os filtros da tela de indicadores. Cada TCC é "
+                                  "contado uma vez e nenhum dado identifica aluno."])
