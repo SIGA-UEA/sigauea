@@ -4,10 +4,11 @@ Cada função segue um diagrama de sequência; os comentários "DS-FL01 passo N"
 apontam para a mensagem correspondente no diagrama do Documento de Sequência.
 """
 
+from dataclasses import dataclass
 from datetime import date
 
 from fastapi import BackgroundTasks
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -30,6 +31,7 @@ from app.models import (
     RASCUNHO,
     RECUSADA,
     AnaliseCadastro,
+    Aluno,
     AreaInteresse,
     BancaMembro,
     Defesa,
@@ -158,16 +160,19 @@ def para_saida(tcc: Tcc) -> TccOut:
             if pub
             else None
         ),
+        tcc_origem_id=tcc.tcc_origem_id,
         submetido_em=tcc.submetido_em,
         criado_em=tcc.criado_em,
         atualizado_em=tcc.atualizado_em,
         pendencias=pendencias(tcc) if tcc.situacao in EDITAVEIS else [],
+        desistencia_motivo=tcc.desistencia_motivo,
         historico=[
             HistoricoOut(
                 situacao_anterior=h.situacao_anterior,
                 situacao_nova=h.situacao_nova,
                 usuario=pessoa(h.usuario),
                 registrado_em=h.registrado_em,
+                observacao=h.observacao,
             )
             for h in tcc.historico
         ],
@@ -248,6 +253,13 @@ def _verificar_elegibilidade(db: Session, orientador_id: int | None, coorientado
 # =================================================================== DS-FL01-A · abrir formulário
 
 
+def tcc1_de_origem(db: Session, aluno_id: int) -> Tcc | None:
+    """RBN08.04: o TCC1 mais recente do aluno, que dá origem ao cadastro de TCC2."""
+    return db.scalar(
+        select(Tcc).where(Tcc.aluno_id == aluno_id, Tcc.etapa == "TCC1").order_by(Tcc.id.desc()).limit(1)
+    )
+
+
 def formulario(db: Session, aluno: Usuario) -> FormularioOut:
     m = _exigir_matriculado(db, aluno.id)  # passo 7 + 403
     tcc = db.scalar(
@@ -255,9 +267,7 @@ def formulario(db: Session, aluno: Usuario) -> FormularioOut:
     )  # passo 8
     origem = None
     if tcc is None and m.turma.disciplina == "TCC2":  # passo 9 (A4, RBN08.04)
-        tcc1 = db.scalar(
-            select(Tcc).where(Tcc.aluno_id == aluno.id, Tcc.etapa == "TCC1").order_by(Tcc.id.desc())
-        )
+        tcc1 = tcc1_de_origem(db, aluno.id)
         if tcc1:
             o = _vinculo(tcc1, PAPEL_ORIENTADOR)
             origem = {
@@ -476,6 +486,9 @@ def criar(db: Session, tarefas: BackgroundTasks, aluno: Usuario, dados: TccSalva
         raise ErroAPI(409, "Você já tem um cadastro de TCC neste período letivo.", motivo="duplicado")
     _verificar_elegibilidade(db, dados.orientador_id, dados.coorientador_id)  # passo 13
     _area(db, dados.area_id)  # passo 5
+    # RBN08.04 CA-05: o TCC2 é um cadastro novo (protocolo próprio) ligado ao TCC1, que não muda.
+    # A ligação vem do servidor, não do formulário, para o aluno não apontar o TCC de outra pessoa.
+    origem = tcc1_de_origem(db, aluno.id) if turma.disciplina == "TCC2" else None
     tcc = Tcc(  # passo 6: RASCUNHO, sem protocolo
         aluno_id=aluno.id,
         turma_id=turma.id,
@@ -487,6 +500,7 @@ def criar(db: Session, tarefas: BackgroundTasks, aluno: Usuario, dados: TccSalva
         resumo=dados.resumo,
         area_id=dados.area_id,
         situacao=RASCUNHO,
+        tcc_origem_id=origem.id if origem else None,
     )
     db.add(tcc)
     try:
@@ -688,13 +702,50 @@ def obter_para(db: Session, usuario: Usuario, tcc_id: int) -> Tcc:
     return tcc
 
 
-def listar_para(db: Session, usuario: Usuario) -> list[Tcc]:
+@dataclass
+class FiltroTcc:
+    busca: str | None = None
+    curso_id: int | None = None
+    periodo_id: int | None = None
+    orientador_id: int | None = None
+    situacao: str | None = None
+
+
+def _filtrar(consulta, f: FiltroTcc):
+    """RBN05.03: a busca e os filtros só estreitam o conjunto que a pessoa já pode consultar."""
+    termo = (f.busca or "").strip()
+    if termo:
+        alunos = select(Usuario.id).where(func.lower(Usuario.nome).contains(termo.lower(), autoescape=True))
+        consulta = consulta.where(
+            or_(
+                func.lower(Tcc.titulo).contains(termo.lower(), autoescape=True),
+                func.lower(Tcc.protocolo).contains(termo.lower(), autoescape=True),
+                Tcc.aluno_id.in_(alunos),
+            )
+        )
+    if f.curso_id is not None:
+        consulta = consulta.where(Tcc.aluno_id.in_(select(Aluno.usuario_id).where(Aluno.curso_id == f.curso_id)))
+    if f.periodo_id is not None:
+        consulta = consulta.where(Tcc.periodo_id == f.periodo_id)
+    if f.orientador_id is not None:
+        orientados = select(Orientacao.tcc_id).where(
+            Orientacao.papel == PAPEL_ORIENTADOR,
+            Orientacao.professor_id == f.orientador_id,
+            Orientacao.status.in_(VIGENTES),
+        )
+        consulta = consulta.where(Tcc.id.in_(orientados))
+    if f.situacao:
+        consulta = consulta.where(Tcc.situacao == f.situacao)
+    return consulta
+
+
+def listar_para(db: Session, usuario: Usuario, filtro: FiltroTcc | None = None) -> list[Tcc]:
     """RBN05.01: aluno vê os seus; orientador, os que orienta; professor, os da turma; coordenação, todos.
         O membro da banca vê os TCCs que avalia (SCRUM-77, D4); a pessoa externa, só os dos seus acessos vigentes."""
     consulta = select(Tcc).order_by(Tcc.atualizado_em.desc())
     if usuario.externo is not None:  # pessoa externa: só os TCCs dos acessos vigentes (RBN01.12, RBN01.13)
-        return list(db.scalars(consulta.where(Tcc.id.in_(acessos.tccs_do_escopo(usuario)))))
-    if PERFIL_COORDENADOR not in usuario.perfis:
+        consulta = consulta.where(Tcc.id.in_(acessos.tccs_do_escopo(usuario)))
+    elif PERFIL_COORDENADOR not in usuario.perfis:
         consulta = (
             consulta.outerjoin(Orientacao, Orientacao.tcc_id == Tcc.id)
             .join(Turma, Turma.id == Tcc.turma_id)
@@ -708,6 +759,8 @@ def listar_para(db: Session, usuario: Usuario) -> list[Tcc]:
             )
             .distinct()
         )
+    if filtro is not None:
+        consulta = _filtrar(consulta, filtro)
     return list(db.scalars(consulta))
 
 

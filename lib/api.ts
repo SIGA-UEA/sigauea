@@ -14,6 +14,7 @@ export class ErroApi extends Error {
   // link que não vale mais; ou o motivo de uma recusa do cadastro de TCC (sem matrícula, duplicado...)
   motivo?: "invalido" | "expirado" | "usado" | "sem_matricula" | "duplicado" | "nao_editavel" | string;
   campos_pendentes?: string[]; // 422 na submissão do TCC: o que ainda falta
+  pendentes?: { matricula_id: number; aluno: string; matricula: string }[]; // 422 ao encerrar a turma
 
   constructor(status: number, corpo: Record<string, unknown>) {
     super(
@@ -65,4 +66,38 @@ export async function api<T>(caminho: string, opcoes: Opcoes = {}): Promise<T> {
     );
   }
   return corpo as T;
+}
+
+// Baixa um PDF gerado na hora (agenda e relatório dos indicadores): salva com o nome que a API manda ou o padrão.
+// Com corpo, vai como POST em JSON. Erro da API vira ErroApi, como em api().
+export async function baixarPdf(caminho: string, nomePadrao: string, corpo?: unknown): Promise<void> {
+  let resposta: Response;
+  try {
+    resposta = await fetch(
+      `/api/v1${caminho}`,
+      corpo === undefined
+        ? undefined
+        : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corpo) },
+    );
+  } catch {
+    throw new ErroApi(0, { detail: "Sem conexão com o servidor." });
+  }
+  if (resposta.status === 401) {
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+    window.location.assign("/entrar?motivo=sessao");
+    return;
+  }
+  if (!resposta.ok) {
+    const corpo = await resposta.json().catch(() => null);
+    throw new ErroApi(resposta.status, corpo ?? { detail: "Não foi possível gerar o PDF." });
+  }
+  const nome = /filename="([^"]+)"/.exec(resposta.headers.get("content-disposition") ?? "")?.[1] ?? nomePadrao;
+  const url = URL.createObjectURL(await resposta.blob());
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = nome;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

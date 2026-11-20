@@ -10,6 +10,8 @@
 //   PUT    /defesas/{id}/ouvintes/{id}          corrigir matrícula
 //   DELETE /defesas/{id}/ouvintes/{id}          remover ouvinte, com "Desfazer"
 //   POST   /defesas/{id}/declaracoes            emitir a declaração de horas
+//   PUT    /defesas/{id}/banca/{membro}/presenca presença da banca (base do certificado, RBN09.17; decisão da
+//                                               equipe em 11/11/2026: o protótipo deixava "aguarda decisão")
 // Só a coordenação e o orientador do TCC veem esta seção: para os demais a API responde 403 e nada
 // aparece aqui (CA-05, CA-06).
 
@@ -22,6 +24,8 @@ import { Modal } from "@/components/modal";
 import { api, ErroApi } from "@/lib/api";
 import {
   dataHora,
+  NOME_PAPEL_BANCA,
+  type MembroPresenca,
   type Declaracao,
   type LoteOuvintes,
   type Ocorrencia,
@@ -87,6 +91,7 @@ export function SecaoPresenca({ defesaId }: { defesaId: number }) {
             Esta defesa foi cancelada. As ocorrências e os ouvintes registrados
             ficam só para consulta.
           </Aviso>
+          <PresencaBanca defesaId={defesaId} banca={dados.banca} aoMudar={carregar} leitura />
           <Ocorrencias
             defesaId={defesaId}
             lista={dados.ocorrencias}
@@ -107,6 +112,7 @@ export function SecaoPresenca({ defesaId }: { defesaId: number }) {
         </Aviso>
       ) : (
         <div className="flex flex-col gap-6">
+          <PresencaBanca defesaId={defesaId} banca={dados.banca} aoMudar={carregar} />
           <Ocorrencias
             defesaId={defesaId}
             lista={dados.ocorrencias}
@@ -116,6 +122,97 @@ export function SecaoPresenca({ defesaId }: { defesaId: number }) {
         </div>
       )}
     </section>
+  );
+}
+
+// ---------------------------------------------------------------- presença da banca (RBN09.17)
+
+function PresencaBanca({
+  defesaId,
+  banca,
+  aoMudar,
+  leitura = false,
+}: {
+  defesaId: number;
+  banca: MembroPresenca[];
+  aoMudar: () => void;
+  leitura?: boolean;
+}) {
+  const [salvando, setSalvando] = useState<number | null>(null);
+  const [erro, setErro] = useState("");
+  const faltam = banca.filter((m) => m.presente === null).length;
+
+  const marcar = (m: MembroPresenca, presente: boolean) => {
+    if (m.presente === presente) return;
+    setSalvando(m.membro_id);
+    setErro("");
+    api<MembroPresenca>(`/defesas/${defesaId}/banca/${m.membro_id}/presenca`, {
+      metodo: "PUT",
+      corpo: { presente },
+    })
+      .then(aoMudar)
+      .catch((e: ErroApi) => setErro(e.message))
+      .finally(() => setSalvando(null));
+  };
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div>
+        <h3 className="font-semibold">Presença da banca</h3>
+        <p className="text-[13px] text-suave">
+          Marque quem participou da sessão. A ata lista a presença e o certificado
+          de participação sai só para quem esteve presente.
+        </p>
+      </div>
+      <ul className="divide-y divide-borda rounded-lg border border-borda text-sm" aria-label="Presença da banca">
+        {banca.map((m) => (
+          <li key={m.membro_id} className="flex flex-wrap items-center justify-between gap-3 p-3">
+            <span className="min-w-0 break-words">
+              <span className="font-medium">{m.pessoa.nome}</span>{" "}
+              <span className="text-suave">· {NOME_PAPEL_BANCA[m.papel]}</span>
+            </span>
+            {leitura ? (
+              <Selo cor={m.presente ? "verde" : m.presente === false ? "cinza" : "ambar"}>
+                {m.presente ? "Presente" : m.presente === false ? "Ausente" : "Não marcada"}
+              </Selo>
+            ) : (
+              <span
+                role="radiogroup"
+                aria-label={`Presença de ${m.pessoa.nome}`}
+                className="inline-flex overflow-hidden rounded-full border border-borda"
+              >
+                {([true, false] as const).map((valor) => (
+                  <button
+                    key={String(valor)}
+                    type="button"
+                    role="radio"
+                    aria-checked={m.presente === valor}
+                    disabled={salvando === m.membro_id}
+                    onClick={() => marcar(m, valor)}
+                    className={`h-8 px-3 text-[13px] font-medium disabled:opacity-55 ${
+                      m.presente === valor
+                        ? valor
+                          ? "bg-verde-claro text-verde"
+                          : "bg-fundo text-texto"
+                        : "text-suave hover:bg-fundo"
+                    }`}
+                  >
+                    {valor ? "Presente" : "Ausente"}
+                  </button>
+                ))}
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+      {!leitura && faltam > 0 && (
+        <p className="text-[13px] text-ambar" aria-live="polite">
+          {faltam === 1 ? "Falta marcar 1 membro." : `Faltam marcar ${faltam} membros.`} A ata só é gerada com a
+          presença de todos registrada.
+        </p>
+      )}
+      {erro && <Aviso tipo="erro">{erro}</Aviso>}
+    </div>
   );
 }
 

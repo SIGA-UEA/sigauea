@@ -1,20 +1,35 @@
-"""ControladorAgenda (S04 · RBN14.01 e RBN14.04, RN08 e RN09): consulta e divulgação das defesas.
+"""ControladorAgenda (RBN14.01 a RBN14.04, RN08 e RN09): consulta, filtros, exportação e divulgação das defesas.
 
 A agenda lê a defesa vigente direto da tabela `defesa`, então remarcação, mudança de local ou
 link e cancelamento aparecem sem cópia que possa ficar desatualizada (RBN14.04). Publicar e retirar
-da agenda seguem o DS-FL05: a defesa continua marcada ao ser retirada.
+da agenda seguem o DS-FL05: a defesa continua marcada ao ser retirada. Os filtros por curso e período de datas
+(RBN14.02) valem para a lista e para o PDF exportado (RBN14.03), que só traz o que a agenda já divulga (RN08).
 """
 
-from datetime import date
+from datetime import date, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import agora
 from app.erros import ErroAPI
-from app.models import CANCELADA, CONFIRMADA, PAPEL_ORIENTADOR, REMARCADA, Defesa, HistoricoDefesa, Usuario
+from app.models import (
+    CANCELADA,
+    CONFIRMADA,
+    PAPEL_ORIENTADOR,
+    PERFIL_COORDENADOR,
+    PERFIL_ORIENTADOR,
+    PERFIL_PROFESSOR,
+    REMARCADA,
+    Aluno,
+    Curso,
+    Defesa,
+    HistoricoDefesa,
+    Tcc,
+    Usuario,
+)
 from app.schemas.agenda import ApresentacaoOut, CondicaoOut, CursoAgenda, DivulgacaoOut
-from app.services import auditoria
+from app.services import auditoria, documentos
 from app.services.defesas import _orientacao_aceita, pode_agendar
 from app.services.tccs import obter_para
 
@@ -31,7 +46,7 @@ def _apresentacao(d: Defesa) -> ApresentacaoOut:
         titulo=tcc.titulo,
         autor=tcc.aluno.usuario.nome,
         orientador=orientador.professor.nome if orientador else None,
-        curso=CursoAgenda(sigla=curso.sigla, nome=curso.nome),
+        curso=CursoAgenda(id=curso.id, sigla=curso.sigla, nome=curso.nome),
         formato=d.formato,
         data=d.data,
         inicio=d.inicio,
@@ -42,12 +57,67 @@ def _apresentacao(d: Defesa) -> ApresentacaoOut:
     )
 
 
-def listar(db: Session, periodo: str = "proximos") -> list[ApresentacaoOut]:
-    """RBN14.01 CA-01: ordem crescente de data e horário. "proximos" (DS-FL05-A passo 2) começa hoje."""
-    consulta = select(Defesa).where(Defesa.situacao.in_(VISIVEIS), Defesa.publicada.is_(True))
+def _conferir_datas(de: date | None, ate: date | None) -> None:
+    """RBN14.02: a data final não pode vir antes da inicial."""
+    if de is not None and ate is not None and ate < de:
+        raise ErroAPI(400, "Confira os campos destacados.",
+                      campos={"ate": "A data final deve ser igual ou posterior à inicial."})
+
+
+def intervalo(periodo: str, de: date | None, ate: date | None) -> tuple[date | None, date | None]:
+    """O período da TEL17 (DS-FL05-A, protótipo): "proximos" a partir de hoje, "semana" os próximos 7 dias e
+    "todas" inclusive as passadas. Datas escolhidas (RBN14.02) substituem o período."""
+    _conferir_datas(de, ate)
+    if de is not None or ate is not None:
+        return de, ate
+    hoje = date.today()
     if periodo == "proximos":
-        consulta = consulta.where(Defesa.data >= date.today())
+        return hoje, None
+    if periodo == "semana":
+        return hoje, hoje + timedelta(days=7)
+    return None, None
+
+
+def listar(db: Session, periodo: str = "proximos", *, curso: int | None = None, de: date | None = None,
+           ate: date | None = None) -> list[ApresentacaoOut]:
+    """consultarAgenda(curso, periodo): ordem crescente de data e horário (RBN14.01 CA-01), com os filtros de curso
+    e período (RBN14.02); sem resultado, a lista vem vazia."""
+    de, ate = intervalo(periodo, de, ate)
+    consulta = select(Defesa).where(Defesa.situacao.in_(VISIVEIS), Defesa.publicada.is_(True))
+    if de is not None:
+        consulta = consulta.where(Defesa.data >= de)
+    if ate is not None:
+        consulta = consulta.where(Defesa.data <= ate)
+    if curso is not None:
+        consulta = (consulta.join(Tcc, Tcc.id == Defesa.tcc_id).join(Aluno, Aluno.usuario_id == Tcc.aluno_id)
+                    .where(Aluno.curso_id == curso))
     return [_apresentacao(d) for d in db.scalars(consulta.order_by(Defesa.data, Defesa.inicio, Defesa.id))]
+
+
+# =================================================================== RBN14.03 · exportar em PDF
+
+PERFIS_EXPORTACAO = (PERFIL_COORDENADOR, PERFIL_PROFESSOR, PERFIL_ORIENTADOR)
+
+
+def exportar_pdf(db: Session, usuario: Usuario, periodo: str = "proximos", *, curso: int | None = None,
+                 de: date | None = None, ate: date | None = None) -> tuple[bytes, str]:
+    """gerarPdfAgenda(curso, de, ate) (RBN14.03): a agenda com os filtros da tela, para imprimir ou compartilhar. Só
+    coordenação, professor da disciplina e orientador (403 aos demais). O arquivo usa os mesmos dados da agenda, sem
+    contato, matrícula ou nota (RN08), e a exportação fica no log (RNF03)."""
+    if not any(p in usuario.perfis for p in PERFIS_EXPORTACAO):
+        raise ErroAPI(403, "A exportação da agenda é da coordenação, dos professores da disciplina e dos orientadores.")
+    de, ate = intervalo(periodo, de, ate)
+    itens = listar(db, periodo, curso=curso, de=de, ate=ate)
+    nome_curso = None
+    if curso is not None:
+        c = db.get(Curso, curso)
+        nome_curso = c.nome if c else None
+    conteudo = documentos.agenda_pdf(itens, curso=nome_curso, de=de, ate=ate, gerado_por=usuario.nome,
+                                     gerado_em=agora())
+    auditoria.registrar(db, ator_id=usuario.id, acao="agenda_exportada", entidade="agenda",
+                        novo=f"curso={curso or 'todos'}; de={de or '-'}; ate={ate or '-'}; itens={len(itens)}")
+    db.commit()
+    return conteudo, f"agenda-de-apresentacoes-{date.today().isoformat()}.pdf"
 
 
 # =================================================================== DS-FL05 · publicar na agenda

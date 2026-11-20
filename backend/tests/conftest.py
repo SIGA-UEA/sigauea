@@ -41,10 +41,13 @@ _HASH = gerar_hash_senha(SENHA)
 
 def _soltar_auto_referencias() -> None:
     """No SQLite, DROP TABLE apaga linha a linha conferindo as chaves estrangeiras: o suplente convocado
-    aponta para o titular na mesma tabela (banca_membro.substitui_membro_id, SCRUM-67) e travaria a limpeza."""
+    aponta para o titular na mesma tabela (banca_membro.substitui_membro_id, SCRUM-67) e travaria a limpeza.
+    O mesmo vale para o TCC2 que aponta para o TCC1 de origem (tcc.tcc_origem_id, SCRUM-45)."""
     with engine.begin() as conexao:
         if inspect(conexao).has_table("banca_membro"):
             conexao.execute(text("UPDATE banca_membro SET substitui_membro_id = NULL"))
+        if inspect(conexao).has_table("tcc"):
+            conexao.execute(text("UPDATE tcc SET tcc_origem_id = NULL"))
 
 
 @pytest.fixture(autouse=True)
@@ -75,10 +78,11 @@ def caixa(monkeypatch):
     """E-mails "enviados" durante o teste, no lugar do envio real."""
     enviados: list[dict] = []
 
-    def entregar(destinatario, assunto, corpo):
+    def entregar(destinatario, assunto, corpo, anexo=None):
         token = re.search(r"token=(\S+)", corpo)
         enviados.append(
-            {"para": destinatario, "assunto": assunto, "token": token and token[1]})
+            {"para": destinatario, "assunto": assunto, "token": token and token[1],
+             "anexo": anexo and anexo[0], "anexo_pdf": anexo is not None and anexo[1].startswith(b"%PDF")})
 
     monkeypatch.setattr(email, "entregar", entregar)
     return enviados

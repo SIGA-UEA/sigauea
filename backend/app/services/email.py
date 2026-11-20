@@ -7,8 +7,11 @@ FastAPI). Se falhar, o cadastro continua valendo: a linha fica com status
 
 Rotinas sem requisição (o lembrete diário da defesa, RBN09.06) usam registrar() e chamam
 processar() elas mesmas, depois de gravar.
+
+Anexo: o certificado de participação (RBN09.17) vai como arquivo PDF anexado, um par (nome, bytes).
 """
 
+import base64
 import json
 import smtplib
 import urllib.request
@@ -34,10 +37,12 @@ def enfileirar(
     corpo: str,
     entidade: str | None = None,
     entidade_id: int | None = None,
-) -> None:
+    anexo: tuple[str, bytes] | None = None,
+) -> NotificacaoEmail:
     """Registra a pendência e agenda o envio para depois da resposta."""
     notificacao = registrar(db, usuario, tipo, entidade, entidade_id)
-    tarefas.add_task(processar, notificacao.id, assunto, corpo)
+    tarefas.add_task(processar, notificacao.id, assunto, corpo, anexo)
+    return notificacao
 
 
 def registrar(
@@ -56,7 +61,7 @@ def registrar(
     return notificacao
 
 
-def processar(notificacao_id: int, assunto: str, corpo: str) -> None:
+def processar(notificacao_id: int, assunto: str, corpo: str, anexo: tuple[str, bytes] | None = None) -> None:
     """Tenta enviar e grava o resultado. Roda fora da requisição, com sessão própria."""
     with SessionLocal() as db:
         notificacao = db.get(NotificacaoEmail, notificacao_id)
@@ -64,7 +69,10 @@ def processar(notificacao_id: int, assunto: str, corpo: str) -> None:
             return
         notificacao.tentativas += 1
         try:
-            entregar(notificacao.destinatario, assunto, corpo)
+            if anexo is None:
+                entregar(notificacao.destinatario, assunto, corpo)
+            else:
+                entregar(notificacao.destinatario, assunto, corpo, anexo=anexo)
             notificacao.status = "enviado"
             notificacao.enviado_em = agora()
             notificacao.erro = None
@@ -87,14 +95,15 @@ def _marcar_convite(db: Session, notificacao: NotificacaoEmail) -> None:
         membro.convite_enviado_em = notificacao.enviado_em
 
 
-def entregar(destinatario: str, assunto: str, corpo: str) -> None:
+def entregar(destinatario: str, assunto: str, corpo: str, anexo: tuple[str, bytes] | None = None) -> None:
     """Envia pela API da Brevo (se houver chave) ou por SMTP. Sem nenhum dos dois
     (desenvolvimento), imprime no terminal."""
     if config.BREVO_API_KEY:
-        _entregar_brevo(destinatario, assunto, corpo)
+        _entregar_brevo(destinatario, assunto, corpo, anexo)
         return
     if not config.SMTP_HOST:
-        print(f"\n--- E-mail para {destinatario} ---\n{assunto}\n\n{corpo}\n---\n", flush=True)
+        extra = f"\n[anexo: {anexo[0]}, {len(anexo[1])} bytes]" if anexo else ""
+        print(f"\n--- E-mail para {destinatario} ---\n{assunto}\n\n{corpo}{extra}\n---\n", flush=True)
         return
 
     mensagem = EmailMessage()
@@ -102,6 +111,8 @@ def entregar(destinatario: str, assunto: str, corpo: str) -> None:
     mensagem["To"] = destinatario
     mensagem["Subject"] = assunto
     mensagem.set_content(corpo)
+    if anexo is not None:
+        mensagem.add_attachment(anexo[1], maintype="application", subtype="pdf", filename=anexo[0])
     with smtplib.SMTP(config.SMTP_HOST, config.SMTP_PORTA, timeout=15) as smtp:
         smtp.starttls()
         if config.SMTP_USUARIO:
@@ -109,7 +120,7 @@ def entregar(destinatario: str, assunto: str, corpo: str) -> None:
         smtp.send_message(mensagem)
 
 
-def _entregar_brevo(destinatario: str, assunto: str, corpo: str) -> None:
+def _entregar_brevo(destinatario: str, assunto: str, corpo: str, anexo: tuple[str, bytes] | None = None) -> None:
     """Envio por HTTPS: serve onde a hospedagem bloqueia as portas de SMTP (Render grátis)."""
     nome, endereco = parseaddr(config.EMAIL_REMETENTE)
     dados = {
@@ -118,6 +129,8 @@ def _entregar_brevo(destinatario: str, assunto: str, corpo: str) -> None:
         "subject": assunto,
         "textContent": corpo,
     }
+    if anexo is not None:
+        dados["attachment"] = [{"name": anexo[0], "content": base64.b64encode(anexo[1]).decode()}]
     pedido = urllib.request.Request(
         "https://api.brevo.com/v3/smtp/email",
         data=json.dumps(dados).encode(),

@@ -4,7 +4,9 @@
 // da coordenação (DS-FL02-B), banca e defesa (TEL10/TEL11, ver banca.tsx), presença e ocorrências
 // (TEL19, ver presenca.tsx) e histórico de situações (RNF03). Quem pode ver é decidido pela API (404 para
 // os demais, RN07). Para quem está na banca, a seção "Minha avaliação" (TEL12, ver avaliacao.tsx);
-// para o orientador, "Consolidar resultado" (TEL12, ver resultado.tsx). A orientação, com as ações da coordenação e
+// para o orientador, "Consolidar resultado" e, para aluno, banca e coordenação, o resultado confirmado (TEL12, ver
+// resultado.tsx); a ata, a Folha de Aprovação e os certificados ficam em "Ata e certificados" (TEL13, ver documentos.tsx); as
+// correções, a versão final e a conclusão do TCC ficam em "Correções e conclusão" (TEL14, ver correcoes.tsx). A orientação, com as ações da coordenação e
 // do orientador sobre o coorientador (DS-FL03-D), fica em orientacao.tsx. A pessoa externa (RBN01.12 e RBN01.13) vê
 // só os dados do trabalho e, se for da banca, a sua avaliação: a defesa vem dos acessos da sessão (/auth/me).
 
@@ -16,11 +18,15 @@ import { Botao } from "@/components/botao";
 import { SeloSituacao } from "@/components/situacao-tcc";
 import { api, ErroApi } from "@/lib/api";
 import { useSessao } from "@/lib/sessao";
+import { SecaoHistorico, SecaoSituacao, SecaoTarefas } from "./acompanhamento";
+import { SecaoArtigo } from "./artigo";
 import { SecaoAvaliacao } from "./avaliacao";
 import { SecaoBanca } from "./banca";
+import { SecaoCorrecoes } from "./correcoes";
+import { SecaoDocumentos } from "./documentos";
 import { SecaoOrientacao } from "./orientacao";
 import { SecaoPresenca } from "./presenca";
-import { SecaoResultado } from "./resultado";
+import { SecaoResultado, SeloResultadoDefesa } from "./resultado";
 import { dataHora, NOME_SITUACAO_EDITORIAL, NOME_SITUACAO_TCC, type Banca, type SituacaoTcc, type Tcc } from "@/lib/tipos";
 
 export default function PaginaTcc() {
@@ -34,6 +40,8 @@ export default function PaginaTcc() {
   const [defesaId, setDefesaId] = useState<number | null>(null);
   // Muda a cada avaliação enviada: a consolidação recarrega sem precisar abrir a página de novo.
   const [envios, setEnvios] = useState(0);
+  // Muda quando o orientador confirma ou retifica o resultado: o selo da capa e a ata se atualizam.
+  const [versaoResultado, setVersaoResultado] = useState(0);
 
   const recarregar = () => api<Tcc>(`/tccs/${id}`).then(setTcc).catch((e: ErroApi) => setErro(e.message));
 
@@ -72,7 +80,12 @@ export default function PaginaTcc() {
           <h1 className="text-2xl font-semibold break-words">{tcc.titulo}</h1>
           {tcc.subtitulo && <p className="text-suave">{tcc.subtitulo}</p>}
         </div>
-        <SeloSituacao situacao={tcc.situacao} />
+        <span className="flex flex-wrap items-center gap-2">
+          <SeloSituacao situacao={tcc.situacao} />
+          {(defesaId ?? defesaExterna) !== null && (
+            <SeloResultadoDefesa defesaId={(defesaId ?? defesaExterna)!} recarga={versaoResultado} />
+          )}
+        </span>
       </header>
 
       {tem("aluno") && rascunho && (
@@ -134,6 +147,10 @@ export default function PaginaTcc() {
       </section>
 
       <SecaoOrientacao tcc={tcc} aoMudar={recarregar} />
+      {!externo && <SecaoSituacao tcc={tcc} aoMudar={recarregar} />}
+
+      {/* TEL15 (DS-FL08): só na modalidade artigo */}
+      {tcc.modalidade === "ARTIGO" && !externo && <SecaoArtigo tccId={id} aoMudar={recarregar} />}
 
       {tcc.decisoes.length > 0 && (
         <section className="rounded-xl border border-borda bg-superficie p-5">
@@ -155,7 +172,12 @@ export default function PaginaTcc() {
       )}
 
       {externo ? (
-        defesaExterna !== null && <SecaoAvaliacao defesaId={defesaExterna} aoEnviar={() => setEnvios((n) => n + 1)} />
+        defesaExterna !== null && (
+          <>
+            <SecaoAvaliacao defesaId={defesaExterna} aoEnviar={() => setEnvios((n) => n + 1)} />
+            <SecaoDocumentos defesaId={defesaExterna} />
+          </>
+        )
       ) : (
         <>
           <SecaoBanca tccId={id} />
@@ -163,12 +185,23 @@ export default function PaginaTcc() {
             <>
               <SecaoPresenca defesaId={defesaId} />
               <SecaoAvaliacao defesaId={defesaId} aoEnviar={() => setEnvios((n) => n + 1)} />
-              <SecaoResultado defesaId={defesaId} envios={envios} />
+              <SecaoResultado
+                defesaId={defesaId}
+                envios={envios}
+                aoMudar={() => setVersaoResultado((n) => n + 1)}
+              />
+              <SecaoDocumentos defesaId={defesaId} recarga={versaoResultado} />
+              <SecaoCorrecoes tccId={id} recarga={versaoResultado} aoConcluir={recarregar} />
             </>
           )}
         </>
       )}
 
+      {!externo && <SecaoTarefas tcc={tcc} />}
+
+      {!externo && <SecaoHistorico tccId={tcc.id} versao={tcc.atualizado_em} />}
+
+      {externo && (
       <section className="rounded-xl border border-borda bg-superficie p-5">
         <h2 className="mb-3 font-semibold">Histórico</h2>
         {tcc.historico.length === 0 ? (
@@ -188,6 +221,7 @@ export default function PaginaTcc() {
           </ol>
         )}
       </section>
+      )}
     </div>
   );
 }

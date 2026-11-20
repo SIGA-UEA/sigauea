@@ -8,6 +8,7 @@ from app.schemas.defesa import Formato
 
 
 class CursoAgenda(BaseModel):
+    id: int
     sigla: str
     nome: str
 

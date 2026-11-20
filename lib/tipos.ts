@@ -138,8 +138,13 @@ export type Turma = {
   periodo: Periodo;
   professor: Pessoa;
   encerrada: boolean;
+  encerrada_em: string | null;
+  // O professor responsável vê o botão "Encerrar turma" enquanto ela está aberta (RBN08.05).
+  pode_encerrar: boolean;
   alunos: Matricula[];
 };
+// 422 ao encerrar a turma: os alunos que ainda estão Matriculados (RBN08.05 CA-02).
+export type PendenteEncerramento = { matricula_id: number; aluno: string; matricula: string };
 
 export type Vinculo = {
   id: number;
@@ -181,11 +186,19 @@ export type Tcc = {
   orientador: Vinculo | null;
   coorientador: Vinculo | null;
   artigo: Artigo | null;
+  tcc_origem_id?: number | null; // no TCC2, o TCC1 que lhe deu origem (RBN08.04)
   submetido_em: string | null;
   criado_em: string;
   atualizado_em: string;
   pendencias: string[];
-  historico: { situacao_anterior: string | null; situacao_nova: string; usuario: Pessoa; registrado_em: string }[];
+  desistencia_motivo: string | null;
+  historico: {
+    situacao_anterior: string | null;
+    situacao_nova: string;
+    usuario: Pessoa;
+    registrado_em: string;
+    observacao: string | null;
+  }[];
   decisoes: Decisao[]; // decisões da coordenação, da mais antiga para a mais nova (RBN04.05)
 };
 
@@ -227,6 +240,20 @@ export type Solicitacao = {
   respondido_em: string | null;
   motivo_recusa: string | null;
   tcc: Tcc;
+};
+
+// Acompanhamento do TCC (RAN05): linha do tempo e tarefas do orientador
+export type TipoEvento = "SUBMISSAO" | "PARECER" | "VINCULO" | "VERSAO" | "SITUACAO";
+export type Evento = { tipo: TipoEvento; descricao: string; detalhe: string | null; autor: Pessoa | null; em: string };
+export type StatusTarefa = "PENDENTE" | "ENTREGUE" | "ATRASADA";
+export type Tarefa = {
+  id: number;
+  descricao: string;
+  prazo: string;
+  status: StatusTarefa;
+  entregue_em: string | null;
+  cadastrada_por: Pessoa;
+  criado_em: string;
 };
 
 export const NOME_SITUACAO_TCC: Record<SituacaoTcc, string> = {
@@ -357,7 +384,7 @@ export type Apresentacao = {
   titulo: string;
   autor: string;
   orientador: string | null;
-  curso: { sigla: string; nome: string };
+  curso: Curso; // o id serve ao filtro por curso (RBN14.02)
   formato: FormatoDefesa;
   data: string;
   inicio: string;
@@ -443,6 +470,14 @@ export type Presenca = {
   ocorrencias: Ocorrencia[];
   ouvintes: Ouvinte[];
   prontos: number;
+  banca: MembroPresenca[]; // presença da banca (base do certificado, RBN09.17)
+};
+
+export type MembroPresenca = {
+  membro_id: number;
+  papel: PapelBanca;
+  pessoa: { id: number; nome: string };
+  presente: boolean | null; // null: ainda não marcada
 };
 
 export type LoteOuvintes = {
@@ -500,6 +535,8 @@ export type ConsultaResultado = {
   pendentes: { membro_id: number; papel: PapelAvaliador; pessoa: { id: number; nome: string } }[];
   consolidacao: { notas: NotaDoMembro[]; media: number; regra: RegraExcecao; nota_final: number } | null;
   resultado: ResultadoDefesa | null; // [resultado já confirmado] (RBN09.12)
+  pode_confirmar: boolean; // o orientador confirma e retifica; os demais só consultam (RBN09.13)
+  defesa_realizada: boolean; // "Defesa realizada. Aguarde as avaliações e o resultado" (E1)
 };
 
 // ---------------------------------------------------------------- SCRUM-70 · resultado da defesa (RBN09.12)
@@ -573,3 +610,205 @@ export function destinoDaProposta(p: PropostaResumo) {
     ? `Professores da área ${p.area?.nome ?? ""}`.trim()
     : p.professores.map((x) => x.nome).join(", ");
 }
+
+// ---------------------------------------------------------------- SCRUM-72 a 75 · documentos da defesa
+// Espelha backend/app/schemas/documento.py.
+
+export type VersaoDocumento = {
+  id: number;
+  versao: number;
+  vigente: boolean;
+  gerado_em: string;
+  substituido_em: string | null;
+};
+
+export type DocumentoDefesa = {
+  aplica: boolean;
+  disponivel: boolean;
+  motivo: string | null;
+  faltas: string[];
+  desatualizada: boolean;
+  presenca_mudou: boolean; // desatualizada pela presença da banca, e não pela retificação
+  versoes: VersaoDocumento[];
+};
+
+export type SituacaoEnvio = "NAO_ENVIADO" | "PENDENTE" | "ENVIADO" | "FALHA";
+
+export type CertificadoParticipante = {
+  membro_id: number;
+  papel: PapelBanca;
+  pessoa: { id: number; nome: string };
+  presente: boolean | null;
+  pode_emitir: boolean;
+  motivo: string | null;
+  certificado_id: number | null;
+  emitido_em: string | null;
+  envio: SituacaoEnvio;
+};
+
+export type DocumentosDefesa = {
+  defesa_id: number;
+  pode_gerar: boolean;
+  resultado_confirmado: boolean;
+  ata: DocumentoDefesa;
+  folha: DocumentoDefesa;
+  certificados: CertificadoParticipante[];
+  meus_certificados: VersaoDocumento[];
+};
+
+// ---------------------------------------------------------------- Sprint S05 · correções e conclusão (TEL14)
+// Espelha backend/app/schemas/correcoes.py (RBN11.01 a RBN11.04 · DS-FL07).
+export type SituacaoCorrecao = "PENDENTE" | "ATENDIDA" | "APROVADA" | "DEVOLVIDA";
+export const NOME_SITUACAO_CORRECAO: Record<SituacaoCorrecao, string> = {
+  PENDENTE: "Pendente",
+  ATENDIDA: "Atendida pelo aluno",
+  APROVADA: "Aprovada",
+  DEVOLVIDA: "Devolvida ao aluno",
+};
+export type CorrecaoTcc = {
+  id: number;
+  descricao: string;
+  avaliador: Pessoa;
+  papel: string;
+  situacao: SituacaoCorrecao;
+  justificativa: string | null;
+  criada_em: string;
+  atendida_em: string | null;
+  decidida_por: Pessoa | null;
+  decidida_em: string | null;
+};
+export type VersaoFinal = {
+  id: number;
+  versao: number;
+  nome_arquivo: string;
+  tamanho_bytes: number;
+  sha256: string;
+  enviado_em: string;
+  entregue_com_atraso: boolean;
+  atraso_aceito: boolean | null;
+};
+export type Correcoes = {
+  tcc_id: number;
+  defesa_id: number | null;
+  resultado: string | null;
+  situacao_tcc: string;
+  concluido_em: string | null;
+  prazo: string | null;
+  prazo_motivo: string | null;
+  anuencia_em: string | null;
+  professor_responsavel: Pessoa;
+  correcoes: CorrecaoTcc[];
+  versao_final: VersaoFinal | null;
+  pendencias: string[];
+  permissoes: {
+    registrar: boolean;
+    marcar_atendida: boolean;
+    enviar_versao_final: boolean;
+    dar_anuencia: boolean;
+    decidir: boolean;
+    alterar_prazo: boolean;
+  };
+};
+// ---------------------------------------------------------------- Sprint S05 · publicação do artigo (TEL15)
+// Espelha backend/app/schemas/publicacao.py.
+
+export type TipoVeiculo = Artigo["tipo_veiculo"];
+
+export type RegistroPublicacao = {
+  id: number;
+  situacao: SituacaoEditorial;
+  data: string; // AAAA-MM-DD
+  responsavel: Pessoa | null;
+  registrado_em: string;
+  veiculo: string;
+  tipo_veiculo: TipoVeiculo;
+  qualis: string | null;
+  link: string | null;
+};
+
+export type Publicacao = {
+  tcc_id: number;
+  pode_registrar: boolean;
+  atual: { veiculo: string; tipo_veiculo: TipoVeiculo; qualis: string | null; link: string | null; situacao: SituacaoEditorial } | null;
+  historico: RegistroPublicacao[]; // do mais recente para o mais antigo
+};
+
+export const ESTRATOS_QUALIS = ["A1", "A2", "A3", "A4", "B1", "B2", "B3", "B4", "C"] as const;
+
+// ---------------------------------------------------------------- SCRUM-88 a 92 · indicadores (RBN13.01 a RBN13.05)
+// Espelha backend/app/schemas/indicador.py. Nenhum campo traz nome de aluno (RN18).
+
+export type FiltrosIndicador = {
+  periodo: boolean;
+  curso: boolean;
+  etapa: boolean;
+  turma: boolean;
+  orientador: boolean;
+};
+
+export type EscopoIndicadores = {
+  perfis: string[];
+  descricao: [string, string][];
+  periodo_vigente_id: number | null;
+  filtros: FiltrosIndicador;
+  periodos: { id: number; codigo: string; vigente: boolean }[];
+  cursos: { id: number; sigla: string; nome: string }[];
+  turmas: { id: number; codigo: string }[];
+  orientadores: { id: number; nome: string }[];
+  filtros_indicadores: Record<IndicadorTel16, FiltrosDoIndicador>; // os filtros de cada indicador (SCRUM-90 a 92)
+  professores: { id: number; nome: string }[]; // filtro "professor" das bancas (só coordenação)
+};
+
+export type IndicadorTel16 = "situacao" | "producao" | "desistencias" | "bancas";
+
+export type FiltrosDoIndicador = FiltrosIndicador & {
+  intervalo: boolean;
+  professor: boolean;
+  papel: boolean;
+};
+
+export type PorEtapa = { TCC1: number; TCC2: number };
+
+export type IndicadorSituacao = {
+  periodo_id: number | null;
+  total: PorEtapa;
+  situacoes: { situacao: string; total: PorEtapa }[];
+  orientacoes: { orientador: { id: number; nome: string }; total: PorEtapa }[];
+  sem_dados: boolean;
+};
+
+// SCRUM-90 · RBN13.03: usa SituacaoEditorial e NOME_SITUACAO_EDITORIAL lá de cima; RECUSADO fica como 5º grupo,
+// pendente de decisão do PO (D3)
+export type IndicadorProducao = {
+  periodo_id: number | null;
+  total: number;
+  situacoes: { situacao: SituacaoEditorial; total: number }[];
+  sem_dados: boolean;
+};
+
+// SCRUM-91 · RBN13.04: a evolução só vem para a coordenação (null nos demais perfis)
+export type IndicadorDesistencias = {
+  periodo_id: number | null;
+  total: number;
+  por_curso: { curso: { id: number; sigla: string; nome: string }; total: number }[];
+  evolucao: { periodo: { id: number; codigo: string; vigente: boolean }; total: number }[] | null;
+  sem_dados: boolean;
+};
+
+// SCRUM-92 · RBN13.05: usa PapelBanca lá de cima; o suplente só conta se foi convocado (RN20)
+export type PorPapel = Record<PapelBanca, number>;
+
+export type IndicadorBancas = {
+  periodo_id: number | null;
+  total: PorPapel;
+  professores: { professor: { id: number; nome: string }; total: PorPapel }[];
+  sem_dados: boolean;
+};
+
+// DS-FL08-C: o painel (GET /indicadores)
+export type PainelIndicadores = {
+  periodo_id: number | null;
+  situacao: IndicadorSituacao;
+  producao: IndicadorProducao;
+  bancas: IndicadorBancas;
+};

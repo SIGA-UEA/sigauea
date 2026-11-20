@@ -201,10 +201,11 @@ def test_ct_01_12_03_telas_de_gestao_e_agenda_negadas(defesa, ana, rota):
 
 
 def test_rotas_da_propria_defesa_fora_da_lista_tambem_sao_negadas(defesa, ana):
-    """A banca (com e-mails e docentes), a presença e o resultado da própria defesa ficam de fora (32-33-a)."""
+    """A banca (com e-mails e docentes) e a presença da própria defesa ficam de fora (32-33-a). O resultado e os
+    documentos passaram a ser liberados com o PR #19 (ver test_documentos_defesa.py)."""
     tcc, defesa_id = defesa["tcc"]["id"], defesa["defesa"]["id"]
     for rota in (f"/api/v1/tccs/{tcc}/banca", f"/api/v1/defesas/{defesa_id}/ocorrencias",
-                 f"/api/v1/defesas/{defesa_id}/resultado", f"/api/v1/defesas/{defesa_id}/divulgacao"):
+                 f"/api/v1/defesas/{defesa_id}/divulgacao"):
         assert ana.get(rota).status_code == 403, rota
 
 
@@ -496,3 +497,20 @@ def test_a19_aluno_nao_troca_nem_tira_o_coorientador_externo(beto, db):
     assert beto["aluno"].put(url, json=corpo).status_code == 409
     assert beto["aluno"].put(url, json={**corpo, "coorientador_id": beto["ids"]["ricardo"]}).status_code == 409
     assert beto["olga"].get(url).json()["coorientador"]["id"] == beto["vinculo"]["id"]
+
+# ---------------------------------------------------------------- decisão 32-i · correções da banca (SCRUM-81)
+
+
+def test_avaliadora_externa_registra_e_ve_as_correcoes(defesa, ana, depois_da_defesa, db):
+    """Decisão 32-i: com a SCRUM-81, a Ana (avaliadora externa) vê a aba Correções e registra a exigência."""
+    d = {**defesa, "ana": ana}
+    for quem in ("olga", "otto", "ana"):
+        assert _enviar(d, quem).status_code == 200, quem
+    tcc = defesa["tcc"]["id"]
+    r = defesa["olga"].post(f"/api/v1/defesas/{defesa['defesa']['id']}/resultado",
+                            json={**RESULTADO, "resultado": "APROVADO_COM_CORRECOES"})
+    assert r.status_code == 200, r.json()
+    assert ana.get(f"/api/v1/tccs/{tcc}/correcoes").status_code == 200
+    r = ana.post(f"/api/v1/tccs/{tcc}/correcoes", json={"descricao": "Revisar a análise dos resultados."})
+    assert r.status_code == 201, r.json()
+    assert [c["avaliador"]["nome"] for c in r.json()["correcoes"]] == ["Ana Externa"]

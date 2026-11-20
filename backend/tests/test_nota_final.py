@@ -141,12 +141,16 @@ def test_antes_das_avaliacoes_todos_os_tres_aparecem_como_pendentes(defesa):
 
 
 def test_so_o_orientador_consulta_a_consolidacao(defesa, coord, depois_da_defesa):
-    """DS-FL06: o ator é o orientador. Avaliador, aluno e professor da turma veem o TCC, mas recebem 403
-    (o avaliador vê só a própria avaliação, RBN10.02 CA-02)."""
+    """DS-FL06: o ator é o orientador. Avaliadores, aluno e coordenação consultam o resultado (RBN09.13), mas antes
+    da confirmação não veem a consolidação nem as notas (CA-02 do RBN09.13; RBN10.02 CA-02)."""
     _notas(defesa, "7.0", "7.0", "7.0")
-    for quem in ("otto", "paulo", "aluno"):
-        assert _resultado(defesa, quem).status_code == 403
-    assert coord.get(f"/api/v1/defesas/{defesa['defesa']['id']}/resultado").status_code == 403
+    url = f"/api/v1/defesas/{defesa['defesa']['id']}/resultado"
+    for cliente in (defesa["otto"], defesa["paulo"], defesa["aluno"], coord):
+        r = cliente.get(url)
+        assert r.status_code == 200
+        assert (r.json()["consolidacao"], r.json()["pendentes"], r.json()["resultado"]) == (None, [], None)
+        assert r.json()["pode_confirmar"] is False
+    assert _resultado(defesa).json()["consolidacao"]["nota_final"] == 7.0
 
 
 def test_defesa_inexistente_da_404(defesa):

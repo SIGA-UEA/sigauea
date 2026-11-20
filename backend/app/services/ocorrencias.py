@@ -3,7 +3,8 @@
 Faz o papel do ControladorOcorrencias do diagrama de classes (MOD04): consultarOcorrencias,
 registrarOcorrencia, corrigirOcorrencia, registrarOuvinte, registrarOuvintesEmLote, corrigirOuvinte,
 removerOuvinte e emitirDeclaracao. Os comentários "msg N" apontam para a mensagem do DS-FL09,
-DS-FL09-A ou DS-FL09-B.
+DS-FL09-A ou DS-FL09-B. A presença da banca (registrarPresencaBanca) não tem diagrama: entrou por decisão da
+equipe em 11/11/2026, para o certificado de participação sair só para quem esteve na sessão (RBN09.17).
 
 Quem pode (CA-05 e CA-06): a coordenação e o orientador do TCC. Os demais que veem o TCC recebem 403;
 quem nem vê o TCC recebe 404 (RN07). A lista de ouvintes nunca sai daqui para a agenda pública (RN08).
@@ -24,9 +25,12 @@ from app.erros import ErroAPI
 from app.models import (
     ACEITA,
     CANCELADA,
+    DOC_CERTIFICADO,
     DOC_DECLARACAO,
     PAPEL_ORIENTADOR,
+    PAPEL_SUPLENTE,
     PERFIL_COORDENADOR,
+    BancaMembro,
     Defesa,
     DocumentoOficial,
     OcorrenciaDefesa,
@@ -36,6 +40,8 @@ from app.models import (
 )
 from app.schemas.ocorrencia import (
     DeclaracaoOut,
+    MembroPresencaOut,
+    PresencaBancaEntrada,
     LinhaComProblema,
     LoteEntrada,
     LoteOut,
@@ -163,7 +169,46 @@ def consultar_ocorrencias(db: Session, usuario: Usuario, defesa_id: int) -> Pres
         ocorrencias=[_ocorrencia_out(o) for o in ocorrencias],
         ouvintes=ouvintes,
         prontos=sum(1 for o in ouvintes if o.pronto),
+        banca=[_presenca_out(m) for m in participantes(defesa)],
     )
+
+
+# =================================================================== presença da banca (RBN09.17)
+
+
+def participantes(defesa: Defesa) -> list[BancaMembro]:
+    """Membros que participam da sessão: todos, menos o suplente não convocado e o titular que o suplente
+    convocado substituiu (RN20)."""
+    substituidos = {m.substitui_membro_id for m in defesa.membros if m.convocado_em is not None}
+    return [m for m in defesa.membros
+            if m.id not in substituidos and (m.papel != PAPEL_SUPLENTE or m.convocado_em is not None)]
+
+
+def _presenca_out(m: BancaMembro) -> MembroPresencaOut:
+    return MembroPresencaOut(membro_id=m.id, papel=m.papel, pessoa=pessoa(m.usuario), presente=m.presente)
+
+
+def registrar_presenca_banca(
+    db: Session, usuario: Usuario, defesa_id: int, membro_id: int, dados: PresencaBancaEntrada
+) -> MembroPresencaOut:
+    """PUT /defesas/{id}/banca/{membroId}/presenca: marca o membro presente ou ausente na sessão, com as mesmas
+    regras das ocorrências (coordenação ou orientador; defesa iniciada e não cancelada)."""
+    defesa = _para_gravar(db, usuario, defesa_id)
+    membro = next((m for m in participantes(defesa) if m.id == membro_id), None)
+    if membro is None:
+        raise ErroAPI(404, "Membro da banca não encontrado nesta defesa.")
+    anterior = membro.presente
+    if anterior != dados.presente and db.scalar(select(DocumentoOficial.id).where(
+            DocumentoOficial.tipo == DOC_CERTIFICADO, DocumentoOficial.membro_id == membro.id,
+            DocumentoOficial.vigente.is_(True))) is not None:
+        raise ErroAPI(409, "O certificado deste membro já foi emitido; a presença não pode mais ser alterada.")
+    membro.presente = dados.presente
+    auditoria.registrar(db, ator_id=usuario.id, acao="registrar_presenca_banca", entidade="banca_membro",
+                        entidade_id=membro.id, campo="presente",
+                        anterior=None if anterior is None else ("presente" if anterior else "ausente"),
+                        novo="presente" if dados.presente else "ausente")
+    db.commit()
+    return _presenca_out(membro)
 
 
 # =================================================================== DS-FL09 e DS-FL09-A · ocorrências

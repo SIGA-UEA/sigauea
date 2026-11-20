@@ -80,6 +80,20 @@ class LoteOut(BaseModel):
     linhas_com_problema: list[LinhaComProblema]
 
 
+class MembroPresencaOut(BaseModel):
+    """Presença de um membro da banca na sessão (banca_membro.presente). Nulo enquanto não marcada. O
+    certificado de participação só sai para quem está presente (RBN09.17 CA-01 e CA-03)."""
+
+    membro_id: int
+    papel: str
+    pessoa: PessoaOut
+    presente: bool | None
+
+
+class PresencaBancaEntrada(BaseModel):
+    presente: bool
+
+
 class PresencaOut(BaseModel):
     """DS-FL09, mensagem 6: {ocorrências[], ouvintes[]}, com o que a tela precisa para liberar a etapa."""
 
@@ -90,3 +104,4 @@ class PresencaOut(BaseModel):
     ocorrencias: list[OcorrenciaOut]
     ouvintes: list[OuvinteOut]
     prontos: int  # "x prontos para declaração"
+    banca: list[MembroPresencaOut]  # quem participa da sessão: o suplente só depois de convocado (RN20)

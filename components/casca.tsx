@@ -23,6 +23,12 @@ const MENU: Item[] = [
   { href: "/orientacoes", rotulo: "Orientações", icone: "certo", perfis: ["orientador", "professor_disciplina"] },
   { href: "/agenda", rotulo: "Agenda", icone: "relogio" },
   {
+    href: "/indicadores",
+    rotulo: "Indicadores",
+    icone: "grafico",
+    perfis: ["coordenador", "professor_disciplina", "orientador"],
+  },
+  {
     href: "/ideias",
     rotulo: "Ideias de TCC",
     icone: "enviar",

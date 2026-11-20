@@ -2,18 +2,23 @@ from fastapi import APIRouter, FastAPI
 
 from app.erros import registrar_tratadores
 from app.routes import (
+    acompanhamento,
     agenda,
     areas,
     auth,
     avaliacao,
     cadastros,
     catalogo,
+    correcoes,
     defesas,
+    documentos,
     health,
     ideias,
+    indicadores,
     instrumento,
     ocorrencias,
     perfil,
+    publicacao,
     resultado,
     tarefas,
     tccs,
@@ -42,13 +47,18 @@ v1.include_router(catalogo.router)
 v1.include_router(turmas.router)
 # /tccs/formulario antes de /tccs/{id} (ordem no arquivo)
 v1.include_router(tccs.router)
+v1.include_router(acompanhamento.router)  # situação, histórico e tarefas do TCC (RAN05)
 v1.include_router(cadastros.router)
 v1.include_router(defesas.router)  # banca e defesa (RAN09)
 v1.include_router(agenda.router)  # agenda de apresentações (RAN14)
 v1.include_router(instrumento.router)  # instrumento de avaliação (RBN10.01)
 v1.include_router(ocorrencias.router)  # ocorrências, ouvintes e declaração de horas (RBN09.10)
 v1.include_router(resultado.router)  # consolidação da nota final (RBN09.11)
+v1.include_router(documentos.router)  # ata, Folha de Aprovação e certificados (RBN09.14 a RBN09.17)
+v1.include_router(correcoes.router)  # correções, versão final e conclusão do TCC (RBN11.01 a RBN11.04)
 v1.include_router(ideias.router)  # ideias de TCC (RBN02.01 e RBN02.02)
+v1.include_router(publicacao.router)  # publicação do artigo (RBN12.01 a RBN12.03)
+v1.include_router(indicadores.router)  # indicadores gerenciais (RBN13.01 e RBN13.02)
 v1.include_router(avaliacao.router)  # avaliação da defesa (RBN10.02 a RBN10.05)
 v1.include_router(tarefas.router)  # rotinas agendadas: lembrete da defesa (RBN09.06)
 app.include_router(v1)
